@@ -7,6 +7,11 @@ import {
   GetChargingSessionByUserID,
   UpdateSessionStatusByPaymentID,
 } from "../../../services";
+import {
+  connectOcppSocket,
+  remoteStartCharging,
+  remoteStopCharging,
+} from "../../../services/ocpp";
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -35,6 +40,9 @@ const ChargingEV = () => {
 
   // ⭐ Modal ยืนยันยกเลิก
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  // ⭐ เก็บสถานะจาก OCPP StatusNotification
+  const [ocppStatus, setOcppStatus] = useState<string>("Unknown");
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
   useEffect(() => {
@@ -83,7 +91,29 @@ const ChargingEV = () => {
     checkSession();
   }, [userID, navigate]);
 
-  // 👉 จำลองการชาร์จ
+  // 👉 ฟัง WebSocket OCPP จาก /frontend เอา status จาก StatusNotification มาเก็บใน state
+  useEffect(() => {
+    const ws = connectOcppSocket((data: any) => {
+      try {
+        // รูปแบบ message:
+        // [ 2, "uuid", "StatusNotification", { "status": "Available", ... } ]
+        if (Array.isArray(data) && data[0] === 2 && data[2] === "StatusNotification") {
+          const payload = data[3];
+          if (payload && typeof payload.status === "string") {
+            setOcppStatus(payload.status);
+          }
+        }
+      } catch (err) {
+        console.error("Error parsing OCPP message:", err);
+      }
+    });
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
+  // 👉 จำลองการชาร์จบน UI
   useEffect(() => {
     if (!sessionValid) return;
 
@@ -141,8 +171,42 @@ const ChargingEV = () => {
     return "linear-gradient(180deg, #34d399, #22c55e)";
   }, [energy]);
 
+  // 👉 กำหนดสี badge ตามสถานะ
+  const { statusLabel, statusClass } = useMemo(() => {
+    const s = ocppStatus || "Unknown";
+    let cls =
+      "bg-gray-100 text-gray-700 border border-gray-200"; // default เทา
+
+    switch (s) {
+      case "Available":
+        cls = "bg-green-50 text-green-700 border border-green-200";
+        break;
+      case "Preparing":
+        cls = "bg-amber-50 text-amber-700 border border-amber-200";
+        break;
+      case "Charging":
+        cls = "bg-sky-50 text-sky-700 border border-sky-200";
+        break;
+      case "Unavailable":
+      case "Faulted":
+        cls = "bg-red-50 text-red-700 border border-red-200";
+        break;
+      case "Finishing":
+        cls = "bg-purple-50 text-purple-700 border border-purple-200";
+        break;
+      default:
+        cls = "bg-gray-50 text-gray-700 border border-gray-200";
+        break;
+    }
+
+    return {
+      statusLabel: s,
+      statusClass: cls,
+    };
+  }, [ocppStatus]);
+
   // ===========================================================
-  // ⭐ ปุ่ม "ยกเลิก" → Modal → UpdateSessionStatusByPaymentID
+  // ⭐ ปุ่ม "ยกเลิก" → Modal → remoteStopCharging + UpdateSessionStatus
   // ===========================================================
   const confirmCancel = async () => {
     if (!paymentID) {
@@ -150,22 +214,61 @@ const ChargingEV = () => {
       return;
     }
 
-    const ok = await UpdateSessionStatusByPaymentID(paymentID);
+    try {
+      // 1) สั่งตู้ให้หยุดชาร์จผ่าน OCPP
+      await remoteStopCharging({
+        chargerId: "CP_1", // ตอนนี้ fix ที่ CP_1 ก่อน
+      });
 
-    if (ok) {
-      message.success("ยกเลิกการชาร์จสำเร็จ");
-      setCancelModalOpen(false);
+      // 2) อัปเดตสถานะ Session ฝั่งระบบของคุณ
+      const ok = await UpdateSessionStatusByPaymentID(paymentID);
 
-      setTimeout(() => {
-        navigate("/");
-      }, 2000);
-    } else {
-      message.error("ยกเลิกไม่สำเร็จ");
+      if (ok) {
+        message.success("ยกเลิกการชาร์จสำเร็จ");
+        setCharging(false);
+        setIsComplete(false);
+        setEnergy(0);
+        setTime(0);
+        setCancelModalOpen(false);
+
+        setTimeout(() => {
+          navigate("/");
+        }, 2000);
+      } else {
+        message.error("ยกเลิกไม่สำเร็จในระบบ");
+      }
+    } catch (err) {
+      console.error(err);
+      message.error("ไม่สามารถสั่งหยุดการชาร์จกับตู้ได้");
     }
   };
 
   // ===========================================================
-  // ⭐ ปุ่ม "เสร็จสิ้น" → update + delay 2 วิ + redirect
+  // ⭐ ปุ่ม "เริ่ม" → remoteStartCharging + เริ่มจำลองชาร์จ
+  // ===========================================================
+  const handleStart = async () => {
+    if (hasStarted || charging || isComplete || statusLabel !== "Preparing") {
+      return;
+    }
+
+    try {
+      await remoteStartCharging({
+        chargerId: "CP_1", // 🔹 fix ให้เริ่มจาก CP_1 ก่อน
+        connectorId: 1,
+        idTag: "EV-SIM-001",
+      });
+
+      message.success("ส่งคำสั่งเริ่มชาร์จไปยังตู้แล้ว");
+      setHasStarted(true);
+      setCharging(true);
+    } catch (err) {
+      console.error(err);
+      message.error("ไม่สามารถส่งคำสั่งเริ่มชาร์จไปยังตู้ได้");
+    }
+  };
+
+  // ===========================================================
+  // ⭐ ปุ่ม "เสร็จสิ้น" → remoteStopCharging เช่นเดียวกับยกเลิก + update + รีวิว
   // ===========================================================
   const handleComplete = async () => {
     if (!paymentID) {
@@ -173,18 +276,30 @@ const ChargingEV = () => {
       return;
     }
 
-    const ok = await UpdateSessionStatusByPaymentID(paymentID);
-
-    if (!ok) {
-      return message.error("อัปเดตสถานะไม่สำเร็จ");
-    }
-
     if (!userID) {
       message.error("ไม่พบผู้ใช้");
-      return navigate("/login");
+      navigate("/login");
+      return;
     }
 
     try {
+      // 1) สั่งหยุดการชาร์จกับตู้เหมือนปุ่ม "ยกเลิก"
+      await remoteStopCharging({
+        chargerId: "CP_1",
+      });
+
+      // 2) อัปเดตสถานะ session ฝั่งระบบ
+      const ok = await UpdateSessionStatusByPaymentID(paymentID);
+
+      if (!ok) {
+        message.error("อัปเดตสถานะไม่สำเร็จ");
+        return;
+      }
+
+      // 3) หยุด state การชาร์จใน UI ด้วย
+      setCharging(false);
+
+      // 4) เช็กว่ามีรีวิวอยู่แล้วไหม
       const reviews = await GetReviewByUserID(userID);
 
       if (reviews && reviews.length > 0) {
@@ -195,7 +310,7 @@ const ChargingEV = () => {
       }
     } catch (err) {
       console.error(err);
-      message.error("ตรวจสอบรีวิวผิดพลาด");
+      message.error("ไม่สามารถสั่งหยุดการชาร์จกับตู้ได้");
     }
   };
 
@@ -210,7 +325,10 @@ const ChargingEV = () => {
 
   if (!sessionValid) return null;
 
-  const startDisabled = hasStarted || charging || isComplete;
+  // ❗ เงื่อนไขใหม่: ต้องเป็น Preparing เท่านั้นถึงจะเริ่มได้
+  const startDisabled =
+    hasStarted || charging || isComplete || statusLabel !== "Preparing";
+
   const cancelDisabled = !hasStarted || isComplete;
   const completeDisabled = !isComplete;
 
@@ -243,7 +361,7 @@ const ChargingEV = () => {
               animate-fadeIn
             "
           >
-            {/* CLOSE (X) — minimal, floating */}
+            {/* CLOSE (X) */}
             <button
               onClick={() => setCancelModalOpen(false)}
               className="
@@ -269,10 +387,7 @@ const ChargingEV = () => {
             <div className="px-6 py-9 text-center flex flex-col items-center">
               {/* ICON + HALO */}
               <div className="relative mb-5">
-                {/* Halo */}
                 <div className="absolute inset-0 blur-xl bg-blue-300 opacity-40 rounded-full"></div>
-
-                {/* Icon Container */}
                 <div
                   className="
                     relative z-10
@@ -299,12 +414,10 @@ const ChargingEV = () => {
                 </div>
               </div>
 
-              {/* TITLE */}
               <h3 className="text-xl font-bold text-gray-900 tracking-tight">
                 ต้องการยกเลิกการชาร์จ?
               </h3>
 
-              {/* DESCRIPTION */}
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[280px]">
                 หากคุณยืนยัน การชาร์จจะถูกหยุดทันที และบันทึกเป็นสถานะ
                 <span className="text-blue-600 font-semibold"> ยกเลิก</span>
@@ -329,7 +442,6 @@ const ChargingEV = () => {
             </div>
           </div>
 
-          {/* Animation */}
           <style>{`
             @keyframes fadeIn {
               from { opacity: 0; transform: translateY(14px) scale(0.96); }
@@ -434,6 +546,18 @@ const ChargingEV = () => {
                   </div>
                   <div className="font-semibold text-gray-800">{estKW}</div>
                 </div>
+
+                {/* ⭐ ช่อง สถานะ เพิ่มใหม่ พร้อมสีตาม OCPP */}
+                <div className="rounded-xl bg-gray-50 px-4 py-3">
+                  <div className="text-[11px] text-gray-500">สถานะ</div>
+                  <div className="mt-1">
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusClass}`}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -442,12 +566,7 @@ const ChargingEV = () => {
               <div className="grid grid-cols-3 gap-2">
                 {/* เริ่ม */}
                 <button
-                  onClick={() => {
-                    if (!hasStarted) {
-                      setHasStarted(true);
-                      setCharging(true);
-                    }
-                  }}
+                  onClick={handleStart}
                   disabled={startDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold text-white
                     ${

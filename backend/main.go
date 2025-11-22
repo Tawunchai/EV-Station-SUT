@@ -239,6 +239,8 @@ func main() {
 		//OCPP Test
 		public.GET("/ocpp/:chargerID", ocpp.HandleOCPP)
 		public.GET("/frontend", ocpp.HandleFrontend) // ส่งให้ frontend
+		public.POST("/ocpp/remote-start", ocpp.RemoteStartHandler)
+		public.POST("/ocpp/remote-stop", ocpp.RemoteStopHandler)
 
 		// 🌞 Solar WebSocket Routes
 		public.GET("/solar/:deviceID", solar.HandleSolar)   // สำหรับพี่คุณส่งข้อมูลเข้ามา

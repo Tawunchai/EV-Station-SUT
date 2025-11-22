@@ -1,262 +1,941 @@
 // src/component/user/ev-calibet/index.tsx
-import React from "react";
-import {
-  FiClock,
-  FiBatteryCharging,
-  FiPower,
-  FiCpu,
-} from "react-icons/fi";
 
-/** ---------- Types ---------- */
-type PortStatus = "Available" | "Charging" | "Error";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { FiClock, FiBatteryCharging, FiPower, FiWifi } from "react-icons/fi";
+import { BsLightningChargeFill } from "react-icons/bs";
 
-type PortInfo = {
-  id: number;
-  name: string;
-  energy: string;
-  duration: string;
-  status: PortStatus;
-  currentCar: string;
-  power: string;
+type ConnectorStatus =
+  | "Available"
+  | "Preparing"
+  | "Charging"
+  | "SuspendedEV"
+  | "Finishing"
+  | "Faulted"
+  | "Unavailable";
+
+type ConnectorState = {
+  status: ConnectorStatus;
+  soc: number; // battery %
+  isPluggedIn: boolean;
+  isLocked: boolean;
+  powerKw: number;
+  energyKWh: number;
+  startedAt: number | null;
+  transactionId: number | null;
+  meterWh: number;
 };
 
-/** ---------- Mock Data ---------- */
-const ports: PortInfo[] = [
-  {
-    id: 1,
-    name: "Port A1",
-    energy: "18.4 kWh",
-    duration: "45 min",
-    status: "Charging",
-    currentCar: "Tesla Model 3",
-    power: "11.2 kW",
-  },
-  {
-    id: 2,
-    name: "Port B2",
-    energy: "0.0 kWh",
-    duration: "-",
-    status: "Available",
-    currentCar: "-",
-    power: "0 kW",
-  },
-  {
-    id: 3,
-    name: "Port C3",
-    energy: "5.1 kWh",
-    duration: "22 min",
-    status: "Error",
-    currentCar: "BYD Atto 3",
-    power: "5.8 kW",
-  },
-];
+type OcppRawMessage = [number, string, ...any[]];
 
-/** ---------- Mock Power Trend ---------- */
-const powerTrend = [0, 2.5, 5, 6.3, 7.8, 9.1, 10.4, 9.9, 8.6, 7.2, 5.4, 4.1, 3.2];
+const initialConnectorState: ConnectorState = {
+  status: "Available",
+  soc: 0,
+  isPluggedIn: false,
+  isLocked: false,
+  powerKw: 0,
+  energyKWh: 0,
+  startedAt: null,
+  transactionId: null,
+  meterWh: 0,
+};
 
-function toPolylinePoints(values: number[], width = 720, height = 140): string {
-  if (values.length === 0) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(0.0001, max - min);
-  const stepX = width / Math.max(1, values.length - 1);
-
-  return values
-    .map((v, i) => {
-      const x = i * stepX;
-      const y = height - ((v - min) / range) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
-
-/** ---------- Component ---------- */
 const EVCalibet: React.FC = () => {
-  const points = toPolylinePoints(powerTrend, 720, 140);
+  /** ---------- WebSocket State ---------- */
+  const [wsUrl, setWsUrl] = useState(
+    "wss://payment-project-t4dj.onrender.com/ocpp/CP_1"
+  );
+  const socketRef = useRef<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
 
+  /** ---------- Connector State (Port 1) ---------- */
+  const [connector, setConnector] =
+    useState<ConnectorState>(initialConnectorState);
+  const connectorRef = useRef<ConnectorState>(initialConnectorState);
+
+  // heartbeat & meter loop
+  const heartbeatIntervalRef = useRef<number | null>(null);
+  const meterIntervalRef = useRef<number | null>(null);
+
+  /** ---------- Helpers ---------- */
+  const appendLog = (msg: string) => {
+    const time = new Date().toLocaleTimeString();
+    setLogs((prev) => {
+      const next = [...prev, `${time} ${msg}`];
+      if (next.length > 150) next.shift();
+      return next;
+    });
+  };
+
+  const generateUUID = () => {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  const updateConnector = (updater: (prev: ConnectorState) => ConnectorState) => {
+    setConnector((prev) => {
+      const next = updater(prev);
+      connectorRef.current = next;
+      return next;
+    });
+  };
+
+  const sendOcppMessage = (payload: any[]) => {
+    const ws = socketRef.current;
+    const json = JSON.stringify(payload);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(json);
+      appendLog(`[SENT] ${json}`);
+    } else {
+      appendLog("[ERROR] WebSocket not connected");
+    }
+  };
+
+  /** ---------- OCPP Basic Messages ---------- */
+  const sendBootNotification = () => {
+    const msg: OcppRawMessage = [
+      2,
+      generateUUID(),
+      "BootNotification",
+      {
+        chargePointModel: "EV-Dashboard-01",
+        chargePointVendor: "EVStation",
+      },
+    ];
+    appendLog("[SYSTEM] Sending BootNotification");
+    sendOcppMessage(msg);
+  };
+
+  const sendHeartbeat = () => {
+    const msg: OcppRawMessage = [2, generateUUID(), "Heartbeat", {}];
+    sendOcppMessage(msg);
+  };
+
+  const sendStatusNotification = (
+    status: ConnectorStatus,
+    errorCode: string = "NoError"
+  ) => {
+    const msg: OcppRawMessage = [
+      2,
+      generateUUID(),
+      "StatusNotification",
+      {
+        connectorId: 1,
+        errorCode,
+        status,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    appendLog(`[SYSTEM] StatusNotification → ${status}`);
+    sendOcppMessage(msg);
+    updateConnector((prev) => ({ ...prev, status }));
+  };
+
+  /** ---------- Meter Values Loop (เหมือนตัวอย่าง JS) ---------- */
+  const stopMeterLoop = () => {
+    if (meterIntervalRef.current !== null) {
+      window.clearInterval(meterIntervalRef.current);
+      meterIntervalRef.current = null;
+      appendLog("[SYSTEM] MeterValues loop stopped");
+    }
+  };
+
+  const startMeterLoop = () => {
+    stopMeterLoop();
+
+    appendLog(
+      "[SYSTEM] MeterValues loop started (simulate SoC & energy every 10s)"
+    );
+
+    meterIntervalRef.current = window.setInterval(() => {
+      const state = connectorRef.current;
+
+      // ไม่มี transaction หรือไม่ได้ Charging แล้ว ไม่ทำอะไร
+      if (!state.transactionId || state.status !== "Charging") {
+        return;
+      }
+
+      const nextSoc = Math.min(100, state.soc + 2);
+      const isFull = nextSoc >= 100;
+      const nextEnergyKWh = state.energyKWh + 0.2; // ~0.2kWh ต่อรอบ
+      const nextMeterWh = state.meterWh + 100; // 100Wh ต่อรอบ
+
+      if (!isFull) {
+        // ส่ง MeterValues ไปที่ CSMS
+        const msg: OcppRawMessage = [
+          2,
+          generateUUID(),
+          "MeterValues",
+          {
+            connectorId: 1,
+            transactionId: state.transactionId,
+            meterValue: [
+              {
+                timestamp: new Date().toISOString(),
+                sampledValue: [
+                  {
+                    value: nextMeterWh,
+                    context: "Sample.Periodic",
+                    measurand: "Energy.Active.Import.Register",
+                    unit: "Wh",
+                  },
+                ],
+              },
+            ],
+          },
+        ];
+        sendOcppMessage(msg);
+      }
+
+      updateConnector((prev) => {
+        const latest: ConnectorState = {
+          ...prev,
+          soc: nextSoc,
+          energyKWh: nextEnergyKWh,
+          meterWh: nextMeterWh,
+          powerKw: isFull ? 0 : prev.powerKw,
+          status: isFull ? "SuspendedEV" : prev.status,
+        };
+        return latest;
+      });
+
+      if (isFull) {
+        appendLog(
+          "[SYSTEM] Battery full (100%), send StatusNotification(SuspendedEV)"
+        );
+        sendStatusNotification("SuspendedEV");
+        stopMeterLoop();
+      }
+    }, 10000); // ทุก 10 วินาทีเหมือนตัวอย่าง
+  };
+
+  /** ---------- Connect / Disconnect ---------- */
+  const clearAllIntervals = () => {
+    if (heartbeatIntervalRef.current !== null) {
+      window.clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    stopMeterLoop();
+  };
+
+  const handleConnect = () => {
+    try {
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+
+      const ws = new WebSocket(wsUrl, "ocpp1.6");
+      socketRef.current = ws;
+      appendLog(`[SYSTEM] Connecting to ${wsUrl} ...`);
+
+      ws.onopen = () => {
+        setIsConnected(true);
+        appendLog("[SYSTEM] WebSocket connected");
+        sendBootNotification();
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        appendLog("[SYSTEM] WebSocket disconnected");
+        clearAllIntervals();
+        updateConnector(() => ({
+          ...initialConnectorState,
+        }));
+      };
+
+      ws.onerror = () => {
+        appendLog("[ERROR] WebSocket error");
+      };
+
+      ws.onmessage = (event) => {
+        appendLog(`[RECV] ${event.data}`);
+
+        let msg: any;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          // ข้อความอย่าง "ready" ให้ข้ามไป
+          return;
+        }
+
+        if (!Array.isArray(msg) || msg.length < 3) return;
+
+        const [messageTypeId] = msg;
+
+        if (messageTypeId === 3) {
+          // CALLRESULT
+          const [, , payload] = msg as OcppRawMessage;
+          handleCallResult(payload);
+        } else if (messageTypeId === 2) {
+          // CALL
+          const [, messageId, action, payload] = msg as OcppRawMessage;
+          handleCall(messageId, action as string, payload);
+        }
+      };
+    } catch (err) {
+      console.error(err);
+      appendLog("[ERROR] Failed to open WebSocket");
+    }
+  };
+
+  const handleDisconnect = () => {
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  };
+
+  /** ---------- CALLRESULT Handler ---------- */
+  const handleCallResult = (payload: any) => {
+    // BootNotification.conf
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "status" in payload &&
+      "interval" in payload
+    ) {
+      if (payload.status === "Accepted") {
+        const intervalSec = payload.interval || 300;
+        appendLog(
+          `[SYSTEM] BootNotification accepted. Start Heartbeat every ${intervalSec}s`
+        );
+
+        if (heartbeatIntervalRef.current !== null) {
+          window.clearInterval(heartbeatIntervalRef.current);
+        }
+        heartbeatIntervalRef.current = window.setInterval(
+          sendHeartbeat,
+          intervalSec * 1000
+        );
+
+        setTimeout(() => sendStatusNotification("Available"), 500);
+      } else {
+        appendLog(
+          "[SYSTEM] BootNotification rejected. Please check configuration."
+        );
+      }
+    }
+
+    // StartTransaction.conf
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "transactionId" in payload
+    ) {
+      const txId = payload.transactionId as number;
+      appendLog(
+        `[SYSTEM] StartTransaction accepted. Tx ID = ${txId} (Connector 1)`
+      );
+
+      updateConnector((prev) => {
+        const baseSoc =
+          prev.soc > 0 ? prev.soc : Math.floor(Math.random() * 10) + 20;
+        const next: ConnectorState = {
+          ...prev,
+          transactionId: txId,
+          status: "Charging",
+          powerKw: 11.2,
+          soc: baseSoc,
+          startedAt: Date.now(),
+        };
+        return next;
+      });
+
+      sendStatusNotification("Charging");
+      startMeterLoop();
+    }
+
+    // StopTransaction.conf
+    if (payload && typeof payload === "object" && "idTagInfo" in payload) {
+      appendLog("[SYSTEM] StopTransaction confirmed.");
+
+      updateConnector((prev) => {
+        const nextStatus = prev.isPluggedIn ? "Preparing" : "Available";
+        const next: ConnectorState = {
+          ...prev,
+          status: nextStatus,
+          transactionId: null,
+          powerKw: 0,
+          soc: 0,
+          energyKWh: 0,
+          meterWh: 0,
+          startedAt: null,
+        };
+        return next;
+      });
+
+      stopMeterLoop();
+      const latest = connectorRef.current;
+      sendStatusNotification(latest.isPluggedIn ? "Preparing" : "Available");
+    }
+  };
+
+  /** ---------- CALL Handler (RemoteStart, RemoteStop, ChangeAvailability) ---------- */
+  const handleCall = (messageId: string, action: string, payload: any) => {
+    appendLog(
+      `[SYSTEM] Received CALL from Server: ${action} / ได้รับ CALL จากเซิร์ฟเวอร์: ${action}`
+    );
+
+    let responsePayload: any = {};
+
+    switch (action) {
+      case "RemoteStartTransaction": {
+        const connectorId = payload?.connectorId ?? 1;
+        appendLog(
+          `[SYSTEM] RemoteStartTransaction requested for Connector ${connectorId}.`
+        );
+
+        if (connectorId === 1) {
+          responsePayload = { status: "Accepted" };
+
+          // จำลอง: เสียบปลั๊ก + Preparing แล้วค่อย StartTransaction
+          setTimeout(() => {
+            updateConnector((prev) => ({
+              ...prev,
+              isPluggedIn: true,
+            }));
+            appendLog("[SYSTEM] EV plugged in (simulated by RemoteStart).");
+            sendStatusNotification("Preparing");
+            setTimeout(() => {
+              sendStartTransaction();
+            }, 1000);
+          }, 500);
+        } else {
+          responsePayload = { status: "Rejected" };
+        }
+        break;
+      }
+
+      case "RemoteStopTransaction": {
+        const txId = payload?.transactionId;
+        appendLog(
+          `[SYSTEM] RemoteStopTransaction requested for TxID ${txId}.`
+        );
+        if (connectorRef.current.transactionId === txId) {
+          responsePayload = { status: "Accepted" };
+
+          stopMeterLoop();
+          setTimeout(() => {
+            sendStatusNotification("Finishing");
+            setTimeout(() => sendStopTransaction(), 800);
+          }, 400);
+        } else {
+          responsePayload = { status: "Rejected" };
+        }
+        break;
+      }
+
+      case "ChangeAvailability": {
+        const type = payload?.type;
+        const connectorId = payload?.connectorId ?? 1;
+        appendLog(
+          `[SYSTEM] ChangeAvailability for Connector ${connectorId} to ${type}.`
+        );
+        responsePayload = { status: "Accepted" };
+        setTimeout(() => {
+          const newStatus: ConnectorStatus =
+            type === "Operative" ? "Available" : "Unavailable";
+          sendStatusNotification(newStatus);
+        }, 500);
+        break;
+      }
+
+      case "GetConfiguration": {
+        responsePayload = { configurationKey: [], unknownKey: [] };
+        break;
+      }
+
+      default: {
+        appendLog(`[SYSTEM] Unsupported Action: ${action}`);
+        responsePayload = { status: "NotImplemented" };
+      }
+    }
+
+    const responseMsg: OcppRawMessage = [3, messageId, responsePayload];
+    sendOcppMessage(responseMsg);
+  };
+
+  /** ---------- Local Start/Stop Transaction (ปุ่มใน UI) ---------- */
+  const sendStartTransaction = () => {
+    const state = connectorRef.current;
+    if (state.transactionId) {
+      appendLog("[ERROR] StartTransaction: already active");
+      return;
+    }
+    const msg: OcppRawMessage = [
+      2,
+      generateUUID(),
+      "StartTransaction",
+      {
+        connectorId: 1,
+        idTag: "EV-SIM-001",
+        meterStart: state.meterWh,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    sendOcppMessage(msg);
+    appendLog("[SYSTEM] Request StartTransaction (local)");
+  };
+
+  const sendStopTransaction = () => {
+    const state = connectorRef.current;
+    if (!state.transactionId) {
+      appendLog("[ERROR] No active transaction to stop");
+      return;
+    }
+
+    stopMeterLoop();
+
+    const msg: OcppRawMessage = [
+      2,
+      generateUUID(),
+      "StopTransaction",
+      {
+        transactionId: state.transactionId,
+        meterStop: state.meterWh,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    sendOcppMessage(msg);
+    appendLog("[SYSTEM] Request StopTransaction (local)");
+  };
+
+  /** ---------- Button Handlers (UI) ---------- */
+  const handleTogglePlug = () => {
+    const state = connectorRef.current;
+    const plugIn = !state.isPluggedIn;
+
+    if (plugIn) {
+      appendLog("[SYSTEM] EV: Plugged in / เสียบปลั๊กเชื่อมต่อแล้ว");
+      updateConnector((prev) => ({
+        ...prev,
+        isPluggedIn: true,
+      }));
+      if (state.status === "Available") {
+        sendStatusNotification("Preparing");
+      }
+    } else {
+      appendLog("[SYSTEM] EV: Unplugged / ดึงปลั๊กออกแล้ว");
+
+      if (state.transactionId) {
+        appendLog(
+          "[SYSTEM] Unplug while charging, forcing StopTransaction (Finishing)."
+        );
+        stopMeterLoop();
+        sendStatusNotification("Finishing");
+        setTimeout(() => sendStopTransaction(), 500);
+      } else {
+        sendStatusNotification("Available");
+      }
+
+      updateConnector((prev) => ({
+        ...prev,
+        isPluggedIn: false,
+        transactionId: null,
+        powerKw: 0,
+        soc: 0,
+        energyKWh: 0,
+        meterWh: 0,
+        startedAt: null,
+        status: "Available",
+      }));
+    }
+  };
+
+  const handleToggleLock = () => {
+    updateConnector((prev) => {
+      const locked = !prev.isLocked;
+      appendLog(
+        locked
+          ? "[SYSTEM] EV: Locked / ล็อกรถแล้ว"
+          : "[SYSTEM] EV: Unlocked / ปลดล็อกรถแล้ว"
+      );
+      return { ...prev, isLocked: locked };
+    });
+  };
+
+  const handleRequestStart = () => {
+    const state = connectorRef.current;
+    if (!state.isPluggedIn) {
+      appendLog("[ERROR] Cannot start: EV not plugged in");
+      return;
+    }
+    if (state.isLocked) {
+      appendLog("[ERROR] Cannot start: EV is locked");
+      return;
+    }
+    if (state.transactionId) {
+      appendLog("[ERROR] Session already active");
+      return;
+    }
+
+    appendLog("[SYSTEM] Requesting StartTransaction from local button");
+    sendStartTransaction();
+  };
+
+  const handleRequestStop = () => {
+    const state = connectorRef.current;
+    if (!state.transactionId) {
+      appendLog("[ERROR] No active transaction to stop");
+      return;
+    }
+    appendLog("[SYSTEM] Requesting StopTransaction from local button");
+    sendStatusNotification("Finishing");
+    stopMeterLoop();
+    setTimeout(() => sendStopTransaction(), 500);
+
+    updateConnector((prev) => ({
+      ...prev,
+      powerKw: 0,
+    }));
+  };
+
+  const canStart =
+    connector.isPluggedIn &&
+    !connector.isLocked &&
+    !connector.transactionId &&
+    (connector.status === "Preparing" || connector.status === "Available");
+
+  const canStop = !!connector.transactionId;
+
+  /** ---------- Derived UI Values ---------- */
+  const durationMinutes = useMemo(() => {
+    if (!connector.startedAt || !connector.transactionId) return 0;
+    const now = Date.now();
+    return Math.max(0, Math.floor((now - connector.startedAt) / 60000));
+  }, [connector.startedAt, connector.transactionId, connector.soc]);
+
+  const socStrokeRadius = 70;
+  const socCircumference = 2 * Math.PI * socStrokeRadius;
+  const socOffset =
+    socCircumference - (connector.soc / 100) * socCircumference || 0;
+
+  const evseStatusColor =
+    connector.status === "Charging"
+      ? "text-emerald-500"
+      : connector.status === "Available"
+      ? "text-sky-600"
+      : connector.status === "SuspendedEV"
+      ? "text-orange-500"
+      : connector.status === "Faulted"
+      ? "text-red-500"
+      : "text-slate-600";
+
+  const thaiStatusMap: Record<ConnectorStatus, string> = {
+    Available: "พร้อมใช้งาน",
+    Preparing: "กำลังเตรียม",
+    Charging: "กำลังชาร์จ",
+    SuspendedEV: "ระงับโดย EV",
+    Finishing: "กำลังเสร็จสิ้น",
+    Faulted: "มีข้อผิดพลาด",
+    Unavailable: "ไม่พร้อมใช้งาน",
+  };
+
+  /** ---------- Cleanup ---------- */
+  useEffect(() => {
+    return () => {
+      clearAllIntervals();
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** ---------- Render ---------- */
   return (
-    <div className="min-h-screen bg-white text-gray-900 mt-14 sm:mt-0">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 text-slate-900">
       {/* Header */}
-      <div
-        className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
-      >
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <h1 className="text-sm sm:text-base font-semibold tracking-wide">
+      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-sky-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          <h1 className="text-sm sm:text-base font-semibold tracking-wide text-sky-900">
             EV Cabinet • Power Monitor
           </h1>
-          <span className="text-[11px] sm:text-xs bg-white/15 px-2 py-1 rounded-lg border border-white/20">
-            Live
+          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs text-slate-500">
+            <FiWifi
+              className={isConnected ? "text-emerald-400" : "text-slate-400"}
+            />
+            {isConnected ? "Connected" : "Not connected"}
           </span>
         </div>
-      </div>
+      </header>
 
       {/* Main */}
-      <main className="w-full px-4 sm:px-6 pt-5 pb-24">
-        {/* Summary */}
-        <section className="rounded-2xl bg-white border border-gray-200 p-6 shadow-sm">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="text-xs md:text-sm text-gray-500 font-medium">
-                Total Output
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 pb-20 space-y-5">
+        {/* Connection Bar */}
+        <section className="rounded-2xl bg-white shadow-sm border border-sky-100 p-4 sm:p-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-slate-500 mb-1">
+                WebSocket URL
               </p>
-              <p className="text-3xl md:text-4xl font-extrabold text-blue-700">
-                27.6 kW
-              </p>
-              <p className="text-sm md:text-base text-gray-500">
-                Across 3 Active Chargers
-              </p>
+              <input
+                value={wsUrl}
+                onChange={(e) => setWsUrl(e.target.value)}
+                className="w-full text-xs sm:text-sm rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
+                placeholder="wss://your-server/ocpp/CP_1"
+              />
             </div>
-            <div className="text-right">
-              <p className="text-[11px] md:text-xs text-gray-500">Updated</p>
-              <p className="text-sm md:text-base font-semibold text-blue-700">
-                Just now
-              </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleConnect}
+                disabled={isConnected}
+                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 ${
+                  isConnected
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "bg-sky-600 hover:bg-sky-500 text-white shadow-sm"
+                }`}
+              >
+                <FiWifi />
+                Connect
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={!isConnected}
+                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold ${
+                  !isConnected
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "bg-rose-500 hover:bg-rose-400 text-white shadow-sm"
+                }`}
+              >
+                Disconnect
+              </button>
             </div>
           </div>
         </section>
 
-        {/* Ports */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-          {ports.map((port) => (
-            <div
-              key={port.id}
-              className="rounded-xl bg-white border border-gray-200 p-5 shadow-sm hover:shadow-md transition-all"
-            >
-              <div className="flex items-center justify-between mb-3">
+        {/* SoC + EV Status Panel */}
+        <section>
+          <div className="rounded-2xl bg-white shadow-sm border border-sky-100 p-5 sm:p-6 flex flex-col lg:flex-row gap-5">
+            {/* Gauge */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <p className="text-xs sm:text-sm text-slate-500 mb-1">
+                SoC Status <span className="text-[11px]">(สถานะแบตเตอรี่)</span>
+              </p>
+              <div className="relative w-40 h-40 sm:w-52 sm:h-52">
+                <svg
+                  viewBox="0 0 200 200"
+                  className="w-full h-full"
+                  aria-label="State of Charge"
+                >
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r={socStrokeRadius}
+                    fill="none"
+                    stroke="#E2E8F0"
+                    strokeWidth="14"
+                  />
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r={socStrokeRadius}
+                    fill="none"
+                    stroke="url(#socGrad)"
+                    strokeWidth="14"
+                    strokeLinecap="round"
+                    strokeDasharray={socCircumference}
+                    strokeDashoffset={socOffset}
+                    transform="rotate(-90 100 100)"
+                    className="transition-all duration-500"
+                  />
+                  <defs>
+                    <linearGradient
+                      id="socGrad"
+                      x1="0"
+                      y1="0"
+                      x2="1"
+                      y2="0"
+                    >
+                      <stop offset="0%" stopColor="#22c55e" />
+                      <stop offset="50%" stopColor="#22c55e" />
+                      <stop offset="100%" stopColor="#16a34a" />
+                    </linearGradient>
+                  </defs>
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r={socStrokeRadius - 20}
+                    fill="#F8FAFC"
+                  />
+                  <text
+                    x="50%"
+                    y="50%"
+                    dominantBaseline="middle"
+                    textAnchor="middle"
+                    className="text-3xl sm:text-4xl font-extrabold"
+                    fill="#0f172a"
+                  >
+                    {connector.soc.toString().padStart(2, "0")}%
+                  </text>
+                </svg>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Energy delivered:{" "}
+                <span className="font-semibold text-sky-700">
+                  {connector.energyKWh.toFixed(1)} kWh
+                </span>
+              </p>
+            </div>
+
+            {/* Right Status + Buttons */}
+            <div className="flex-1 flex flex-col gap-4 justify-between">
+              {/* EVSE Status */}
+              <div>
+                <p className="text-xs sm:text-sm text-slate-500 mb-1">
+                  EVSE Status
+                </p>
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
-                    {port.status === "Charging" ? (
-                      <FiBatteryCharging className="text-blue-600 text-2xl" />
-                    ) : port.status === "Available" ? (
-                      <FiPower className="text-green-600 text-2xl" />
-                    ) : (
-                      <FiCpu className="text-red-500 text-2xl" />
-                    )}
+                  <div className="h-10 w-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center">
+                    <BsLightningChargeFill className="text-sky-600 text-xl" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">
-                      {port.name}
+                    <p
+                      className={`text-sm sm:text-base font-semibold ${evseStatusColor}`}
+                    >
+                      {connector.status}
                     </p>
-                    <p className="text-[11px] text-gray-500">
-                      {port.currentCar}
+                    <p className="text-[11px] text-slate-500">
+                      {thaiStatusMap[connector.status]}
                     </p>
                   </div>
                 </div>
-                <span
-                  className={`text-[10px] md:text-xs px-2 py-1 rounded-full font-semibold ${
-                    port.status === "Charging"
-                      ? "bg-blue-50 text-blue-700 border border-blue-200"
-                      : port.status === "Available"
-                      ? "bg-green-50 text-green-700 border border-green-200"
-                      : "bg-red-50 text-red-700 border border-red-200"
+              </div>
+
+              {/* Plug + Lock */}
+              <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-white border border-sky-100 flex items-center justify-center">
+                      <FiBatteryCharging className="text-sky-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800">
+                        {connector.isPluggedIn ? "Plugged In" : "Not plugged"}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {connector.isPluggedIn
+                          ? "เสียบปลั๊กแล้ว"
+                          : "ยังไม่เสียบปลั๊ก"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-emerald-50 bg-emerald-50 px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-white border border-emerald-100 flex items-center justify-center">
+                      <FiPower
+                        className={
+                          connector.isLocked ? "text-rose-500" : "text-emerald-500"
+                        }
+                      />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800">
+                        {connector.isLocked ? "Locked" : "Unlocked"}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {connector.isLocked ? "ล็อกรถ" : "ปลดล็อกรถ"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Power + Duration */}
+              <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-slate-500">Output Power</p>
+                    <p className="font-semibold text-sky-700">
+                      {connector.powerKw.toFixed(1)} kW
+                    </p>
+                  </div>
+                  <FiBatteryCharging className="text-sky-500 text-lg" />
+                </div>
+                <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-slate-500">Duration</p>
+                    <p className="font-semibold text-sky-700">
+                      {connector.transactionId && durationMinutes > 0
+                        ? `${durationMinutes} min`
+                        : connector.transactionId
+                        ? "< 1 min"
+                        : "-"}
+                    </p>
+                  </div>
+                  <FiClock className="text-slate-400 text-lg" />
+                </div>
+              </div>
+
+              {/* Control Buttons */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  onClick={handleTogglePlug}
+                  className="rounded-xl bg-sky-600 text-white text-xs sm:text-sm font-semibold py-2.5 hover:bg-sky-500 flex items-center justify-center gap-2 shadow-sm"
+                >
+                  {connector.isPluggedIn ? "Unplug EV" : "Plug In EV"}
+                </button>
+                <button
+                  onClick={handleToggleLock}
+                  className="rounded-xl bg-sky-50 text-sky-800 text-xs sm:text-sm font-semibold py-2.5 hover:bg-sky-100 flex items-center justify-center gap-2 border border-sky-100"
+                >
+                  {connector.isLocked ? "Unlock EV" : "Lock EV"}
+                </button>
+                <button
+                  onClick={handleRequestStart}
+                  disabled={!canStart}
+                  className={`rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 ${
+                    canStart
+                      ? "bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
                   }`}
                 >
-                  {port.status}
-                </span>
+                  Request Start
+                </button>
+                <button
+                  onClick={handleRequestStop}
+                  disabled={!canStop}
+                  className={`rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 ${
+                    canStop
+                      ? "bg-rose-500 hover:bg-rose-400 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  }`}
+                >
+                  Request Stop
+                </button>
               </div>
-
-              <div className="flex justify-between text-sm">
-                <div>
-                  <p className="text-gray-500 text-[11px]">Energy</p>
-                  <p className="font-bold text-blue-700">{port.energy}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-[11px]">Power</p>
-                  <p className="font-bold text-blue-700">{port.power}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-[11px]">Duration</p>
-                  <p className="font-bold text-blue-700">{port.duration}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </section>
-
-        {/* Power Trend Graph */}
-        <section className="mt-8 rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 pt-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs md:text-sm text-gray-500">Power Usage</p>
-              <p className="text-lg md:text-xl font-bold text-blue-700">
-                Last 13 hours
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-gray-500">
-              <FiClock className="text-gray-400" />
-              Updated 5 min ago
             </div>
           </div>
+        </section>
 
-          <div className="px-3 pt-2 pb-5">
-            <div className="rounded-xl bg-white border border-gray-200 p-2">
-              <svg
-                viewBox="0 0 720 180"
-                className="w-full h-40 md:h-48"
-                role="img"
-                aria-label="EV Power line chart"
-              >
-                {/* Grid */}
-                <g>
-                  {[30, 70, 110, 150].map((y) => (
-                    <line
-                      key={y}
-                      x1="0"
-                      x2="720"
-                      y1={y}
-                      y2={y}
-                      stroke="rgba(2,6,23,0.06)"
-                      strokeWidth="1"
-                    />
-                  ))}
-                </g>
-
-                {/* Gradients */}
-                <defs>
-                  <linearGradient id="lineGradEV" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="rgba(37,99,235,0.95)" />
-                    <stop offset="100%" stopColor="rgba(37,99,235,0.65)" />
-                  </linearGradient>
-                  <linearGradient id="areaGradEV" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="rgba(59,130,246,0.20)" />
-                    <stop offset="100%" stopColor="rgba(59,130,246,0.00)" />
-                  </linearGradient>
-                </defs>
-
-                {/* Filled Area */}
-                <polyline
-                  points={`${toPolylinePoints(powerTrend, 720, 140)} 720,180 0,180`}
-                  fill="url(#areaGradEV)"
-                  stroke="none"
-                />
-                {/* Line */}
-                <polyline
-                  points={points}
-                  fill="none"
-                  stroke="url(#lineGradEV)"
-                  strokeWidth="3"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-
-            {/* Summary */}
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] md:text-xs">
-              <div className="rounded-lg bg-blue-50 border border-blue-100 py-2">
-                <p className="text-gray-500">Min</p>
-                <p className="font-semibold text-blue-700">2.5 kW</p>
-              </div>
-              <div className="rounded-lg bg-blue-50 border border-blue-100 py-2">
-                <p className="text-gray-500">Avg</p>
-                <p className="font-semibold text-blue-700">7.8 kW</p>
-              </div>
-              <div className="rounded-lg bg-blue-50 border border-blue-100 py-2">
-                <p className="text-gray-500">Max</p>
-                <p className="font-semibold text-blue-700">10.4 kW</p>
-              </div>
-            </div>
+        {/* Event Log */}
+        <section className="rounded-2xl bg-white shadow-sm border border-sky-100 p-4 sm:p-5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs sm:text-sm font-semibold text-slate-700">
+              Event Log
+            </p>
+            <button
+              onClick={() => setLogs([])}
+              className="text-[11px] text-slate-400 hover:text-slate-600"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="h-32 sm:h-40 overflow-y-auto rounded-lg bg-sky-50 text-[11px] sm:text-xs text-slate-700 px-3 py-2 border border-sky-100">
+            {logs.length === 0 ? (
+              <p className="text-slate-400">
+                ...waiting for events (BootNotification / Heartbeat / etc.)
+              </p>
+            ) : (
+              logs.map((line, idx) => (
+                <p key={idx} className="whitespace-pre-wrap">
+                  {line}
+                </p>
+              ))
+            )}
           </div>
         </section>
       </main>

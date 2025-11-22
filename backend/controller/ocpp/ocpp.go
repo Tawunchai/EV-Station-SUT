@@ -10,20 +10,73 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ✅ WebSocket Upgrader รองรับ OCPP 1.6
+// ============================================================================
+// 🔧 WebSocket Upgrader
+// ============================================================================
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-	Subprotocols: []string{"ocpp1.6"}, // ต้องใส่ เพื่อจับคู่กับ Python simulator
+	CheckOrigin:  func(r *http.Request) bool { return true },
+	Subprotocols: []string{"ocpp1.6"},
 }
 
-// ✅ เก็บ frontend clients ที่เชื่อมเข้ามา
+// ============================================================================
+// 🌐 Frontend WebSocket Clients
+// ============================================================================
 var (
 	clients   = make(map[*websocket.Conn]bool)
 	clientsMu sync.Mutex
 )
 
 // ============================================================================
-// 🔹 สำหรับ FRONTEND ที่เข้ามารับข้อมูล
+// 🔌 Charger WebSocket Connections
+// ============================================================================
+var (
+	chargers   = make(map[string]*websocket.Conn)
+	chargersMu sync.Mutex
+)
+
+// ============================================================================
+// 🔢 Transaction ID Storage (ใช้สำหรับ RemoteStop)
+// ============================================================================
+var (
+	transactionIDs    = make(map[string]int) // active session ต่อ charger
+	nextTransactionID = 1                    // auto-increment
+	txMu              sync.Mutex
+)
+
+// สร้าง transaction id ไม่ซ้ำ
+func generateTransactionID() int {
+	txMu.Lock()
+	defer txMu.Unlock()
+
+	id := nextTransactionID
+	nextTransactionID++
+	return id
+}
+
+// บันทึก session
+func saveTransactionID(chargerID string, tx int) {
+	txMu.Lock()
+	transactionIDs[chargerID] = tx
+	txMu.Unlock()
+}
+
+// ดึง session
+func getTransactionID(chargerID string) (int, bool) {
+	txMu.Lock()
+	defer txMu.Unlock()
+	tx, ok := transactionIDs[chargerID]
+	return tx, ok
+}
+
+// ลบ session หลัง StopTransaction
+func clearTransactionID(chargerID string) {
+	txMu.Lock()
+	delete(transactionIDs, chargerID)
+	txMu.Unlock()
+}
+
+// ============================================================================
+// 🔹 FRONTEND WebSocket
 // ============================================================================
 func HandleFrontend(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -51,7 +104,7 @@ func HandleFrontend(c *gin.Context) {
 }
 
 // ============================================================================
-// 🔹 สำหรับ CHARGER (OCPP 1.6) ที่ส่งข้อมูลเข้ามา
+// 🔹 CHARGER OCPP WebSocket
 // ============================================================================
 func HandleOCPP(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -62,21 +115,30 @@ func HandleOCPP(c *gin.Context) {
 	defer conn.Close()
 
 	chargerID := c.Param("chargerID")
+
+	chargersMu.Lock()
+	chargers[chargerID] = conn
+	chargersMu.Unlock()
+
 	fmt.Println("🚗 Charger connected:", chargerID)
+
+	defer func() {
+		chargersMu.Lock()
+		delete(chargers, chargerID)
+		chargersMu.Unlock()
+		fmt.Println("⚠️ Charger disconnected:", chargerID)
+	}()
 
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Println("⚠️  Charger disconnected:", chargerID)
+			fmt.Println("❌ OCPP read error:", err)
 			break
 		}
 
-		// ✅ ตอบกลับข้อความ "ready" ทุกครั้งที่มีการส่งข้อมูลเข้ามา
-		if err := conn.WriteMessage(websocket.TextMessage, []byte("ready")); err != nil {
-			fmt.Println("❌ Failed to send ready response:", err)
-		}
+		// ❌ เดิมเคยส่ง "ready" กลับไปทุกครั้ง (ไม่ใช่ frame OCPP)
+		// _ = conn.WriteMessage(websocket.TextMessage, []byte("ready"))
 
-		// ✅ แปลง JSON frame สำหรับ OCPP message
 		var frame []interface{}
 		if err := json.Unmarshal(msg, &frame); err != nil {
 			fmt.Println("❌ JSON parse error:", err)
@@ -84,56 +146,117 @@ func HandleOCPP(c *gin.Context) {
 		}
 
 		if len(frame) < 3 {
+			fmt.Println("⚠️ Invalid OCPP frame length:", len(frame))
 			continue
 		}
 
-		messageType, ok := frame[0].(float64)
+		messageTypeFloat, ok := frame[0].(float64)
 		if !ok {
+			fmt.Println("⚠️ messageType is not number")
 			continue
 		}
-		messageID, _ := frame[1].(string)
-		action, _ := frame[2].(string)
+		messageType := int(messageTypeFloat)
 
-		if int(messageType) == 2 {
+		messageID, ok := frame[1].(string)
+		if !ok {
+			fmt.Println("⚠️ messageId is not string")
+			continue
+		}
+
+		// สำหรับ CALL (messageType == 2) ช่องที่ 2 คือ Action (string)
+		action := ""
+		if a, ok := frame[2].(string); ok {
+			action = a
+		}
+
+		// --------------------------------------------------------------------
+		// 📌 CALL from Charger → CSMS
+		// --------------------------------------------------------------------
+		if messageType == 2 {
 			switch action {
+
+			// ---------------------------------------------------------------
 			case "BootNotification":
-				// 🔸 ตอบกลับ BootNotification
 				response := []interface{}{
-					3,
-					messageID,
+					3, messageID,
 					map[string]interface{}{
 						"status":      "Accepted",
 						"currentTime": "2025-11-12T12:00:00Z",
 						"interval":    30,
 					},
 				}
-				respJSON, _ := json.Marshal(response)
-				conn.WriteMessage(websocket.TextMessage, respJSON)
-				fmt.Println("✅ BootNotification Accepted")
+				if err := conn.WriteJSON(response); err != nil {
+					fmt.Println("❌ Failed to send BootNotification conf:", err)
+				} else {
+					fmt.Println("✅ BootNotification Accepted")
+				}
 
+			// ---------------------------------------------------------------
 			case "MeterValues":
-				// 🔸 ตอบกลับ MeterValues
+				response := []interface{}{3, messageID, map[string]interface{}{}}
+				if err := conn.WriteJSON(response); err != nil {
+					fmt.Println("❌ Failed to send MeterValues conf:", err)
+				} else {
+					fmt.Println("📊 MeterValues Acknowledged")
+				}
+
+			// ---------------------------------------------------------------
+			case "StartTransaction":
+				fmt.Println("🚗 StartTransaction received from", chargerID)
+
+				// 🔁 แทนที่จะ "continue" ถ้ามี session เดิมค้างอยู่
+				// เราเลือก overwrite session เดิมเสมอ (single session per charger)
+				transactionID := generateTransactionID()
+				saveTransactionID(chargerID, transactionID)
+
 				response := []interface{}{
 					3,
 					messageID,
-					map[string]interface{}{},
+					map[string]interface{}{
+						"idTagInfo": map[string]interface{}{
+							"status": "Accepted",
+						},
+						"transactionId": transactionID,
+					},
 				}
-				respJSON, _ := json.Marshal(response)
-				conn.WriteMessage(websocket.TextMessage, respJSON)
-				fmt.Println("📊 MeterValues Received and Acknowledged")
 
-			default:
-				fmt.Println("ℹ️ Unknown OCPP Action:", action)
+				if err := conn.WriteJSON(response); err != nil {
+					fmt.Println("❌ Failed to send StartTransaction conf:", err)
+				} else {
+					fmt.Println("🎉 StartTransaction Accepted → transactionId =", transactionID)
+				}
+
+			// ---------------------------------------------------------------
+			case "StopTransaction":
+				fmt.Println("🛑 StopTransaction received — ending session for", chargerID)
+
+				// ลบ session
+				clearTransactionID(chargerID)
+
+				response := []interface{}{
+					3, messageID,
+					map[string]interface{}{
+						"idTagInfo": map[string]interface{}{
+							"status": "Accepted",
+						},
+					},
+				}
+
+				if err := conn.WriteJSON(response); err != nil {
+					fmt.Println("❌ Failed to send StopTransaction conf:", err)
+				} else {
+					fmt.Println("🧹 Transaction cleared for", chargerID)
+				}
 			}
 		}
 
-		// ✅ Broadcast ไปยัง frontend ทุกตัว
+		// Broadcast ทุก message ไปให้ frontend ดู log
 		broadcastToFrontend(msg)
 	}
 }
 
 // ============================================================================
-// 🔸 Broadcast ข้อมูลให้ทุก frontend ที่เชื่อมอยู่
+// 📡 Broadcast
 // ============================================================================
 func broadcastToFrontend(msg []byte) {
 	clientsMu.Lock()
@@ -145,4 +268,128 @@ func broadcastToFrontend(msg []byte) {
 			delete(clients, client)
 		}
 	}
+}
+
+// ============================================================================
+// 🚀 Send RemoteStartTransaction
+// ============================================================================
+func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string) error {
+	chargersMu.Lock()
+	conn, ok := chargers[chargerID]
+	chargersMu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("❌ charger %s not connected", chargerID)
+	}
+
+	messageID := fmt.Sprintf("remote-start-%s", chargerID)
+
+	frame := []interface{}{
+		2,
+		messageID,
+		"RemoteStartTransaction",
+		map[string]interface{}{
+			"connectorId": connectorID,
+			"idTag":       idTag,
+		},
+	}
+
+	if err := conn.WriteJSON(frame); err != nil {
+		fmt.Println("❌ Failed to send RemoteStartTransaction:", err)
+		return err
+	}
+
+	fmt.Println("➡️ RemoteStartTransaction sent to", chargerID)
+	return nil
+}
+
+// ============================================================================
+// ⛔ Send RemoteStopTransaction
+// ============================================================================
+func SendRemoteStopTransaction(chargerID string, txID int) error {
+	chargersMu.Lock()
+	conn, ok := chargers[chargerID]
+	chargersMu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("❌ charger %s not connected", chargerID)
+	}
+
+	messageID := fmt.Sprintf("remote-stop-%s", chargerID)
+
+	frame := []interface{}{
+		2,
+		messageID,
+		"RemoteStopTransaction",
+		map[string]interface{}{
+			"transactionId": txID,
+		},
+	}
+
+	if err := conn.WriteJSON(frame); err != nil {
+		fmt.Println("❌ Failed to send RemoteStopTransaction:", err)
+		return err
+	}
+
+	fmt.Println("➡️ RemoteStopTransaction sent to", chargerID, "txID =", txID)
+	return nil
+}
+
+// ============================================================================
+// ▶ API: RemoteStart
+// ============================================================================
+type RemoteStartRequest struct {
+	ChargerID   string `json:"chargerId"`
+	ConnectorID int    `json:"connectorId"`
+	IdTag       string `json:"idTag"`
+}
+
+func RemoteStartHandler(c *gin.Context) {
+	var req RemoteStartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "invalid body"})
+		return
+	}
+
+	if req.ConnectorID <= 0 {
+		req.ConnectorID = 1
+	}
+	if req.IdTag == "" {
+		req.IdTag = "EV-SIM-001"
+	}
+
+	if err := SendRemoteStartTransaction(req.ChargerID, req.ConnectorID, req.IdTag); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "RemoteStartTransaction sent"})
+}
+
+// ============================================================================
+// ▶ API: RemoteStop
+// ============================================================================
+type RemoteStopRequest struct {
+	ChargerID string `json:"chargerId"`
+}
+
+func RemoteStopHandler(c *gin.Context) {
+	var req RemoteStopRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "invalid body"})
+		return
+	}
+
+	txID, ok := getTransactionID(req.ChargerID)
+	if !ok {
+		c.JSON(400, gin.H{"error": "no active transaction"})
+		return
+	}
+
+	if err := SendRemoteStopTransaction(req.ChargerID, txID); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "RemoteStopTransaction sent"})
 }

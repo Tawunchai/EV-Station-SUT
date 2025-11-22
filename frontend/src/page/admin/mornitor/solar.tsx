@@ -7,6 +7,7 @@ import {
 } from "react-icons/fi";
 import { connectSolarSocket } from "../../../services";
 
+import Ocppconnect from "./test"
 /** ---------- Types ---------- */
 type Parameter = {
   name: string;
@@ -281,6 +282,7 @@ const Index: React.FC = () => {
 
         <div className="h-10" />
       </main>
+      <Ocppconnect/>
     </div>
   );
 };
