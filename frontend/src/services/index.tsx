@@ -26,8 +26,8 @@ import { ChargingSessionInterface } from "../interface/IToken";
 
 //const apiUrl = "http://10.0.14.228:8000";
 //export const apiUrlPicture = "http://10.0.14.228:8000/";
-//const apiUrl = "http://192.168.1.141:8000";
-//export const apiUrlPicture = "http://192.168.1.141:8000/";
+//const apiUrl = "http://10.167.17.128:8000";
+//export const apiUrlPicture = "http://10.167.17.128:8000/";
 //export const apiUrlPicture = "http://localhost:8000/";
 //const apiUrl = "http://localhost:8000";
 export const apiUrlPicture = "https://payment-project-t4dj.onrender.com/";
@@ -2528,3 +2528,7 @@ export const GetChargingSessionByStatusAndUserID = async (
     return null;
   }
 };
+
+
+// ocpp
+

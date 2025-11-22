@@ -238,6 +238,8 @@ func main() {
 		//OCPP Test
 		public.GET("/ocpp/:chargerID", ocpp.HandleOCPP)
 		public.GET("/frontend", ocpp.HandleFrontend) // ส่งให้ frontend
+		public.POST("/ocpp/remote-start", ocpp.RemoteStartHandler)
+		public.POST("/ocpp/remote-stop", ocpp.RemoteStopHandler)
 
 		// 🌞 Solar WebSocket Routes
 		public.GET("/solar/:deviceID", solar.HandleSolar)   // สำหรับพี่คุณส่งข้อมูลเข้ามา
@@ -259,7 +261,7 @@ func main() {
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.0.14.228:5173") // frontend origin
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.0.14.228:5173") // frontend origin 10.167.17.128 10.0.14.228
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")

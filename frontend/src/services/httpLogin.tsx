@@ -5,7 +5,7 @@ import { UsersInterface } from "../interface/IUser";
 
 const apiUrl = "https://payment-project-t4dj.onrender.com";
 //const apiUrl = "http://10.0.14.228:8000";
-//const apiUrl = "http://192.168.53.128:8000";
+//const apiUrl = "http://10.167.17.128:8000";
 //const apiUrl = "http://192.168.1.141:8000";
 //const apiUrl = "http://localhost:8000";
 
