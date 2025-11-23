@@ -11,6 +11,7 @@ import {
   connectOcppSocket,
   remoteStartCharging,
   remoteStopCharging,
+  getChargerStatus, // ⭐ NEW
 } from "../../../services/ocpp";
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -41,7 +42,7 @@ const ChargingEV = () => {
   // ⭐ Modal ยืนยันยกเลิก
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
-  // ⭐ เก็บสถานะจาก OCPP StatusNotification
+  // ⭐ เก็บสถานะจาก OCPP StatusNotification / API
   const [ocppStatus, setOcppStatus] = useState<string>("Unknown");
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
@@ -90,6 +91,24 @@ const ChargingEV = () => {
 
     checkSession();
   }, [userID, navigate]);
+
+  // ⭐ NEW: เรียก API ถามสถานะตู้ครั้งแรกตอนเปิดหน้านี้เท่านั้น
+  useEffect(() => {
+    const fetchInitialStatus = async () => {
+      try {
+        // ตอนนี้ fix ที่ CP_1 ให้เหมือน remoteStart/Stop
+        const status = await getChargerStatus("CP_1");
+        if (status && typeof status.status === "string") {
+          setOcppStatus(status.status);
+        }
+      } catch (err) {
+        console.error("❌ getChargerStatus error:", err);
+        // ถ้า error ก็ปล่อยให้เป็น "Unknown" ไป
+      }
+    };
+
+    fetchInitialStatus();
+  }, []);
 
   // 👉 ฟัง WebSocket OCPP จาก /frontend เอา status จาก StatusNotification มาเก็บใน state
   useEffect(() => {
