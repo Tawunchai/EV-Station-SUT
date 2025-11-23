@@ -43,6 +43,21 @@ var (
 	txMu              sync.Mutex
 )
 
+// ⭐ NEW: โครงสร้างเก็บสถานะล่าสุดของแต่ละตู้
+type ChargerStatus struct {
+	ChargerID   string `json:"chargerId"`
+	ConnectorID int    `json:"connectorId"`
+	Status      string `json:"status"`
+	ErrorCode   string `json:"errorCode"`
+	Connected   bool   `json:"connected"`
+}
+
+// ⭐ NEW: map เก็บสถานะของแต่ละตู้
+var (
+	chargerStatuses = make(map[string]ChargerStatus)
+	statusMu        sync.Mutex
+)
+
 // สร้าง transaction id ไม่ซ้ำ
 func generateTransactionID() int {
 	txMu.Lock()
@@ -122,11 +137,30 @@ func HandleOCPP(c *gin.Context) {
 
 	fmt.Println("🚗 Charger connected:", chargerID)
 
+	// ⭐ NEW: อัปเดตสถานะว่า "connected"
+	statusMu.Lock()
+	st, ok := chargerStatuses[chargerID]
+	if !ok {
+		st = ChargerStatus{ChargerID: chargerID}
+	}
+	st.Connected = true
+	chargerStatuses[chargerID] = st
+	statusMu.Unlock()
+
 	defer func() {
 		chargersMu.Lock()
 		delete(chargers, chargerID)
 		chargersMu.Unlock()
 		fmt.Println("⚠️ Charger disconnected:", chargerID)
+
+		// ⭐ NEW: อัปเดตสถานะว่า "disconnected" แต่ยังจำ status ล่าสุดไว้
+		statusMu.Lock()
+		st, ok := chargerStatuses[chargerID]
+		if ok {
+			st.Connected = false
+			chargerStatuses[chargerID] = st
+		}
+		statusMu.Unlock()
 	}()
 
 	for {
@@ -135,9 +169,6 @@ func HandleOCPP(c *gin.Context) {
 			fmt.Println("❌ OCPP read error:", err)
 			break
 		}
-
-		// ❌ เดิมเคยส่ง "ready" กลับไปทุกครั้ง (ไม่ใช่ frame OCPP)
-		// _ = conn.WriteMessage(websocket.TextMessage, []byte("ready"))
 
 		var frame []interface{}
 		if err := json.Unmarshal(msg, &frame); err != nil {
@@ -201,11 +232,60 @@ func HandleOCPP(c *gin.Context) {
 				}
 
 			// ---------------------------------------------------------------
+			// ⭐ NEW: รับ StatusNotification จากตู้ แล้วเก็บสถานะไว้
+			case "StatusNotification":
+				fmt.Println("📥 StatusNotification from", chargerID)
+
+				// payload อยู่ช่องที่ 3
+				var connectorID int
+				var statusStr, errorCode string
+
+				if len(frame) >= 4 {
+					if payload, ok := frame[3].(map[string]interface{}); ok {
+						if cid, ok := payload["connectorId"].(float64); ok {
+							connectorID = int(cid)
+						}
+						if s, ok := payload["status"].(string); ok {
+							statusStr = s
+						}
+						if e, ok := payload["errorCode"].(string); ok {
+							errorCode = e
+						}
+					}
+				}
+
+				// อัปเดต map สถานะ
+				statusMu.Lock()
+				old, _ := chargerStatuses[chargerID]
+				newSt := ChargerStatus{
+					ChargerID:   chargerID,
+					ConnectorID: connectorID,
+					Status:      statusStr,
+					ErrorCode:   errorCode,
+					Connected:   true,
+				}
+				// ถ้าอยากเก็บค่าเก่า ๆ เพิ่มเติม สามารถ merge จาก old ได้
+				if old.ChargerID != "" {
+					// ตัวอย่าง: ถ้า connectorID ไม่ได้ส่งมา ให้ใช้ค่าเดิม
+					if newSt.ConnectorID == 0 {
+						newSt.ConnectorID = old.ConnectorID
+					}
+				}
+				chargerStatuses[chargerID] = newSt
+				statusMu.Unlock()
+
+				// ส่ง CALLRESULT กลับไปหาตู้
+				response := []interface{}{3, messageID, map[string]interface{}{}}
+				if err := conn.WriteJSON(response); err != nil {
+					fmt.Println("❌ Failed to send StatusNotification conf:", err)
+				} else {
+					fmt.Printf("✅ StatusNotification stored: %+v\n", newSt)
+				}
+
+			// ---------------------------------------------------------------
 			case "StartTransaction":
 				fmt.Println("🚗 StartTransaction received from", chargerID)
 
-				// 🔁 แทนที่จะ "continue" ถ้ามี session เดิมค้างอยู่
-				// เราเลือก overwrite session เดิมเสมอ (single session per charger)
 				transactionID := generateTransactionID()
 				saveTransactionID(chargerID, transactionID)
 
@@ -392,4 +472,32 @@ func RemoteStopHandler(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"message": "RemoteStopTransaction sent"})
+}
+
+// ============================================================================
+// ▶ API: Get Current Status (NEW)
+// ============================================================================
+
+// GET /ocpp/status/:chargerID
+func GetChargerStatusHandler(c *gin.Context) {
+	chargerID := c.Param("chargerID")
+
+	statusMu.Lock()
+	st, ok := chargerStatuses[chargerID]
+	statusMu.Unlock()
+
+	if !ok {
+		c.JSON(404, gin.H{"error": "no status for this charger"})
+		return
+	}
+
+	// double-check ว่ายัง connect อยู่ไหม
+	chargersMu.Lock()
+	_, connected := chargers[chargerID]
+	chargersMu.Unlock()
+	st.Connected = connected
+
+	c.JSON(200, gin.H{
+		"data": st,
+	})
 }

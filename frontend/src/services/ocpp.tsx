@@ -55,3 +55,31 @@ export const remoteStopCharging = async (params: { chargerId: string }) => {
 
   return res.data;
 };
+
+/** ==========================
+ *  Get Charger Status (NEW)
+ *  ========================== */
+
+// ให้ตรงกับ struct ChargerStatus ใน Go
+export interface ChargerStatus {
+  chargerId: string;
+  connectorId: number;
+  status: string;      // Available, Preparing, Charging, ...
+  errorCode: string;   // NoError, ...
+  connected: boolean;  // true = online, false = disconnected
+}
+
+// response รูปแบบ { data: { ...ChargerStatus } }
+interface ChargerStatusResponse {
+  data: ChargerStatus;
+}
+
+// GET /ocpp/status/:chargerID
+export const getChargerStatus = async (
+  chargerId: string
+): Promise<ChargerStatus> => {
+  const res = await axios.get<ChargerStatusResponse>(
+    `${apiUrl}/ocpp/status/${chargerId}`
+  );
+  return res.data.data;
+};

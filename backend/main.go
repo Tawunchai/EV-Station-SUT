@@ -242,13 +242,16 @@ func main() {
 		public.POST("/ocpp/remote-start", ocpp.RemoteStartHandler)
 		public.POST("/ocpp/remote-stop", ocpp.RemoteStopHandler)
 
+		// ⭐ NEW: API ขอสถานะตู้
+		public.GET("/ocpp/status/:chargerID", ocpp.GetChargerStatusHandler)
+
 		// 🌞 Solar WebSocket Routes
 		public.GET("/solar/:deviceID", solar.HandleSolar)   // สำหรับพี่คุณส่งข้อมูลเข้ามา
 		public.GET("/solar/frontend", solar.HandleFrontend) // สำหรับเว็บคุณรับข้อมูลแบบ real-time
 
 		// ⚙️ Hardware WebSocket Routes
 		public.GET("/hardware/:deviceID", hardware.HandleHardware) // สำหรับอุปกรณ์จริง
-		public.GET("/hardware/frontend", hardware.HandleFrontend)           // สำหรับ React dashboard
+		public.GET("/hardware/frontend", hardware.HandleFrontend)  // สำหรับ React dashboard
 
 	}
 
