@@ -212,7 +212,6 @@ const New: React.FC = () => {
                 </span>
               </>
             )}
-            ใช่หรือไม่?
             <br />
             <span className="text-xs text-slate-500">
               การดำเนินการนี้ไม่สามารถย้อนกลับได้

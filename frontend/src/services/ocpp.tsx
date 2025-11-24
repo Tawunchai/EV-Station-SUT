@@ -4,6 +4,7 @@ import axios from "axios";
 
 //const apiUrl = "http://10.0.14.228:8000";
 const apiUrl = "https://payment-project-t4dj.onrender.com";
+//const apiUrl = "http://192.168.1.141:8000";
 
 export const connectOcppSocket = (onMessage: (data: any) => void): WebSocket => {
   const ws = new WebSocket(`${apiUrl}/frontend`);

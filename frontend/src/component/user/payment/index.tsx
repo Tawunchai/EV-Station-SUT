@@ -40,24 +40,41 @@ interface PaymentRadioProps {
   onChange: () => void;
   label: React.ReactNode;
 }
-const PaymentRadio = memo(({ id, name, checked, onChange, label }: PaymentRadioProps) => (
-  <label
-    htmlFor={id}
-    className={`flex items-center justify-between gap-3 rounded-xl border p-3 cursor-pointer transition
-    ${checked ? "border-blue-500 ring-1 ring-blue-500/50 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}
-  >
-    <div className="flex items-center gap-3">
-      <span
-        className={`inline-flex h-4 w-4 items-center justify-center rounded-full border 
+const PaymentRadio = memo(
+  ({ id, name, checked, onChange, label }: PaymentRadioProps) => (
+    <label
+      htmlFor={id}
+      className={`flex items-center justify-between gap-3 rounded-xl border p-3 cursor-pointer transition
+    ${
+      checked
+        ? "border-blue-500 ring-1 ring-blue-500/50 bg-blue-50"
+        : "border-gray-200 hover:border-gray-300"
+    }`}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={`inline-flex h-4 w-4 items-center justify-center rounded-full border 
         ${checked ? "border-blue-600" : "border-gray-300"}`}
-      >
-        <span className={`h-2 w-2 rounded-full ${checked ? "bg-blue-600" : "bg-transparent"}`} />
-      </span>
-      <div className="text-sm">{label}</div>
-    </div>
-    <input type="radio" id={id} name={name} checked={checked} onChange={onChange} className="sr-only" />
-  </label>
-));
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${
+              checked ? "bg-blue-600" : "bg-transparent"
+            }`}
+          />
+        </span>
+        <div className="text-sm">{label}</div>
+      </div>
+      <input
+        type="radio"
+        id={id}
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        className="sr-only"
+      />
+    </label>
+  )
+);
 
 // ================== Page ==================
 const Index: React.FC = () => {
@@ -65,7 +82,11 @@ const Index: React.FC = () => {
   const location = useLocation();
 
   // ⭐⭐⭐ รับค่า cabinet_id
-  const { chargers, cabinet_id } = location.state || { chargers: [], cabinet_id: null };
+  const { chargers, cabinet_id } =
+    (location.state as { chargers: any[]; cabinet_id: number | null }) || {
+      chargers: [],
+      cabinet_id: null,
+    };
   console.log("🟦 CABINET ID:", cabinet_id);
   console.log("🟩 Chargers:", chargers);
 
@@ -76,7 +97,10 @@ const Index: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoadingMethod, setIsLoadingMethod] = useState(true);
 
-  const totalAmount = chargers.reduce((sum: number, item: any) => sum + (item?.total || 0), 0);
+  const totalAmount = chargers.reduce(
+    (sum: number, item: any) => sum + (item?.total || 0),
+    0
+  );
 
   // โหลดข้อมูลผู้ใช้
   useEffect(() => {
@@ -118,14 +142,24 @@ const Index: React.FC = () => {
     fetchUserData();
   }, [navigate]);
 
-  // ฟังก์ชันส่งข้อมูลไป Hardware
-  const sendToHardware = (solar: number, grid: number) => {
+  // ฟังก์ชันส่งข้อมูลไป Hardware (ส่ง kWh + เปอร์เซ็นต์)
+  const sendToHardware = (
+    solar_kwh: number,
+    grid_kwh: number,
+    solar_percent: number,
+    grid_percent: number
+  ) => {
     try {
       const ws = connectHardwareSocket(() => {});
 
       ws.onopen = () => {
         console.log("Connected to Hardware WebSocket");
-        const command = { solar_kwh: solar, grid_kwh: grid };
+        const command = {
+          solar_kwh,
+          grid_kwh,
+          solar_percent,
+          grid_percent,
+        };
         sendHardwareCommand(ws, "hardware_001", command);
       };
 
@@ -143,7 +177,8 @@ const Index: React.FC = () => {
 
     // =============== QR Payment ===============
     if (paymentMethod === "qr") {
-      if (!selectedMethod?.ID) return message.error("ไม่พบ Method สำหรับ QR");
+      if (!selectedMethod?.ID)
+        return message.error("ไม่พบ Method สำหรับ QR");
 
       navigate("/user/payment-by-qrcode", {
         state: {
@@ -178,7 +213,7 @@ const Index: React.FC = () => {
 
       message.success("ชำระเงินด้วย Coin สำเร็จแล้ว");
 
-      // ⭐ สร้างข้อมูล Payment (เพิ่ม ev_cabinet_id)
+      // ⭐ สร้างข้อมูล Payment (แก้ ev_cabinet_id ให้เป็น number | undefined)
       const paymentData = {
         date: new Date().toISOString().split("T")[0],
         amount: Number(totalAmount),
@@ -186,7 +221,8 @@ const Index: React.FC = () => {
         method_id: coinMethod.ID!,
         reference_number: "",
         picture: null,
-        ev_cabinet_id: cabinet_id, // ⭐⭐⭐ ส่ง cabinet_id ไป Backend
+        // 👇 ตรงนี้แหละที่แก้ให้ไม่เป็น null แล้ว
+        ev_cabinet_id: cabinet_id ?? undefined,
       };
 
       const paymentResult = await CreatePayment(paymentData);
@@ -217,14 +253,24 @@ const Index: React.FC = () => {
         return;
       }
 
-      // ส่งข้อมูล solar + grid ไป hardware
-      const solar =
-        chargers.find((c: any) => c.name.toLowerCase().includes("solar"))?.power || 0;
+      // ส่งข้อมูล solar + grid + เปอร์เซ็นต์ ไป hardware
+      const solarCharger = Array.isArray(chargers)
+        ? chargers.find((c: any) =>
+            String(c.name || "").toLowerCase().includes("solar")
+          )
+        : null;
+      const gridCharger = Array.isArray(chargers)
+        ? chargers.find((c: any) =>
+            String(c.name || "").toLowerCase().includes("grid")
+          )
+        : null;
 
-      const grid =
-        chargers.find((c: any) => c.name.toLowerCase().includes("grid"))?.power || 0;
+      const solarKwh = solarCharger?.power || 0;
+      const gridKwh = gridCharger?.power || 0;
+      const solarPercent = solarCharger?.percent || 0;
+      const gridPercent = gridCharger?.percent || 0;
 
-      sendToHardware(solar, grid);
+      sendToHardware(solarKwh, gridKwh, solarPercent, gridPercent);
 
       localStorage.setItem("charging_token", token);
 
@@ -322,7 +368,9 @@ const Index: React.FC = () => {
                     ฿{Number(item.total || 0).toFixed(2)}
                   </span>
                 </div>
-                {index < chargers.length - 1 && <Divider className="!my-3" />}
+                {index < chargers.length - 1 && (
+                  <Divider className="!my-3" />
+                )}
               </div>
             ))}
           </div>
@@ -333,7 +381,9 @@ const Index: React.FC = () => {
           <SectionTitle>วิธีการชำระเงิน</SectionTitle>
           <div className="mt-3 space-y-3">
             {isLoadingMethod ? (
-              <p className="text-sm text-gray-500">กำลังโหลดวิธีการชำระเงิน...</p>
+              <p className="text-sm text-gray-500">
+                กำลังโหลดวิธีการชำระเงิน...
+              </p>
             ) : (
               <>
                 {qrMethod && (
@@ -345,7 +395,11 @@ const Index: React.FC = () => {
                     label={
                       <div className="flex items-center gap-2">
                         <span>{qrMethod.Medthod}</span>
-                        <img src={qrpayment} className="h-5" alt="PromptPay" />
+                        <img
+                          src={qrpayment}
+                          className="h-5"
+                          alt="PromptPay"
+                        />
                       </div>
                     }
                   />
@@ -379,7 +433,9 @@ const Index: React.FC = () => {
         <div className="mx-auto flex max-w-screen-sm items-center justify-between gap-3 px-4 py-3">
           <div className="flex flex-col leading-tight">
             <span className="text-xs text-gray-500">ยอดสุทธิ</span>
-            <span className="text-lg font-bold text-blue-700">฿{totalAmount.toFixed(2)}</span>
+            <span className="text-lg font-bold text-blue-700">
+              ฿{totalAmount.toFixed(2)}
+            </span>
           </div>
 
           <button

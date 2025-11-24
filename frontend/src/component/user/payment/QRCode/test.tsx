@@ -1,3 +1,4 @@
+// src/component/user/payment/payment-by-qrcode/index.tsx
 import React, { useRef, useEffect, useState } from "react";
 import { FaPaypal, FaUpload, FaPaperPlane, FaTimes } from "react-icons/fa";
 import { message, QRCode, Image } from "antd";
@@ -86,13 +87,23 @@ const PayPalCard: React.FC = () => {
     }
   }, [amountNumber, phoneNumber]);
 
-  // ส่งข้อมูลไป Hardware
-  const sendToHardware = (solar: number, grid: number) => {
+  // ส่งข้อมูลไป Hardware (⚡ ส่งทั้ง kWh + เปอร์เซ็นต์)
+  const sendToHardware = (
+    solarKwh: number,
+    gridKwh: number,
+    solarPercent: number,
+    gridPercent: number
+  ) => {
     try {
       const ws = connectHardwareSocket(() => {});
       ws.onopen = () => {
         console.log("✅ Connected to Hardware WebSocket");
-        const command = { solar_kwh: solar, grid_kwh: grid };
+        const command = {
+          solar_kwh: solarKwh,
+          grid_kwh: gridKwh,
+          solar_percent: solarPercent,
+          grid_percent: gridPercent,
+        };
         sendHardwareCommand(ws, "hardware_001", command);
         console.log("📤 Sent Command to Hardware:", command);
       };
@@ -105,12 +116,14 @@ const PayPalCard: React.FC = () => {
 
   // อัปโหลด Slip
   const handleUploadClick = () => fileInputRef.current?.click();
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {
       const file = event.target.files[0];
       setUploadedFile(file);
     }
   };
+
   const handleRemoveFile = () => {
     setUploadedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -138,7 +151,7 @@ const PayPalCard: React.FC = () => {
 
       message.success("ส่งหลักฐานการชำระเงินเรียบร้อยแล้ว");
 
-      // ⭐⭐⭐ เพิ่ม cabinet_id เข้า PaymentData
+      // ⭐⭐⭐ เพิ่ม cabinet_id เข้า PaymentData (แบบ type ถูกต้อง)
       const paymentData = {
         date: new Date().toISOString().split("T")[0],
         amount: Number(totalAmount),
@@ -146,7 +159,7 @@ const PayPalCard: React.FC = () => {
         method_id: MethodID,
         reference_number: result.data.ref,
         picture: uploadedFile,
-        ev_cabinet_id: cabinet_id, // <<<<<<<<<<<<<<<<<<<<<<⭐ สำคัญมาก
+        ev_cabinet_id: cabinet_id ?? undefined, // ✅ ให้เป็น number | undefined ตาม interface
       };
 
       const paymentResult = await CreatePayment(paymentData);
@@ -173,13 +186,29 @@ const PayPalCard: React.FC = () => {
           return;
         }
 
-        // ส่งข้อมูลไป Hardware
-        const solar =
-          chargers.find((c: any) => c.name.toLowerCase().includes("solar"))?.power || 0;
-        const grid =
-          chargers.find((c: any) => c.name.toLowerCase().includes("grid"))?.power || 0;
+        // 🔁 ส่งข้อมูลไป Hardware (ทั้ง kWh + เปอร์เซ็นต์เหมือนหน้า Coin)
+        const solarItem =
+          Array.isArray(chargers) &&
+          chargers.find((c: any) =>
+            typeof c.name === "string"
+              ? c.name.toLowerCase().includes("solar")
+              : false
+          );
 
-        sendToHardware(solar, grid);
+        const gridItem =
+          Array.isArray(chargers) &&
+          chargers.find((c: any) =>
+            typeof c.name === "string"
+              ? c.name.toLowerCase().includes("grid")
+              : false
+          );
+
+        const solarKwh = solarItem?.power || 0;
+        const gridKwh = gridItem?.power || 0;
+        const solarPercent = solarItem?.percent || 0;
+        const gridPercent = gridItem?.percent || 0;
+
+        sendToHardware(solarKwh, gridKwh, solarPercent, gridPercent);
 
         localStorage.setItem("charging_token", token);
 
@@ -211,27 +240,43 @@ const PayPalCard: React.FC = () => {
       setUploadedFile(file);
     }
   };
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => event.preventDefault();
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) =>
+    event.preventDefault();
 
   return (
     <div className="min-h-screen bg-white">
-
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-gradient-to-r from-blue-600 to-sky-500 text-white rounded-b-2xl shadow-md overflow-hidden"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header
+        className="sticky top-0 z-20 bg-gradient-to-r from-blue-600 to-sky-500 text-white rounded-b-2xl shadow-md overflow-hidden"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
           <button
             onClick={() => window.history.back()}
             aria-label="ย้อนกลับ"
             className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
           >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M15 18l-6-6 6-6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </button>
           <div className="flex items-center gap-2">
             <svg viewBox="0 0 24 24" className="h-5 w-5 text-white">
-              <path d="M13.5 2 4 13h6l-1.5 9L20 11h-6l1.5-9Z" fill="currentColor" />
+              <path
+                d="M13.5 2 4 13h6l-1.5 9L20 11h-6l1.5-9Z"
+                fill="currentColor"
+              />
             </svg>
             <span className="text-sm md:text-base font-semibold tracking-wide">
               Scan to Pay / Upload Slip
@@ -251,14 +296,18 @@ const PayPalCard: React.FC = () => {
       <main className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
         <div className="mb-4 flex items-center justify-between rounded-2xl bg-blue-50 px-4 py-3">
           <div className="text-sm text-blue-900">ยอดชำระทั้งหมด</div>
-          <div className="text-xl font-bold text-blue-700">฿{amountNumber.toFixed(2)}</div>
+          <div className="text-xl font-bold text-blue-700">
+            ฿{amountNumber.toFixed(2)}
+          </div>
         </div>
 
         <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <div className="flex flex-col items-center">
             <div className="flex items-center gap-2 mb-3">
               <FaPaypal className="text-blue-600 text-2xl" />
-              <span className="text-base font-semibold text-gray-800">PromptPay</span>
+              <span className="text-base font-semibold text-gray-800">
+                PromptPay
+              </span>
             </div>
 
             <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
@@ -274,14 +323,21 @@ const PayPalCard: React.FC = () => {
 
           {/* Upload Section */}
           <div className="mt-5">
-            <h2 className="text-sm font-semibold text-gray-900 mb-2">อัปโหลดสลิปชำระเงิน</h2>
+            <h2 className="text-sm font-semibold text-gray-900 mb-2">
+              อัปโหลดสลิปชำระเงิน
+            </h2>
 
             {uploadedFile ? (
               <div className="relative mb-3 flex justify-center border border-gray-200 rounded-xl p-2 bg-white">
                 <Image
                   src={URL.createObjectURL(uploadedFile)}
                   alt="Preview slip"
-                  style={{ maxHeight: 240, maxWidth: "100%", objectFit: "contain", borderRadius: 12 }}
+                  style={{
+                    maxHeight: 240,
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    borderRadius: 12,
+                  }}
                   placeholder
                 />
                 <button

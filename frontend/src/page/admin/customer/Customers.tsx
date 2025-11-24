@@ -418,31 +418,37 @@ const Customers: React.FC = () => {
       )}
 
       {/* Confirm Delete */}
+      {/* Confirm Delete */}
       <EvModal open={openConfirmModal} onClose={cancelDelete}>
-        <div className="w-[min(92vw,420px)] text-center px-5 py-5">
-          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl border border-blue-100 bg-blue-50">
+        <div className="w-[min(92vw,420px)] px-6 py-6 text-center">
+          {/* Icon */}
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 border border-blue-100">
             <Trash2 size={22} className="text-blue-600" />
           </div>
+
+          {/* Title */}
           <h3 className="text-base font-bold text-slate-900">
             ยืนยันการลบผู้ใช้
           </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            คุณต้องการลบ
+
+          {/* Main text */}
+          <p className="mt-2 text-sm text-slate-600">
+            คุณต้องการลบ{" "}
             {selectedUserRef.current?.CustomerName && (
-              <>
-                <br />
-                <span className="font-semibold text-blue-700">
-                  “{selectedUserRef.current.CustomerName}”
-                </span>
-              </>
+              <span className="font-semibold text-blue-700">
+                “{selectedUserRef.current.CustomerName}”
+              </span>
             )}{" "}
             ใช่หรือไม่?
-            <br />
-            <span className="text-xs text-slate-500">
-              การดำเนินการนี้ไม่สามารถย้อนกลับได้
-            </span>
           </p>
-          <div className="mt-4 flex items-center justify-center gap-2">
+
+          {/* Warning text */}
+          <p className="mt-1 text-xs text-slate-500">
+            การดำเนินการนี้ไม่สามารถย้อนกลับได้
+          </p>
+
+          {/* Buttons */}
+          <div className="mt-5 flex items-center justify-center gap-2">
             <button
               onClick={confirmDelete}
               disabled={confirmLoading}

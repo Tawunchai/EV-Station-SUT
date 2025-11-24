@@ -24,6 +24,7 @@ func ListEVData(c *gin.Context) {
         Preload("Employee.User").
         Preload("Status").
         Preload("Type").
+		Preload("EnergySource").
         Preload("Cabinets"). // ⭐ โหลด cabinets (many-to-many)
         Find(&evs)
 
@@ -50,7 +51,7 @@ func UpdateEVByID(c *gin.Context) {
 	file, err := c.FormFile("picture")
 	if err == nil && file != nil {
 		uploadDir := "uploads/evcharging"
-		os.MkdirAll(uploadDir, os.ModePerm)
+		_ = os.MkdirAll(uploadDir, os.ModePerm)
 
 		ext := filepath.Ext(file.Filename)
 		newName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
@@ -61,7 +62,7 @@ func UpdateEVByID(c *gin.Context) {
 		}
 	}
 
-	// อัปเดตฟิลด์ปกติ
+	// -------- อัปเดตฟิลด์ปกติ --------
 	if v := c.PostForm("name"); v != "" {
 		ev.Name = v
 	}
@@ -81,13 +82,21 @@ func UpdateEVByID(c *gin.Context) {
 		p, _ := strconv.ParseUint(v, 10, 64)
 		ev.TypeID = uint(p)
 	}
+
+	// ⭐ ใหม่: อัปเดต EnergySourceID (Solar / Grid)
+	if v := c.PostForm("energySourceID"); v != "" {
+		if p, err := strconv.ParseUint(v, 10, 64); err == nil {
+			ev.EnergySourceID = uint(p)
+		}
+	}
+
 	if v := c.PostForm("employeeID"); v != "" {
 		p, _ := strconv.ParseUint(v, 10, 64)
 		tmp := uint(p)
 		ev.EmployeeID = &tmp
 	}
 
-	// ⭐ อัปเดต Cabinets (รองรับ Many-to-Many)
+	// -------- อัปเดต Cabinets (Many-to-Many) --------
 	cabinetIDsStr := c.PostForm("cabinetIDs") // เช่น "1,2,3"
 
 	if cabinetIDsStr != "" {
@@ -112,15 +121,20 @@ func UpdateEVByID(c *gin.Context) {
 		return
 	}
 
-	// โหลดข้อมูลกลับ
+	// โหลดข้อมูลกลับ (พร้อม EnergySource)
 	db.Preload("Employee.User").
 		Preload("Status").
 		Preload("Type").
+		Preload("EnergySource"). // ⭐ preload แหล่งพลังงาน
 		Preload("Cabinets").
 		First(&ev, id)
 
-	c.JSON(http.StatusOK, gin.H{"message": "อัปเดตข้อมูล EV สำเร็จ", "data": ev})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "อัปเดตข้อมูล EV สำเร็จ",
+		"data":    ev,
+	})
 }
+
 
 func CreateEV(c *gin.Context) {
 	file, err := c.FormFile("picture")
@@ -133,6 +147,7 @@ func CreateEV(c *gin.Context) {
 		for _, t := range validTypes {
 			if file.Header.Get("Content-Type") == t {
 				isValid = true
+				break
 			}
 		}
 		if !isValid {
@@ -141,7 +156,7 @@ func CreateEV(c *gin.Context) {
 		}
 
 		uploadDir := "uploads/evcharging"
-		os.MkdirAll(uploadDir, os.ModePerm)
+		_ = os.MkdirAll(uploadDir, os.ModePerm)
 
 		ext := filepath.Ext(file.Filename)
 		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
@@ -156,12 +171,20 @@ func CreateEV(c *gin.Context) {
 		return
 	}
 
-	// รับข้อมูลจากฟอร์ม
+	// ---------------- รับข้อมูลจากฟอร์ม ----------------
 	name := c.PostForm("name")
 	description := c.PostForm("description")
 	price, _ := strconv.ParseFloat(c.PostForm("price"), 64)
 	statusID, _ := strconv.ParseUint(c.PostForm("statusID"), 10, 64)
 	typeID, _ := strconv.ParseUint(c.PostForm("typeID"), 10, 64)
+
+	// ⭐ รับ EnergySourceID (Solar / Grid)
+	energySourceIDStr := c.PostForm("energySourceID")
+	energySourceID, errES := strconv.ParseUint(energySourceIDStr, 10, 64)
+	if energySourceIDStr == "" || errES != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกแหล่งพลังงาน (Energy Source)"})
+		return
+	}
 
 	// Employee (อาจว่างได้)
 	var employeeID *uint
@@ -171,7 +194,7 @@ func CreateEV(c *gin.Context) {
 		employeeID = &tmp
 	}
 
-	// ⭐ รับ Cabinet IDs แบบ 1,2,3
+	// ⭐ รับ Cabinet IDs แบบ "1,2,3"
 	cabinetIDsStr := c.PostForm("cabinetIDs") // "1,2,3"
 	var cabinets []entity.EVCabinet
 
@@ -180,20 +203,23 @@ func CreateEV(c *gin.Context) {
 		for _, idStr := range idStrings {
 			id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
 			if err == nil {
-				cabinets = append(cabinets, entity.EVCabinet{Model: gorm.Model{ID: uint(id)}})
+				cabinets = append(cabinets, entity.EVCabinet{
+					Model: gorm.Model{ID: uint(id)},
+				})
 			}
 		}
 	}
 
-	// ⭐ สร้าง EVcharging (ยังไม่ผูกตู้ตอนนี้)
+	// ---------------- สร้าง EVcharging ----------------
 	ev := entity.EVcharging{
-		Name:        name,
-		Description: description,
-		Price:       price,
-		Picture:     filePath,
-		EmployeeID:  employeeID,
-		StatusID:    uint(statusID),
-		TypeID:      uint(typeID),
+		Name:           name,
+		Description:    description,
+		Price:          price,
+		Picture:        filePath,
+		EmployeeID:     employeeID,
+		StatusID:       uint(statusID),
+		TypeID:         uint(typeID),
+		EnergySourceID: uint(energySourceID), // ⭐ ผูก EnergySourceID
 	}
 
 	db := config.DB()
@@ -203,20 +229,28 @@ func CreateEV(c *gin.Context) {
 		return
 	}
 
-	// ⭐ ผูก Many-to-Many
+	// ⭐ ผูก Many-to-Many กับ Cabinets
 	if len(cabinets) > 0 {
-		db.Model(&ev).Association("Cabinets").Append(cabinets)
+		if err := db.Model(&ev).Association("Cabinets").Append(cabinets); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ผูกตู้ชาร์จไม่สำเร็จ"})
+			return
+		}
 	}
 
 	// โหลดกลับพร้อม relation
 	db.Preload("Employee.User").
 		Preload("Status").
 		Preload("Type").
+		Preload("EnergySource"). // ⭐ โหลด EnergySource กลับไปให้ frontend ใช้
 		Preload("Cabinets").
 		First(&ev, ev.ID)
 
-	c.JSON(http.StatusCreated, gin.H{"message": "สร้างข้อมูล EV สำเร็จ", "data": ev})
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "สร้างข้อมูล EV สำเร็จ",
+		"data":    ev,
+	})
 }
+
 
 func DeleteEVByID(c *gin.Context) {
 	id := c.Param("id")

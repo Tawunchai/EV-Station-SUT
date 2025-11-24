@@ -1,6 +1,7 @@
 import { EmployeeInterface } from "./IEmployee";
 import { StatusInterface } from "./IStatus";
 import { TypeInterface } from "./IType";
+import { EnergySourceInterface } from "./IEnergySource";
 
 export interface EVCabinetInterface {
   ID?: number;
@@ -28,6 +29,7 @@ export interface EVchargingInterface {
   Employee?: EmployeeInterface;
   Status?: StatusInterface;
   Type?: TypeInterface;
+  EnergySource?:EnergySourceInterface;
 
   EmployeeID?: number;
   StatusID?: number;

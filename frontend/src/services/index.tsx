@@ -23,6 +23,8 @@ import { BookingInterface,EVCabinetInterface } from "../interface/IBooking";
 import { ModalInterface } from "../interface/ICarCatalog";
 import { BrandInterface } from "../interface/IBrand";
 import { ChargingSessionInterface } from "../interface/IToken";
+import { EnergySourceInterface } from "../interface/IEnergySource";
+import { SolarInterface } from "../interface/ISolar";
 
 //const apiUrl = "http://10.0.14.228:8000";
 //export const apiUrlPicture = "http://10.0.14.228:8000/";
@@ -30,6 +32,8 @@ import { ChargingSessionInterface } from "../interface/IToken";
 //export const apiUrlPicture = "http://10.167.17.128:8000/";
 //export const apiUrlPicture = "http://localhost:8000/";
 //const apiUrl = "http://localhost:8000";
+//export const apiUrlPicture = "http://192.168.1.141:8000/";
+//const apiUrl = "http://192.168.1.141:8000";
 export const apiUrlPicture = "https://payment-project-t4dj.onrender.com/";
 const apiUrl = "https://payment-project-t4dj.onrender.com";
 
@@ -2345,11 +2349,17 @@ export const connectOcppSocket = (onMessage: (data: any) => void) => {
   return ws;
 };
 
-export const connectSolarSocket = (onMessage: (data: any) => void) => {
-  const ws = new WebSocket(`${apiUrl}/solar/frontend`);
+export const connectSolarSocket = (
+  onMessage: (data: any) => void,
+  deviceId: string
+) => {
+  // ⭐ ใส่ deviceID ใน query param
+  const ws = new WebSocket(`${apiUrl}/solar/frontend?deviceID=${deviceId}`);
 
   ws.onopen = () => {
-    console.log("✅ Connected to Go Solar WebSocket Server");
+    console.log(
+      `✅ Connected to Go Solar WebSocket Server for device: ${deviceId}`
+    );
   };
 
   ws.onmessage = (event) => {
@@ -2373,6 +2383,7 @@ export const connectSolarSocket = (onMessage: (data: any) => void) => {
 
   return ws;
 };
+
 
 
 /** 🌐 เชื่อมต่อ WebSocket ไปยัง Backend Hardware */
@@ -2403,6 +2414,21 @@ export const connectHardwareSocket = (onMessage: (data: any) => void) => {
   };
 
   return ws;
+};
+
+/** 🔧 ส่งคำสั่งดึงข้อมูลพลังงาน (Solar + Grid) */
+export const requestEnergyUsage = async (deviceID: string) => {
+  try {
+    const response = await axios.post(`${apiUrl}/hardware/request-energy`, {
+      device_id: deviceID,
+    });
+
+    console.log("📤 Sent command: get_energy_usage →", deviceID);
+    return response.data;
+  } catch (err) {
+    console.error("❌ Failed to request energy usage:", err);
+    throw err;
+  }
 };
 
 /** 📤 ส่งคำสั่งจาก Web → Backend → Hardware */
@@ -2523,6 +2549,176 @@ export const GetChargingSessionByStatusAndUserID = async (
   } catch (error: any) {
     console.error(
       "❌ Error fetching charging session:",
+      error.response?.data || error.message
+    );
+    return null;
+  }
+};
+
+export const ListEnergySource = async (): Promise<EnergySourceInterface[] | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/energy-sources`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data;
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching energy source data:", error);
+    return null;
+  }
+};
+
+// ===============================
+//   List Solar ทั้งหมด
+//   GET /solars
+// ===============================
+export const ListSolar = async (): Promise<SolarInterface[] | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/solars`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data as SolarInterface[];
+    } else {
+      console.error("Unexpected status from ListSolar:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching solars:", error);
+    return null;
+  }
+};
+
+// ===============================
+//   ดึง Solar ตาม ID
+//   GET /solar/:id
+// ===============================
+export const GetSolarByID = async (
+  id: number
+): Promise<SolarInterface | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/solars/${id}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data as SolarInterface;
+    } else {
+      console.error("Unexpected status from GetSolarByID:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching solar by id:", error);
+    return null;
+  }
+};
+
+// ===============================
+//   Create Solar
+//   POST /create-solar
+//   ใช้ FormData คล้าย CreateNews (เพราะ backend ใช้ c.PostForm)
+// ===============================
+export const CreateSolar = async (
+  formData: FormData
+): Promise<{ message: string; data: SolarInterface } | null> => {
+  try {
+    const response = await axios.post(`${apiUrl}/create-solar`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 201) {
+      return response.data;
+    } else {
+      console.error("Unexpected status from CreateSolar:", response.status);
+      return null;
+    }
+  } catch (error: any) {
+    console.error(
+      "Error creating solar:",
+      error.response?.data || error.message
+    );
+    return null;
+  }
+};
+
+// ===============================
+//   Update Solar by ID
+//   PUT /update-solar/:id
+//   ใช้ FormData เช่นเดียวกับ CreateSolar
+// ===============================
+export const UpdateSolarByID = async (
+  id: number,
+  formData: FormData
+): Promise<{ message: string; data: SolarInterface } | null> => {
+  try {
+    const response = await axios.put(
+      `${apiUrl}/update-solar/${id}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          ...getAuthHeader(),
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data;
+    } else {
+      console.error("Unexpected status from UpdateSolarByID:", response.status);
+      return null;
+    }
+  } catch (error: any) {
+    console.error(
+      "Error updating solar:",
+      error.response?.data || error.message
+    );
+    return null;
+  }
+};
+
+// ===============================
+//   Delete Solar by ID
+//   DELETE /delete-solar/:id
+// ===============================
+export const DeleteSolar = async (
+  id: number
+): Promise<{ message: string } | null> => {
+  try {
+    const response = await axios.delete(`${apiUrl}/delete-solar/${id}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data as { message: string };
+    } else {
+      console.error("Unexpected status from DeleteSolar:", response.status);
+      return null;
+    }
+  } catch (error: any) {
+    console.error(
+      "Error deleting solar:",
       error.response?.data || error.message
     );
     return null;

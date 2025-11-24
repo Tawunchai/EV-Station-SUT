@@ -3,7 +3,7 @@ import { Upload, message, Select } from "antd";
 import ImgCrop from "antd-img-crop";
 import { StatusInterface } from "../../../../interface/IStatus";
 import { TypeInterface } from "../../../../interface/IType";
-import { CreateEV, ListCabinetsEV } from "../../../../services/index";
+import { CreateEV, ListCabinetsEV, ListEnergySource } from "../../../../services/index";
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 import {
   FaTimes,
@@ -15,6 +15,7 @@ import {
   FaInfoCircle,
   FaChargingStation,
 } from "react-icons/fa";
+import { EnergySourceInterface } from "../../../../interface/IEnergySource";
 
 interface CreateEVModalProps {
   open: boolean;
@@ -44,6 +45,10 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
   const [statusID, setStatusID] = useState<number | undefined>(undefined);
   const [typeID, setTypeID] = useState<number | undefined>(undefined);
 
+  // ⭐ Energy Source (Solar / Grid)
+  const [energySourceID, setEnergySourceID] = useState<number | undefined>(undefined);
+  const [energySourceList, setEnergySourceList] = useState<EnergySourceInterface[]>([]);
+
   // ⭐ เลือกหลาย Cabinet
   const [selectedCabinets, setSelectedCabinets] = useState<number[]>([]);
 
@@ -71,7 +76,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
     fetchEmployee();
   }, []);
 
-  // โหลด Cabinet
+  // โหลด Cabinet + EnergySource ตอนเปิด modal
   useEffect(() => {
     const fetchCab = async () => {
       try {
@@ -85,7 +90,24 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
         message.error("โหลดข้อมูล Cabinet ไม่สำเร็จ");
       }
     };
-    if (open) fetchCab();
+
+    const fetchEnergySources = async () => {
+      try {
+        const res = await ListEnergySource();
+        if (Array.isArray(res)) {
+          setEnergySourceList(res);
+        } else {
+          setEnergySourceList([]);
+        }
+      } catch {
+        message.error("โหลดข้อมูล Energy Source ไม่สำเร็จ");
+      }
+    };
+
+    if (open) {
+      fetchCab();
+      fetchEnergySources();
+    }
   }, [open]);
 
   // Reset เมื่อเปิด modal
@@ -96,6 +118,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
       setPrice("");
       setStatusID(undefined);
       setTypeID(undefined);
+      setEnergySourceID(undefined);
       setSelectedCabinets([]); // reset
       setFileList([]);
       setSubmitting(false);
@@ -114,6 +137,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
       !price ||
       !statusID ||
       !typeID ||
+      !energySourceID || // ⭐ ต้องเลือก Energy Source ด้วย
       selectedCabinets.length === 0 ||
       fileList.length === 0
     ) {
@@ -129,6 +153,9 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
       formData.append("price", price);
       formData.append("statusID", String(statusID));
       formData.append("typeID", String(typeID));
+
+      // ⭐ ส่ง Energy Source ID → backend (key ต้องตรงกับ Go: energySourceID)
+      formData.append("energySourceID", String(energySourceID));
 
       // ⭐ ส่งหลายตู้ → "1,3,5"
       formData.append("cabinetIDs", selectedCabinets.join(","));
@@ -278,6 +305,25 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
                   options={typeList.map((t) => ({
                     label: t.Type,
                     value: t.ID,
+                  }))}
+                  allowClear
+                  size="large"
+                />
+              </label>
+
+              {/* ENERGY SOURCE */}
+              <label className="flex flex-col gap-1 md:col-span-2">
+                <span className="text-xs flex items-center gap-2">
+                  <FaBolt className="text-blue-500" /> แหล่งพลังงาน (Energy Source)
+                </span>
+                <Select
+                  className="w-full"
+                  placeholder="เลือกแหล่งพลังงาน เช่น Solar / Grid"
+                  value={energySourceID}
+                  onChange={(v) => setEnergySourceID(v)}
+                  options={energySourceList.map((es) => ({
+                    label: es.Name,
+                    value: es.ID,
                   }))}
                   allowClear
                   size="large"

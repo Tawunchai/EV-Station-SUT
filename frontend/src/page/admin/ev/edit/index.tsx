@@ -3,7 +3,12 @@ import { Upload, message, Select } from "antd";
 import ImgCrop from "antd-img-crop";
 import { StatusInterface } from "../../../../interface/IStatus";
 import { TypeInterface } from "../../../../interface/IType";
-import { UpdateEVByID, ListCabinetsEV, apiUrlPicture } from "../../../../services";
+import {
+  UpdateEVByID,
+  ListCabinetsEV,
+  apiUrlPicture,
+  ListEnergySource,
+} from "../../../../services";
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 import {
   FaTimes,
@@ -14,7 +19,9 @@ import {
   FaListAlt,
   FaInfoCircle,
   FaChargingStation,
+  FaBolt,
 } from "react-icons/fa";
+import { EnergySourceInterface } from "../../../../interface/IEnergySource";
 
 interface EditEVModalProps {
   open: boolean;
@@ -46,6 +53,10 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
   const [statusID, setStatusID] = useState<number | undefined>(undefined);
   const [typeID, setTypeID] = useState<number | undefined>(undefined);
 
+  // ⭐ Energy Source (Solar / Grid)
+  const [energySourceID, setEnergySourceID] = useState<number | undefined>(undefined);
+  const [energySourceList, setEnergySourceList] = useState<EnergySourceInterface[]>([]);
+
   // ⭐ multi-cabinet
   const [selectedCabinets, setSelectedCabinets] = useState<number[]>([]);
 
@@ -70,7 +81,7 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
     fetchEmployee();
   }, []);
 
-  // โหลด Cabinets
+  // โหลด Cabinets + EnergySource ตอนเปิด modal
   useEffect(() => {
     const fetchCab = async () => {
       try {
@@ -81,7 +92,24 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
         message.error("โหลดข้อมูล Cabinet ไม่สำเร็จ");
       }
     };
-    if (open) fetchCab();
+
+    const fetchEnergySource = async () => {
+      try {
+        const res = await ListEnergySource();
+        if (Array.isArray(res)) {
+          setEnergySourceList(res);
+        } else {
+          setEnergySourceList([]);
+        }
+      } catch {
+        message.error("โหลดข้อมูล Energy Source ไม่สำเร็จ");
+      }
+    };
+
+    if (open) {
+      fetchCab();
+      fetchEnergySource();
+    }
   }, [open]);
 
   // โหลดข้อมูล EV ที่จะ edit
@@ -90,10 +118,23 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
 
     setName(evCharging.Name ?? "");
     setDescription(evCharging.Description ?? "");
-    setPrice(evCharging.Price ?? "");
+    setPrice(
+      evCharging.Price !== undefined && evCharging.Price !== null
+        ? String(evCharging.Price)
+        : ""
+    );
 
     setStatusID(evCharging.StatusID ?? undefined);
     setTypeID(evCharging.TypeID ?? undefined);
+
+    // ⭐ ตั้งค่า EnergySource จากข้อมูลเดิม
+    if (evCharging.EnergySourceID) {
+      setEnergySourceID(evCharging.EnergySourceID);
+    } else if (evCharging.EnergySource?.ID) {
+      setEnergySourceID(evCharging.EnergySource.ID);
+    } else {
+      setEnergySourceID(undefined);
+    }
 
     // ⭐ multi cabinet → เซ็ตค่าเป็น array [1, 2, 3]
     if (Array.isArray(evCharging.Cabinets)) {
@@ -126,7 +167,15 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
   const handleSubmit = async () => {
     if (!evCharging?.ID) return message.error("ข้อมูล EV ไม่ถูกต้อง");
 
-    if (!name || !description || !price || !statusID || !typeID || selectedCabinets.length === 0) {
+    if (
+      !name ||
+      !description ||
+      !price ||
+      !statusID ||
+      !typeID ||
+      !energySourceID || // ⭐ บังคับให้เลือก Energy Source
+      selectedCabinets.length === 0
+    ) {
       return message.error("กรุณากรอกข้อมูลให้ครบถ้วน");
     }
 
@@ -136,6 +185,9 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
     formData.append("price", price);
     formData.append("statusID", String(statusID));
     formData.append("typeID", String(typeID));
+
+    // ⭐ ส่ง Energy Source ID ไป backend
+    formData.append("energySourceID", String(energySourceID));
 
     // ⭐ ส่งหลาย cabinet เช่น "1,3,5"
     formData.append("cabinetIDs", selectedCabinets.join(","));
@@ -203,7 +255,6 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
 
           {/* BODY */}
           <div className="px-5 py-5 bg-blue-50/40 space-y-4 overflow-y-auto">
-
             {/* Upload */}
             <div className="flex justify-center">
               <ImgCrop rotationSlider>
@@ -285,6 +336,25 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
                     label: t.Type,
                     value: t.ID,
                   }))}
+                  size="large"
+                />
+              </label>
+
+              {/* ENERGY SOURCE */}
+              <label className="flex flex-col gap-1 md:col-span-2">
+                <span className="text-xs flex items-center gap-2">
+                  <FaBolt className="text-blue-500" /> แหล่งพลังงาน (Energy Source)
+                </span>
+                <Select
+                  className="w-full"
+                  placeholder="เลือกแหล่งพลังงาน เช่น Solar / Grid"
+                  value={energySourceID}
+                  onChange={(v) => setEnergySourceID(v)}
+                  options={energySourceList.map((es) => ({
+                    label: es.Name,
+                    value: es.ID,
+                  }))}
+                  allowClear
                   size="large"
                 />
               </label>

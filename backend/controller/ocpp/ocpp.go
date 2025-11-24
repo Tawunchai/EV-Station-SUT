@@ -371,6 +371,7 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 		map[string]interface{}{
 			"connectorId": connectorID,
 			"idTag":       idTag,
+			"chargingProfile": nil,   // ⭐ NEW: บาง simulator ต้องการ field นี้
 		},
 	}
 

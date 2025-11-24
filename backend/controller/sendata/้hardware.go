@@ -21,13 +21,13 @@ var upgrader = websocket.Upgrader{
 // 🌐 เก็บ client ทั้งสองฝั่ง (frontend + hardware)
 // ======================================================
 var (
-	hardwareMu       sync.Mutex
-	frontendClients  = make(map[*websocket.Conn]bool)
-	hardwareClients  = make(map[string]*websocket.Conn) // deviceID → conn
+	hardwareMu      sync.Mutex
+	frontendClients = make(map[*websocket.Conn]bool)
+	hardwareClients = make(map[string]*websocket.Conn) // deviceID → conn
 )
 
 // ======================================================
-// 💻 FRONTEND — สำหรับ web dashboard (React)
+// 💻 FRONTEND — React Dashboard
 // ======================================================
 func HandleFrontend(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -41,10 +41,9 @@ func HandleFrontend(c *gin.Context) {
 	frontendClients[conn] = true
 	hardwareMu.Unlock()
 
-	fmt.Println("💻 Frontend connected to Hardware stream")
+	fmt.Println("💻 Frontend connected")
 
 	for {
-		// 📥 รอ message จาก web (เช่น คำสั่งให้ hardware ทำงาน)
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			hardwareMu.Lock()
@@ -54,18 +53,20 @@ func HandleFrontend(c *gin.Context) {
 			break
 		}
 
+		// Frontend ส่งคำสั่งมา → เด้งไปหา hardware
 		var data map[string]interface{}
 		if err := json.Unmarshal(msg, &data); err == nil {
 			deviceID, _ := data["device_id"].(string)
+
 			if payload, ok := data["command"]; ok {
-				sendCommandToHardware(deviceID, payload)
+				SendCommandToHardware(deviceID, payload)
 			}
 		}
 	}
 }
 
 // ======================================================
-// 🔋 HARDWARE — สำหรับอุปกรณ์จริง เช่น ESP32, Solar Controller
+// 🔋 HARDWARE — ESP32 / Solar Controller
 // ======================================================
 func HandleHardware(c *gin.Context) {
 	deviceID := c.Param("deviceID")
@@ -93,6 +94,7 @@ func HandleHardware(c *gin.Context) {
 			break
 		}
 
+		// แจ้ง hardware ว่าระบบพร้อมรับข้อมูล
 		conn.WriteMessage(websocket.TextMessage, []byte("ready"))
 
 		var jsonData map[string]interface{}
@@ -103,12 +105,13 @@ func HandleHardware(c *gin.Context) {
 
 		fmt.Printf("📦 Data from '%s': %s\n", deviceID, string(msg))
 
+		// ส่งข้อมูลจาก hardware → frontend ทุกตัว
 		broadcastToFrontend(msg)
 	}
 }
 
 // ======================================================
-// 📤 Broadcast จาก Hardware → ทุก frontend
+// 📤 Broadcast Hardware → Frontend
 // ======================================================
 func broadcastToFrontend(msg []byte) {
 	hardwareMu.Lock()
@@ -123,9 +126,9 @@ func broadcastToFrontend(msg []byte) {
 }
 
 // ======================================================
-// 📡 ส่งคำสั่งจาก frontend → hardware เฉพาะตัว
+// 📡 ส่งคำสั่งจากระบบไปที่ hardware เฉพาะตัว
 // ======================================================
-func sendCommandToHardware(deviceID string, payload interface{}) {
+func SendCommandToHardware(deviceID string, payload interface{}) {
 	hardwareMu.Lock()
 	defer hardwareMu.Unlock()
 
@@ -136,9 +139,10 @@ func sendCommandToHardware(deviceID string, payload interface{}) {
 	}
 
 	msg := map[string]interface{}{
-		"type":    "command",
+		"type": "command",
 		"payload": payload,
 	}
+
 	jsonMsg, _ := json.Marshal(msg)
 
 	if err := conn.WriteMessage(websocket.TextMessage, jsonMsg); err != nil {
@@ -148,4 +152,37 @@ func sendCommandToHardware(deviceID string, payload interface{}) {
 	} else {
 		fmt.Printf("✅ Sent command to '%s': %s\n", deviceID, string(jsonMsg))
 	}
+}
+
+// ======================================================
+// 🆕 Controller API: ขอข้อมูล Solar + Grid จาก Hardware
+// ======================================================
+type EnergyRequest struct {
+	DeviceID string `json:"device_id"`
+}
+
+func RequestEnergyUsage(c *gin.Context) {
+	var body EnergyRequest
+
+	if err := c.ShouldBindJSON(&body); err != nil || body.DeviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "device_id is required",
+		})
+		return
+	}
+
+	// 🧠 คำสั่งที่ต้องการส่งไป hardware
+	command := map[string]interface{}{
+		"command": "get_energy_usage",
+	}
+
+	jsonCmd, _ := json.Marshal(command)
+
+	// ส่งคำสั่งถึง hardware
+	SendCommandToHardware(body.DeviceID, jsonCmd)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "command sent to hardware",
+		"device_id": body.DeviceID,
+	})
 }
