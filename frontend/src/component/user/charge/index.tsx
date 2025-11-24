@@ -13,6 +13,10 @@ import {
   remoteStopCharging,
   getChargerStatus, // ⭐ NEW
 } from "../../../services/ocpp";
+import {
+  requestEnergyUsage,
+  connectHardwareSocket, // ⭐ NEW: WebSocket hardware
+} from "../../../services"; // ⭐ ดึง service ขอ Energy Usage + socket hardware
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -44,6 +48,11 @@ const ChargingEV = () => {
 
   // ⭐ เก็บสถานะจาก OCPP StatusNotification / API
   const [ocppStatus, setOcppStatus] = useState<string>("Unknown");
+
+  // ⭐ เก็บค่าจาก hardware (เอาไว้ log + future UI)
+  //@ts-ignore
+  const [solarKwh, setSolarKwh] = useState<number | null>(null);//@ts-ignore
+  const [gridKwh, setGridKwh] = useState<number | null>(null);
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
   useEffect(() => {
@@ -124,6 +133,49 @@ const ChargingEV = () => {
         }
       } catch (err) {
         console.error("Error parsing OCPP message:", err);
+      }
+    });
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
+  // ⭐ NEW: ฟัง WebSocket Hardware → ดูค่าที่ hardware ส่งกลับมา
+  useEffect(() => {
+    // connectHardwareSocket จะเชื่อมไปที่ `${apiUrl}/hardware/frontend`
+    const ws = connectHardwareSocket((data: any) => {
+      console.log("🔌 [HW] Raw message from backend → frontend:", data);
+
+      // ถ้า backend forward string มา (กรณี parse ไม่ได้)
+      if (typeof data === "string") {
+        console.log("🔹 [HW] String message:", data);
+        return;
+      }
+
+      // เราคาดหวังรูปแบบ:
+      // { type: "energy_usage", payload: { solar_kwh: 25.7, grid_kwh: 12.3 } }
+      if (data?.type === "energy_usage" && data?.payload) {
+        console.log("🔋 [HW] Energy usage payload:", data.payload);
+
+        const { solar_kwh, grid_kwh } = data.payload as {
+          solar_kwh?: number;
+          grid_kwh?: number;
+        };
+
+        // เก็บค่าลง state เผื่ออนาคตจะเอาไปโชว์ใน UI
+        if (typeof solar_kwh === "number") {
+          setSolarKwh(solar_kwh);
+        }
+        if (typeof grid_kwh === "number") {
+          setGridKwh(grid_kwh);
+        }
+
+        // log แยกอ่านง่าย
+        console.log("   🌞 solar_kwh =", solar_kwh);
+        console.log("   🔌 grid_kwh  =", grid_kwh);
+      } else {
+        console.log("ℹ️ [HW] Other hardware message:", data);
       }
     });
 
@@ -225,7 +277,7 @@ const ChargingEV = () => {
   }, [ocppStatus]);
 
   // ===========================================================
-  // ⭐ ปุ่ม "ยกเลิก" → Modal → remoteStopCharging + UpdateSessionStatus
+  // ⭐ ปุ่ม "ยกเลิก" → Modal → remoteStopCharging + UpdateSessionStatus + requestEnergyUsage
   // ===========================================================
   const confirmCancel = async () => {
     if (!paymentID) {
@@ -243,6 +295,16 @@ const ChargingEV = () => {
       const ok = await UpdateSessionStatusByPaymentID(paymentID);
 
       if (ok) {
+        // 3) 🔋 ขอข้อมูลพลังงาน (Solar/Grid) จาก hardware ทันทีที่ยกเลิกสำเร็จ
+        try {
+          const deviceIdForEnergy = "hardware_001";
+          await requestEnergyUsage(deviceIdForEnergy);
+          console.log("✅ requestEnergyUsage sent for device:", deviceIdForEnergy);
+        } catch (energyErr) {
+          console.error("⚠️ requestEnergyUsage error:", energyErr);
+        }
+
+        // 4) เคลียร์ state + ปิด modal + กลับหน้าแรก
         message.success("ยกเลิกการชาร์จสำเร็จ");
         setCharging(false);
         setIsComplete(false);
@@ -272,7 +334,7 @@ const ChargingEV = () => {
 
     try {
       await remoteStartCharging({
-        chargerId: "CP_1", // 🔹 fix ให้เริ่มจาก CP_1 ก่อน
+        chargerId: "CP_1",
         connectorId: 1,
         idTag: "EV-SIM-001",
       });
@@ -280,8 +342,8 @@ const ChargingEV = () => {
       message.success("ส่งคำสั่งเริ่มชาร์จไปยังตู้แล้ว");
       setHasStarted(true);
       setCharging(true);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("🔥 RemoteStart ERROR:", err.response?.data);
       message.error("ไม่สามารถส่งคำสั่งเริ่มชาร์จไปยังตู้ได้");
     }
   };
@@ -577,6 +639,16 @@ const ChargingEV = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* (อาจจะใช้แสดงค่าพลังงานในอนาคต)
+                <div className="rounded-xl bg-gray-50 px-4 py-3">
+                  <div className="text-[11px] text-gray-500">พลังงานที่ใช้</div>
+                  <div className="mt-1 text-xs text-gray-700 space-y-0.5">
+                    <div>🌞 Solar: {solarKwh ?? "-"} kWh</div>
+                    <div>🔌 Grid: {gridKwh ?? "-"} kWh</div>
+                  </div>
+                </div>
+                */}
               </div>
             </div>
 

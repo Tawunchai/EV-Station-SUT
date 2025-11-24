@@ -4,8 +4,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/robfig/cron/v3"
-
 	"github.com/Tawunchai/work-project/config"
 	"github.com/Tawunchai/work-project/controller/booking"
 	"github.com/Tawunchai/work-project/controller/brand"
@@ -29,17 +27,19 @@ import (
 	"github.com/Tawunchai/work-project/controller/report"
 	"github.com/Tawunchai/work-project/controller/review"
 	"github.com/Tawunchai/work-project/controller/role"
-	hardware "github.com/Tawunchai/work-project/controller/senddata"
+	hardware "github.com/Tawunchai/work-project/controller/sendata"
 	"github.com/Tawunchai/work-project/controller/sendemail"
 	"github.com/Tawunchai/work-project/controller/service"
 	"github.com/Tawunchai/work-project/controller/slip"
 	"github.com/Tawunchai/work-project/controller/solar"
+	Energy "github.com/Tawunchai/work-project/controller/source_energy"
 	"github.com/Tawunchai/work-project/controller/status"
 	tokening "github.com/Tawunchai/work-project/controller/token"
 	types "github.com/Tawunchai/work-project/controller/type"
 	"github.com/Tawunchai/work-project/controller/user"
 	"github.com/Tawunchai/work-project/middlewares"
 	"github.com/gin-gonic/gin"
+	"github.com/robfig/cron/v3"
 )
 
 const PORT = "8000"
@@ -140,6 +140,9 @@ func main() {
 
 		//gender
 		public.GET("/genders", gender.ListGenders)
+
+		//source_energy
+		public.GET("/energy-sources", Energy.ListEnergySource)
 
 		//Method
 		public.GET("/methods", method.ListMethods)
@@ -247,10 +250,16 @@ func main() {
 		// 🌞 Solar WebSocket Routes
 		public.GET("/solar/:deviceID", solar.HandleSolar)   // สำหรับพี่คุณส่งข้อมูลเข้ามา
 		public.GET("/solar/frontend", solar.HandleFrontend) // สำหรับเว็บคุณรับข้อมูลแบบ real-time
+		public.GET("solars", solar.ListSolar)
+		public.GET("solars/:id", solar.GetSolarByID)
+		public.POST("create-solar", solar.CreateSolar)
+		public.PUT("update-solar/:id", solar.UpdateSolarByID)
+		public.DELETE("delete-solar/:id", solar.DeleteSolarByID)
 
 		// ⚙️ Hardware WebSocket Routes
 		public.GET("/hardware/:deviceID", hardware.HandleHardware) // สำหรับอุปกรณ์จริง
 		public.GET("/hardware/frontend", hardware.HandleFrontend)  // สำหรับ React dashboard
+		public.POST("/hardware/request-energy", hardware.RequestEnergyUsage)
 
 	}
 
@@ -264,7 +273,7 @@ func main() {
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.0.14.228:5173") // frontend origin 10.167.17.128 10.0.14.228
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.0.14.228:5173") // frontend origin 10.167.17.128 10.0.14.228 192.168.1.141
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")

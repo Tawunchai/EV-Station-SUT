@@ -24,7 +24,7 @@ type HeaderProps = {
   scrollToValue: () => void;
 };
 
-const Hero = ({ }: HeaderProps) => {
+const Hero = ({}: HeaderProps) => {
   const [evList, setEVList] = useState<EVchargingInterface[]>([]);
   const [userList, setUserList] = useState<UsersInterface[]>([]);
   const [userID, setUserID] = useState<number | null>(null);
@@ -108,7 +108,6 @@ const Hero = ({ }: HeaderProps) => {
       <section className="relative w-full bg-white text-gray-900">
         <div className="mx-auto max-w-screen-xl px-4 md:px-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12 items-end pt-10 md:pt-14 pb-10 md:pb-16">
-            
             {/* LEFT */}
             <div className="flex flex-col gap-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700 w-max">
@@ -116,18 +115,20 @@ const Hero = ({ }: HeaderProps) => {
                 EV Charging Made Simple
               </div>
 
-              <h1 className="font-bold leading-tight tracking-tight text-3xl sm:text-4xl">
-                Discover the Best EV <br />
-                Charging Spots Near You
-              </h1>
+              {/* ห่อหัวข้อ + subtitle ด้วย flex-col */}
+              <div className="flex flex-col gap-2">
+                <h1 className="font-bold leading-tight tracking-tight text-3xl sm:text-4xl">
+                  Discover the Best EV <br />
+                  Charging Spots Near You
+                </h1>
 
-              <p className="text-[13px] sm:text-base text-gray-600">
-                ค้นหาสถานีชาร์จที่เหมาะกับคุณได้อย่างรวดเร็ว
-              </p>
+                <p className="text-[13px] sm:text-base text-gray-600">
+                  ค้นหาสถานีชาร์จที่เหมาะกับคุณได้อย่างรวดเร็ว
+                </p>
+              </div>
 
               {/* ⭐ ACTION BUTTON */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-
                 {/* 👉 ปุ่มเริ่มชาร์จ / กำลังชาร์จ */}
                 <button
                   className={`relative overflow-hidden inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-sm active:scale-[0.99] transition
@@ -171,40 +172,52 @@ const Hero = ({ }: HeaderProps) => {
 
               {/* Stats */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5 mt-2">
-                {Object.entries(namePriceSums).map(([name, total], index, arr) => {
-                  const isLast = index === arr.length - 1;
-                  const isOdd = arr.length % 2 === 1;
+                {Object.entries(namePriceSums).map(
+                  ([name, total], index, arr) => {
+                    const isLast = index === arr.length - 1;
+                    const isOdd = arr.length % 2 === 1;
 
-                  return (
-                    <div
-                      key={name}
-                      className={`
-                        rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_24px_rgba(2,6,23,0.06)]
-                        text-center sm:text-left
-                        ${isLast && isOdd ? "col-span-2" : ""}
-                      `}
-                    >
-                      <div className="flex items-center justify-center sm:justify-start gap-2">
-                        <FaChargingStation className="text-blue-600 text-lg" />
-                        <div className="text-2xl font-extrabold text-blue-700">
-                          {Number(total).toFixed(2)}
-                          <span className="text-blue-300"> ฿</span>
+                    return (
+                      <div
+                        key={name}
+                        className={`
+                          rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_24px_rgba(2,6,23,0.06)]
+                          text-center sm:text-left
+                          ${isLast && isOdd ? "col-span-2" : ""}
+                        `}
+                      >
+                        {/* icon + text group จัดเป็นคอลัมน์เอง */}
+                        <div className="flex items-center justify-center sm:justify-start gap-3">
+                          <FaChargingStation className="text-blue-600 text-lg" />
+                          <div className="flex flex-col items-start">
+                            <div className="text-2xl font-extrabold text-blue-700">
+                              {Number(total).toFixed(2)}
+                              <span className="text-blue-300"> ฿</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {name}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">{name}</div>
-                    </div>
-                  );
-                })}
+                    );
+                  }
+                )}
 
+                {/* การ์ด Members */}
                 <div className="col-span-2 sm:col-span-1 rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_24px_rgba(2,6,23,0.06)] text-center sm:text-left">
-                  <div className="flex items-center justify-center sm:justify-start gap-2">
+                  <div className="flex items-center justify-center sm:justify-start gap-3">
                     <FaUsers className="text-blue-600 text-lg" />
-                    <div className="text-2xl font-extrabold text-blue-700">
-                      <CountUp start={0} end={userList.length} duration={2} />
-                      <span className="text-blue-300"> +</span>
+                    <div className="flex flex-col items-start">
+                      <div className="text-2xl font-extrabold text-blue-700">
+                        <CountUp start={0} end={userList.length} duration={2} />
+                        <span className="text-blue-300"> +</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Members
+                      </div>
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Members</div>
                 </div>
               </div>
             </div>
@@ -254,7 +267,6 @@ const Hero = ({ }: HeaderProps) => {
       {/* ⭐ MODAL — เลือกตู้ระหว่างกำลังชาร์จ */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-
           {/* BACKDROP */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -292,7 +304,6 @@ const Hero = ({ }: HeaderProps) => {
 
             {/* CONTENT */}
             <div className="px-6 py-9 text-center flex flex-col items-center">
-
               <div className="relative mb-6">
                 <div className="absolute inset-0 blur-xl bg-blue-300 opacity-40 rounded-full"></div>
 
@@ -318,7 +329,6 @@ const Hero = ({ }: HeaderProps) => {
 
             {/* LIST CABINETS */}
             <div className="px-5 space-y-3 pb-4 max-h-[240px] overflow-y-auto">
-
               {sessions.map((s: any, i: number) => (
                 <button
                   key={i}
@@ -341,7 +351,6 @@ const Hero = ({ }: HeaderProps) => {
                   </div>
                 </button>
               ))}
-
             </div>
 
             {/* BUY MORE BUTTON */}

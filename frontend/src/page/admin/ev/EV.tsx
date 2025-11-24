@@ -49,12 +49,14 @@ type RowType = {
   Description: string;
   Price: number;
   Type: string;
+  EnergySource: string; // 🔋 แหล่งพลังงาน (Solar / Grid)
   Status: string;
   EmployeeName: string;
   Picture: string;
   EmployeeID?: number;
   StatusID?: number;
   TypeID?: number;
+  EnergySourceID?: number;
   Raw: any;
 };
 
@@ -68,6 +70,8 @@ type CabinetType = {
   Latitude?: number;
   Longitude?: number;
   EmployeeID?: number | null;
+  UrlWebsocket?: string | null;
+  ChargePoint?: string | null;
 };
 
 // ---------- Small Centered Modal Wrapper ----------
@@ -78,8 +82,16 @@ const EvModal: React.FC<{
 }> = ({ open, onClose, children }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <div className="relative w-full max-w-[420px] mx-4 md:mx-auto">
         <div className="mx-auto bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100">
           {children}
@@ -105,6 +117,8 @@ const CabinetModal: React.FC<{
   const [description, setDescription] = useState<string>("");
   const [latitude, setLatitude] = useState<string>("");
   const [longitude, setLongitude] = useState<string>("");
+  const [urlWebsocket, setUrlWebsocket] = useState<string>("");
+  const [chargePoint, setChargePoint] = useState<string>("");
   const [fileList, setFileList] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -126,6 +140,8 @@ const CabinetModal: React.FC<{
         ? String(initial.Longitude)
         : ""
     );
+    setUrlWebsocket(initial?.UrlWebsocket ?? "");
+    setChargePoint(initial?.ChargePoint ?? "");
     setSubmitting(false);
 
     if (initial?.Image) {
@@ -147,8 +163,10 @@ const CabinetModal: React.FC<{
     if (!name.trim()) return message.error("กรุณากรอกชื่อ Cabinet"), false;
     if (!location.trim()) return message.error("กรุณากรอก Location"), false;
     if (!status.trim()) return message.error("กรุณาเลือก Status"), false;
-    if (latitude && isNaN(Number(latitude))) return message.error("Latitude ต้องเป็นตัวเลข"), false;
-    if (longitude && isNaN(Number(longitude))) return message.error("Longitude ต้องเป็นตัวเลข"), false;
+    if (latitude && isNaN(Number(latitude)))
+      return message.error("Latitude ต้องเป็นตัวเลข"), false;
+    if (longitude && isNaN(Number(longitude)))
+      return message.error("Longitude ต้องเป็นตัวเลข"), false;
     return true;
   };
 
@@ -180,23 +198,30 @@ const CabinetModal: React.FC<{
       formData.append("status", status.trim());
       formData.append("latitude", latitude.trim());
       formData.append("longitude", longitude.trim());
-      formData.append("employeeID", String(employeeID));
+      formData.append("urlWebsocket", urlWebsocket.trim());
+      formData.append("chargePoint", chargePoint.trim());
+      if (employeeID) {
+        formData.append("employeeID", String(employeeID));
+      }
 
       // รูปภาพคีย์ "image" ตาม backend
       if (fileList.length > 0 && fileList[0].originFileObj) {
         formData.append("image", fileList[0].originFileObj);
       }
 
-      const result = isEdit && initial
-        ? await UpdateEVCabinetByID(initial.ID, formData)
-        : await CreateEVCabinet(formData);
+      const result =
+        isEdit && initial
+          ? await UpdateEVCabinetByID(initial.ID, formData)
+          : await CreateEVCabinet(formData);
 
       if (result) {
         message.success(isEdit ? "แก้ไข Cabinet สำเร็จ" : "สร้าง Cabinet สำเร็จ");
         onSaved();
         onClose();
       } else {
-        message.error(isEdit ? "ไม่สามารถแก้ไข Cabinet ได้" : "ไม่สามารถสร้าง Cabinet ได้");
+        message.error(
+          isEdit ? "ไม่สามารถแก้ไข Cabinet ได้" : "ไม่สามารถสร้าง Cabinet ได้"
+        );
       }
     } catch {
       message.error("เกิดข้อผิดพลาดระหว่างการบันทึก");
@@ -221,18 +246,31 @@ const CabinetModal: React.FC<{
   if (!open) return null;
 
   // ตรวจมือถือ (ง่าย ๆ ด้วย matchMedia)
-  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
+  const isMobile =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 768px)").matches;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={submitting ? undefined : onClose} />
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={submitting ? undefined : onClose}
+      />
       <div className="relative w-full max-w-[680px] mx-4 md:mx-auto mb-8 md:mb-0">
         {/* กล่อง modal ให้เป็น flex-col: header (fixed) + body (scroll) + footer (fixed) */}
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col"
-          style={{ maxHeight: isMobile ? "78vh" : "82vh" }}>
+        <div
+          className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col"
+          style={{ maxHeight: isMobile ? "78vh" : "82vh" }}
+        >
           {/* Header */}
-          <div className="px-5 pt-3 pb-4 bg-blue-600 text-white flex justify-between items-center"
-            style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}>
+          <div
+            className="px-5 pt-3 pb-4 bg-blue-600 text-white flex justify-between items-center"
+            style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}
+          >
             <h2 className="text-base md:text-lg font-semibold">
               {isEdit ? "แก้ไข EV Cabinet" : "เพิ่ม EV Cabinet"}
             </h2>
@@ -274,7 +312,9 @@ const CabinetModal: React.FC<{
                   }}
                   maxCount={1}
                 >
-                  {fileList.length < 1 && <div className="text-blue-500">Upload</div>}
+                  {fileList.length < 1 && (
+                    <div className="text-blue-500">Upload</div>
+                  )}
                 </Upload>
               </ImgCrop>
             </div>
@@ -325,6 +365,28 @@ const CabinetModal: React.FC<{
                   placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
+                />
+              </label>
+
+              {/* UrlWebsocket */}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-600">WebSocket URL</span>
+                <input
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  placeholder="เช่น wss://example.com/ocpp/CP_1"
+                  value={urlWebsocket}
+                  onChange={(e) => setUrlWebsocket(e.target.value)}
+                />
+              </label>
+
+              {/* ChargePoint */}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-600">Charge Point ID</span>
+                <input
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  placeholder="เช่น CP_1, ESP32-01"
+                  value={chargePoint}
+                  onChange={(e) => setChargePoint(e.target.value)}
                 />
               </label>
 
@@ -401,7 +463,9 @@ const EV: React.FC = () => {
   const [cabinets, setCabinets] = useState<CabinetType[]>([]);
   const [loadingCabinets, setLoadingCabinets] = useState(false);
   const [cabinetModalOpen, setCabinetModalOpen] = useState(false);
-  const [editingCabinet, setEditingCabinet] = useState<CabinetType | null>(null);
+  const [editingCabinet, setEditingCabinet] = useState<CabinetType | null>(
+    null
+  );
 
   // Cabinet delete modal (สไตล์เดียวกับ Charger)
   const [openCabinetConfirm, setOpenCabinetConfirm] = useState(false);
@@ -446,6 +510,7 @@ const EV: React.FC = () => {
             Description: ev.Description ?? "-",
             Price: Number(ev.Price ?? 0),
             Type: ev.Type?.Type ?? "-",
+            EnergySource: ev.EnergySource?.Name ?? "-", // 🔋 ดึงจาก relation EnergySource
             Status: ev.Status?.Status ?? "-",
 
             // ✅ เปลี่ยน Owner → ชื่อ Cabinet
@@ -457,6 +522,7 @@ const EV: React.FC = () => {
             EmployeeID: ev.EmployeeID,
             StatusID: ev.StatusID,
             TypeID: ev.TypeID,
+            EnergySourceID: ev.EnergySourceID,
             Raw: ev,
           };
         });
@@ -469,7 +535,6 @@ const EV: React.FC = () => {
       setLoading(false);
     }
   };
-
 
   const fetchLists = async () => {
     const [statuses, types] = await Promise.all([ListStatus(), ListTypeEV()]);
@@ -493,6 +558,8 @@ const EV: React.FC = () => {
             Latitude: c.Latitude,
             Longitude: c.Longitude,
             EmployeeID: c.EmployeeID ?? null,
+            UrlWebsocket: c.UrlWebsocket ?? null,
+            ChargePoint: c.ChargePoint ?? null,
           }))
         );
       } else {
@@ -520,6 +587,7 @@ const EV: React.FC = () => {
         (r.Name ?? "").toLowerCase().includes(q) ||
         (r.Email ?? "").toLowerCase().includes(q) ||
         (r.Type ?? "").toLowerCase().includes(q) ||
+        (r.EnergySource ?? "").toLowerCase().includes(q) || // 🔍 ให้ search ตาม EnergySource ด้วย
         (r.Status ?? "").toLowerCase().includes(q) ||
         (r.EmployeeName ?? "").toLowerCase().includes(q)
     );
@@ -599,8 +667,12 @@ const EV: React.FC = () => {
             className="rounded-lg object-cover"
           />
           <div className="min-w-0">
-            <div className="font-semibold text-gray-900 truncate">{record.Name || "-"}</div>
-            <div className="text-gray-500 text-xs truncate">{record.Email}</div>
+            <div className="font-semibold text-gray-900 truncate">
+              {record.Name || "-"}
+            </div>
+            <div className="text-gray-500 text-xs truncate">
+              {record.Email}
+            </div>
           </div>
         </Space>
       ),
@@ -610,19 +682,56 @@ const EV: React.FC = () => {
       dataIndex: "Type",
       key: "type",
       width: 120,
-      filters: [...Array.from(new Set(tableData.map((t) => t.Type))).map((v) => ({ text: v, value: v }))],
+      filters: [
+        ...Array.from(new Set(tableData.map((t) => t.Type))).map((v) => ({
+          text: v,
+          value: v,
+        })),
+      ],
       onFilter: (val, rec) => rec.Type === val,
-      render: (v) => <Tag color="blue" className="px-2 py-1 rounded-md">{v}</Tag>,
+      render: (v) => (
+        <Tag color="blue" className="px-2 py-1 rounded-md">
+          {v}
+        </Tag>
+      ),
+    },
+    {
+      title: "Energy Source",
+      dataIndex: "EnergySource",
+      key: "energySource",
+      width: 140,
+      filters: [
+        ...Array.from(new Set(tableData.map((t) => t.EnergySource))).map(
+          (v) => ({
+            text: v,
+            value: v,
+          })
+        ),
+      ],
+      onFilter: (val, rec) => rec.EnergySource === val,
+      render: (v) => (
+        <Tag color="geekblue" className="px-2 py-1 rounded-md">
+          {v}
+        </Tag>
+      ),
     },
     {
       title: "Status",
       dataIndex: "Status",
       key: "status",
       width: 120,
-      filters: [...Array.from(new Set(tableData.map((t) => t.Status))).map((v) => ({ text: v, value: v }))],
+      filters: [
+        ...Array.from(new Set(tableData.map((t) => t.Status))).map((v) => ({
+          text: v,
+          value: v,
+        })),
+      ],
       onFilter: (val, rec) => rec.Status === val,
       render: (v) => (
-        <Tag color={v?.toLowerCase().includes("active") ? "green" : "orange"} className="px-2 py-1 rounded-md">
+        <Tag
+          color={v?.toLowerCase().includes("active") ? "green" : "orange"}
+          className="px-2 py-1 rounded-md"
+        >
           {v}
         </Tag>
       ),
@@ -633,7 +742,11 @@ const EV: React.FC = () => {
       key: "price",
       width: 100,
       sorter: (a, b) => a.Price - b.Price,
-      render: (v) => <span className="font-semibold text-blue-700">{Number(v).toLocaleString()}</span>,
+      render: (v) => (
+        <span className="font-semibold text-blue-700">
+          {Number(v).toLocaleString()}
+        </span>
+      ),
     },
     {
       title: "EV Cabinet",
@@ -647,7 +760,11 @@ const EV: React.FC = () => {
 
         // ถ้ามีแค่ 1 ให้โชว์ชื่อเฉยๆ
         if (cabs.length === 1)
-          return <span className="font-medium text-blue-700">{cabs[0].Name}</span>;
+          return (
+            <span className="font-medium text-blue-700">
+              {cabs[0].Name}
+            </span>
+          );
 
         // ถ้ามีหลายอัน ให้เป็นปุ่ม "x Cabinets"
         return (
@@ -734,9 +851,14 @@ const EV: React.FC = () => {
   return (
     <div className="min-h-screen w-full bg-[linear-gradient(180deg,#eaf2ff_0%,#f6f9ff_60%,#ffffff_100%)] mt-14 sm:mt-0">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div
+        className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <h1 className="text-sm sm:text-base font-semibold tracking-wide">EV Charging Stations</h1>
+          <h1 className="text-sm sm:text-base font-semibold tracking-wide">
+            EV Charging Stations
+          </h1>
         </div>
       </div>
 
@@ -748,7 +870,7 @@ const EV: React.FC = () => {
             allowClear
             size="large"
             prefix={<SearchOutlined />}
-            placeholder="ค้นหา: ชื่อ / อีเมล / สถานะ / ประเภท / ผู้ดูแล"
+            placeholder="ค้นหา: ชื่อ / อีเมล / สถานะ / ประเภท / แหล่งพลังงาน / ผู้ดูแล"
             className="max-w-xl"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
@@ -794,8 +916,15 @@ const EV: React.FC = () => {
 
         {/* EV Cabinets Header */}
         <div className="mt-8 mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-blue-700">EV Cabinets</h2>
-          <Button type="primary" icon={<PlusOutlined />} className="bg-blue-600" onClick={openCreateCabinet}>
+          <h2 className="text-lg font-semibold text-blue-700">
+            EV Cabinets
+          </h2>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            className="bg-blue-600"
+            onClick={openCreateCabinet}
+          >
             Add Cabinet
           </Button>
         </div>
@@ -825,15 +954,21 @@ const EV: React.FC = () => {
                 />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-blue-800 truncate">{cab.Name}</h3>
-                    <p className="text-sm text-gray-500 truncate">{cab.Location}</p>
+                    <h3 className="font-semibold text-blue-800 truncate">
+                      {cab.Name}
+                    </h3>
+                    <p className="text-sm text-gray-500 truncate">
+                      {cab.Location}
+                    </p>
                     <Tag
                       color={
                         cab.Status?.toLowerCase().includes("active")
                           ? "green"
-                          : cab.Status?.toLowerCase().includes("maintenance")
-                            ? "orange"
-                            : "default"
+                          : cab.Status?.toLowerCase().includes(
+                              "maintenance"
+                            )
+                          ? "orange"
+                          : "default"
                       }
                       className="mt-1"
                     >
@@ -841,7 +976,11 @@ const EV: React.FC = () => {
                     </Tag>
                   </div>
                   <Space>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => openEditCabinet(cab)}>
+                    <Button
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => openEditCabinet(cab)}
+                    >
                       Edit
                     </Button>
                     <Button
@@ -894,13 +1033,19 @@ const EV: React.FC = () => {
             <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl border border-blue-100 bg-blue-50">
               <Trash2 size={22} className="text-blue-600" />
             </div>
-            <h3 className="text-base font-bold text-slate-900">ยืนยันการลบสถานีชาร์จ</h3>
+            <h3 className="text-base font-bold text-slate-900">
+              ยืนยันการลบสถานีชาร์จ
+            </h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               คุณต้องการลบ{" "}
-              <span className="font-semibold text-blue-700">“{selectedEVRef.current?.Name}”</span>{" "}
+              <span className="font-semibold text-blue-700">
+                “{selectedEVRef.current?.Name}”
+              </span>{" "}
               ใช่หรือไม่?
               <br />
-              <span className="text-xs text-slate-500">การดำเนินการนี้ไม่สามารถย้อนกลับได้</span>
+              <span className="text-xs text-slate-500">
+                การดำเนินการนี้ไม่สามารถย้อนกลับได้
+              </span>
             </p>
             <div className="mt-4 flex items-center justify-center gap-2">
               <button
@@ -921,12 +1066,17 @@ const EV: React.FC = () => {
         </EvModal>
 
         {/* Confirm Delete Cabinet (สไตล์เดียวกัน) */}
-        <EvModal open={openCabinetConfirm} onClose={cancelDeleteCabinet}>
+        <EvModal
+          open={openCabinetConfirm}
+          onClose={cancelDeleteCabinet}
+        >
           <div className="w-[min(92vw,420px)] text-center px-5 py-5">
             <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl border border-blue-100 bg-blue-50">
               <Trash2 size={22} className="text-blue-600" />
             </div>
-            <h3 className="text-base font-bold text-slate-900">ยืนยันการลบ Cabinet</h3>
+            <h3 className="text-base font-bold text-slate-900">
+              ยืนยันการลบ Cabinet
+            </h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               คุณต้องการลบ{" "}
               <span className="font-semibold text-blue-700">
@@ -934,7 +1084,9 @@ const EV: React.FC = () => {
               </span>{" "}
               ใช่หรือไม่?
               <br />
-              <span className="text-xs text-slate-500">การดำเนินการนี้ไม่สามารถย้อนกลับได้</span>
+              <span className="text-xs text-slate-500">
+                การดำเนินการนี้ไม่สามารถย้อนกลับได้
+              </span>
             </p>
             <div className="mt-4 flex items-center justify-center gap-2">
               <button
@@ -955,9 +1107,11 @@ const EV: React.FC = () => {
         </EvModal>
 
         {openCabinetListModal && (
-          <EvModal open={openCabinetListModal} onClose={() => setOpenCabinetListModal(false)}>
+          <EvModal
+            open={openCabinetListModal}
+            onClose={() => setOpenCabinetListModal(false)}
+          >
             <div className="w-[min(92vw,420px)] px-6 py-5">
-
               <h3 className="text-lg font-bold text-center text-blue-700 mb-4">
                 รายการ EV Cabinets
               </h3>
@@ -966,10 +1120,13 @@ const EV: React.FC = () => {
               <div
                 className="space-y-3"
                 style={{
-                  maxHeight: selectedCabinets.length > 2 ? "55vh" : "auto",
-                  overflowY: selectedCabinets.length > 2 ? "auto" : "visible",
+                  maxHeight:
+                    selectedCabinets.length > 2 ? "55vh" : "auto",
+                  overflowY:
+                    selectedCabinets.length > 2 ? "auto" : "visible",
                   WebkitOverflowScrolling: "touch",
-                  paddingRight: selectedCabinets.length > 2 ? "6px" : "0",
+                  paddingRight:
+                    selectedCabinets.length > 2 ? "6px" : "0",
                 }}
               >
                 {selectedCabinets.map((cab) => (
@@ -986,17 +1143,23 @@ const EV: React.FC = () => {
                       className="w-full h-32 object-cover rounded-lg mb-2"
                     />
 
-                    <div className="font-semibold text-blue-800">{cab.Name}</div>
-                    <div className="text-sm text-gray-500">{cab.Location}</div>
+                    <div className="font-semibold text-blue-800">
+                      {cab.Name}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {cab.Location}
+                    </div>
 
                     <div className="mt-1">
                       <Tag
                         color={
                           cab.Status?.toLowerCase().includes("active")
                             ? "green"
-                            : cab.Status?.toLowerCase().includes("maintenance")
-                              ? "orange"
-                              : "default"
+                            : cab.Status?.toLowerCase().includes(
+                                "maintenance"
+                              )
+                            ? "orange"
+                            : "default"
                         }
                       >
                         {cab.Status}

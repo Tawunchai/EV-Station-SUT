@@ -70,6 +70,8 @@ func SetupDatabase() {
 	// ✅ AutoMigrate ทุกครั้ง (อัปสเคม่า) — แต่ยังไม่ seed ถ้าไม่ใช่ DB ใหม่
 	if err := db.AutoMigrate(
 		&entity.Brand{},
+		&entity.EnergySource{},
+		&entity.Solar{},
 		&entity.Modal{},
 		&entity.SendEmail{},
 		&entity.OTP{},
@@ -124,7 +126,7 @@ func SetupDatabase() {
 	userID := uint(1)
 	methodID := uint(1)
 	cabinetID := uint(1)
-	if err := SeedPayments(db, userID, methodID,cabinetID); err != nil {
+	if err := SeedPayments(db, userID, methodID, cabinetID); err != nil {
 		log.Fatalf("Seed payments failed: %v", err)
 	}
 
@@ -139,6 +141,27 @@ func seedMasters(db *gorm.DB) {
 	genderFemale := entity.Genders{Gender: "Female"}
 	db.FirstOrCreate(&genderMale, &entity.Genders{Gender: "Male"})
 	db.FirstOrCreate(&genderFemale, &entity.Genders{Gender: "Female"})
+
+	// Energy Sourse
+	energySolar := entity.EnergySource{
+		Name: "Solar",
+	}
+
+	energyGrid := entity.EnergySource{
+		Name: "Grid",
+	}
+
+	// ถ้ายังไม่มีใน DB ให้สร้าง ถ้ามีแล้วก็จะไม่สร้างซ้ำ
+	db.FirstOrCreate(&energySolar, &entity.EnergySource{Name: "Solar"})
+	db.FirstOrCreate(&energyGrid, &entity.EnergySource{Name: "Grid"})
+
+	s1 := entity.Solar{
+		Name:         "Solar_001",
+        UrlWebsocket: "wss://payment-project-t4dj.onrender.com/solar/",
+		SolarPoint:   "solar_001",
+	}
+
+	db.FirstOrCreate(&s1, entity.Solar{Name: "Solar_001"})
 
 	// Methods (แก้คำสะกดให้ตรงกัน)
 	method1 := entity.Method{Medthod: "QR Payment"}
@@ -417,6 +440,8 @@ func seedContent(db *gorm.DB) {
 		Latitude:    14.8802,
 		Longitude:   102.018,
 		Image:       "uploads/cabinet/cabinet.jpg",
+		UrlWebsocket: "wss://payment-project-t4dj.onrender.com/ocpp/",
+		ChargePoint: "CP_1",
 		EmployeeID:  &emp.ID,
 	}
 
@@ -498,6 +523,7 @@ func seedContent(db *gorm.DB) {
 		EmployeeID:  empIDPtr,
 		StatusID:    status1.ID,
 		TypeID:      type1.ID,
+		EnergySourceID: 1,
 	}
 
 	ev2 := entity.EVcharging{
@@ -508,6 +534,7 @@ func seedContent(db *gorm.DB) {
 		EmployeeID:  empIDPtr,
 		StatusID:    status1.ID,
 		TypeID:      type1.ID,
+		EnergySourceID: 2,
 	}
 
 	// Insert ถ้ายังไม่มี
@@ -603,7 +630,7 @@ func SeedPayments(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error
 				Picture:         "uploads/payment/1752001589231877900.jpg",
 				UserID:          &userID,
 				MethodID:        &methodID,
-				EVCabinetID: &cabinetID,
+				EVCabinetID:     &cabinetID,
 			}
 
 			if err := db.Create(&payment).Error; err != nil {

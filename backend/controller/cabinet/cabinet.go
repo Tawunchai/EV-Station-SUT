@@ -67,7 +67,7 @@ func CreateEVCabinet(c *gin.Context) {
 		return
 	}
 
-	// รับข้อมูลจาก Form
+	// -------- รับข้อมูลจาก Form --------
 	name := c.PostForm("name")
 	description := c.PostForm("description")
 	location := c.PostForm("location")
@@ -75,6 +75,10 @@ func CreateEVCabinet(c *gin.Context) {
 	latitudeStr := c.PostForm("latitude")
 	longitudeStr := c.PostForm("longitude")
 	employeeIDStr := c.PostForm("employeeID")
+
+	// ⭐ ใหม่: UrlWebsocket และ ChargePoint
+	urlWebsocket := c.PostForm("urlWebsocket") // เช่น wss://xxx/ocpp
+	chargePoint := c.PostForm("chargePoint")   // เช่น CP_1, ESP32-01
 
 	latitude, _ := strconv.ParseFloat(latitudeStr, 64)
 	longitude, _ := strconv.ParseFloat(longitudeStr, 64)
@@ -89,14 +93,16 @@ func CreateEVCabinet(c *gin.Context) {
 	}
 
 	ev := entity.EVCabinet{
-		Name:        name,
-		Description: description,
-		Location:    location,
-		Status:      status,
-		Latitude:    latitude,
-		Longitude:   longitude,
-		Image:       filePath,
-		EmployeeID:  employeeID,
+		Name:         name,
+		Description:  description,
+		Location:     location,
+		Status:       status,
+		UrlWebsocket: urlWebsocket,
+		ChargePoint:  chargePoint,
+		Latitude:     latitude,
+		Longitude:    longitude,
+		Image:        filePath,
+		EmployeeID:   employeeID,
 	}
 
 	if err := config.DB().Create(&ev).Error; err != nil {
@@ -104,7 +110,10 @@ func CreateEVCabinet(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "EVCabinet created successfully", "data": ev})
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "EVCabinet created successfully",
+		"data":    ev,
+	})
 }
 
 // ✅ อัปเดตข้อมูลตู้ EV Cabinet ตาม ID
@@ -123,7 +132,7 @@ func UpdateEVCabinetByID(c *gin.Context) {
 		return
 	}
 
-	// อัปโหลดรูปใหม่ (ถ้ามี)
+	// -------- อัปโหลดรูปใหม่ (ถ้ามี) --------
 	file, _ := c.FormFile("image")
 	if file != nil {
 		uploadDir := "uploads/evcabinet"
@@ -145,7 +154,7 @@ func UpdateEVCabinetByID(c *gin.Context) {
 		ev.Image = filePath
 	}
 
-	// อัปเดตฟิลด์อื่น ๆ
+	// -------- อัปเดตฟิลด์อื่น ๆ --------
 	if v := c.PostForm("name"); v != "" {
 		ev.Name = v
 	}
@@ -175,12 +184,23 @@ func UpdateEVCabinetByID(c *gin.Context) {
 		}
 	}
 
+	// ⭐ ใหม่: อัปเดต UrlWebsocket และ ChargePoint
+	if v := c.PostForm("urlWebsocket"); v != "" {
+		ev.UrlWebsocket = v
+	}
+	if v := c.PostForm("chargePoint"); v != "" {
+		ev.ChargePoint = v
+	}
+
 	if err := db.Save(&ev).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "EVCabinet updated successfully", "data": ev})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "EVCabinet updated successfully",
+		"data":    ev,
+	})
 }
 
 // ✅ ลบข้อมูล EVCabinet ตาม ID (ไม่ลบรูปในเครื่อง)

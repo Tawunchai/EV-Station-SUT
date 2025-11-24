@@ -3,7 +3,11 @@ import { Button, Form, Input, message } from "antd";
 import { Link, useNavigate } from "react-router-dom";
 import { FaBolt } from "react-icons/fa";
 import { LoginInterface } from "../../interface/Login";
-import { AddLogin, clearCachedUser, GetProfile } from "../../services/httpLogin";
+import {
+  AddLogin,
+  clearCachedUser,
+  GetProfile,
+} from "../../services/httpLogin";
 import Background from "../../assets/woman-charging-electro-car-by-her-house.jpg";
 
 const LoginForm1: React.FC = () => {
@@ -21,7 +25,6 @@ const LoginForm1: React.FC = () => {
         messageApi.success("เข้าสู่ระบบสำเร็จ");
         console.log("✅ Message shown — waiting 1s before redirect...");
 
-        // ✅ รอ message แสดงครบก่อน แล้วค่อยเปลี่ยนหน้า
         setTimeout(async () => {
           // ล้าง cache เก่า
           clearCachedUser();
@@ -42,14 +45,12 @@ const LoginForm1: React.FC = () => {
           } else {
             navigate("/user", { replace: true });
           }
-        }, 1500); // ⏱ delay 1 วินาที
+        }, 1500);
       } else {
         messageApi.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
       }
     } catch (error: any) {
-      messageApi.warning(
-        "ข้อมูลเข้าสู่ระบบไม่ถูกต้อง"
-      );
+      messageApi.warning("ข้อมูลเข้าสู่ระบบไม่ถูกต้อง");
     } finally {
       setLoading(false);
     }
@@ -58,13 +59,21 @@ const LoginForm1: React.FC = () => {
   return (
     <>
       {contextHolder}
+
       <div className="relative min-h-dvh flex items-center justify-center px-4 py-10 overflow-hidden">
+        {/* BG image */}
         <div className="absolute inset-0 -z-10">
-          <img src={Background} alt="" className="w-full h-full object-cover" />
+          <img
+            src={Background}
+            alt="EV Station background"
+            className="w-full h-full object-cover"
+          />
         </div>
 
+        {/* dark overlay */}
         <div className="absolute inset-0 -z-10 bg-gradient-to-br from-blue-900/60 via-slate-900/35 to-blue-950/60" />
 
+        {/* grid overlay */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10 opacity-[0.08] mix-blend-overlay"
@@ -75,6 +84,7 @@ const LoginForm1: React.FC = () => {
           }}
         />
 
+        {/* CARD */}
         <div className="relative w-full max-w-md">
           <div
             className="rounded-[28px] p-[1px]"
@@ -84,12 +94,14 @@ const LoginForm1: React.FC = () => {
             }}
           >
             <div className="rounded-[26px] bg-white border border-gray-200 shadow-[0_20px_60px_rgba(2,6,23,0.18)] p-8 md:p-10">
-              {/* โลโก้ */}
-              <div className="flex items-center gap-3 mb-6 justify-center">
+              {/* โลโก้ + ชื่อระบบ */}
+              <div className="flex items-center justify-center gap-3 mb-6">
                 <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow">
                   <FaBolt className="text-xl" />
                 </span>
-                <div className="leading-tight text-center">
+
+                {/* บังคับให้ title + subtitle เรียงเป็นคอลัมน์เสมอ */}
+                <div className="flex flex-col leading-tight text-left sm:text-center">
                   <h1
                     className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent"
                     style={{
@@ -101,7 +113,7 @@ const LoginForm1: React.FC = () => {
                   >
                     EV Station
                   </h1>
-                  <p className="text-[12px] text-blue-700/70 font-medium">
+                  <p className="text-[12px] text-blue-700/70 font-medium mt-1">
                     Smart • Clean • Future
                   </p>
                 </div>
@@ -130,7 +142,11 @@ const LoginForm1: React.FC = () => {
               >
                 <Form.Item
                   name="username"
-                  label={<span className="text-sm text-gray-700 font-medium">Username</span>}
+                  label={
+                    <span className="text-sm text-gray-700 font-medium">
+                      Username
+                    </span>
+                  }
                   rules={[{ required: true, message: "กรุณากรอกชื่อผู้ใช้" }]}
                 >
                   <Input
@@ -142,7 +158,11 @@ const LoginForm1: React.FC = () => {
 
                 <Form.Item
                   name="password"
-                  label={<span className="text-sm text-gray-700 font-medium">Password</span>}
+                  label={
+                    <span className="text-sm text-gray-700 font-medium">
+                      Password
+                    </span>
+                  }
                   rules={[{ required: true, message: "กรุณากรอกรหัสผ่าน" }]}
                 >
                   <Input.Password
@@ -153,10 +173,16 @@ const LoginForm1: React.FC = () => {
                 </Form.Item>
 
                 <div className="flex items-center justify-between mb-4 text-sm">
-                  <Link to="/forgot-password" className="text-blue-600 hover:underline">
+                  <Link
+                    to="/forgot-password"
+                    className="text-blue-600 hover:underline"
+                  >
                     ลืมรหัสผ่าน?
                   </Link>
-                  <Link to="/register" className="text-blue-600 hover:underline">
+                  <Link
+                    to="/register"
+                    className="text-blue-600 hover:underline"
+                  >
                     สมัครใช้งาน
                   </Link>
                 </div>
@@ -176,7 +202,9 @@ const LoginForm1: React.FC = () => {
                 </Form.Item>
               </Form>
 
-              <p className="mt-8 text-center text-xs text-gray-500">© SUT EV Station 2025</p>
+              <p className="mt-8 text-center text-xs text-gray-500">
+                © SUT EV Station 2025
+              </p>
             </div>
           </div>
         </div>
@@ -194,7 +222,9 @@ const LoginForm1: React.FC = () => {
           50% { transform: translateX(30%); }
           100% { transform: translateX(110%); }
         }
-        .animate-barSlide { animation: barSlide 2.8s ease-in-out infinite; }
+        .animate-barSlide {
+          animation: barSlide 2.8s ease-in-out infinite;
+        }
       `}</style>
     </>
   );

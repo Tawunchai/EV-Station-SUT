@@ -204,7 +204,6 @@ const Editor: React.FC = () => {
                 <span className="font-semibold text-blue-700">“{selectedRef.current.Title}”</span>
               </>
             )}
-            ใช่หรือไม่?
             <br />
             <span className="text-xs text-slate-500">การดำเนินการนี้ไม่สามารถย้อนกลับได้</span>
           </p>

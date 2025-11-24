@@ -1,8 +1,13 @@
-// src/component/user/ev-calibet/index.tsx
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FiClock, FiBatteryCharging, FiPower, FiWifi } from "react-icons/fi";
+import {
+  FiClock,
+  FiBatteryCharging,
+  FiPower,
+  FiWifi,
+  FiArrowDown,
+} from "react-icons/fi";
 import { BsLightningChargeFill } from "react-icons/bs";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type ConnectorStatus =
   | "Available"
@@ -27,6 +32,20 @@ type ConnectorState = {
 
 type OcppRawMessage = [number, string, ...any[]];
 
+type CabinetType = {
+  ID: number;
+  Name: string;
+  Location: string;
+  Status: string;
+  Image: string;
+  Description?: string;
+  Latitude?: number;
+  Longitude?: number;
+  EmployeeID?: number | null;
+  UrlWebsocket?: string | null;
+  ChargePoint?: string | null;
+};
+
 const initialConnectorState: ConnectorState = {
   status: "Available",
   soc: 0,
@@ -39,11 +58,26 @@ const initialConnectorState: ConnectorState = {
   meterWh: 0,
 };
 
+// helper ประกอบ WebSocket URL จาก UrlWebsocket + ChargePoint
+const buildWsFromCabinet = (
+  baseUrl?: string | null,
+  chargePoint?: string | null
+): string => {
+  if (!baseUrl || !chargePoint) return "";
+  const base = baseUrl.replace(/\/+$/, ""); // ตัด / ท้าย
+  const cp = chargePoint.replace(/^\/+/, ""); // ตัด / หน้า
+  return `${base}/${cp}`;
+};
+
 const EVCalibet: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const cabinet =
+    (location.state as { cabinet?: CabinetType } | null)?.cabinet || null;
+
   /** ---------- WebSocket State ---------- */
-  const [wsUrl, setWsUrl] = useState(
-    "wss://payment-project-t4dj.onrender.com/ocpp/CP_1"
-  );
+  const [wsUrl, setWsUrl] = useState<string>("");
   const socketRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -56,6 +90,20 @@ const EVCalibet: React.FC = () => {
   // heartbeat & meter loop
   const heartbeatIntervalRef = useRef<number | null>(null);
   const meterIntervalRef = useRef<number | null>(null);
+
+  // ref สำหรับ scroll ไป log ล่าสุด
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
+
+  // set wsUrl เริ่มต้นจาก cabinet ที่รับมา
+  useEffect(() => {
+    if (cabinet) {
+      const url = buildWsFromCabinet(
+        cabinet.UrlWebsocket,
+        cabinet.ChargePoint
+      );
+      setWsUrl(url || "");
+    }
+  }, [cabinet]);
 
   /** ---------- Helpers ---------- */
   const appendLog = (msg: string) => {
@@ -133,7 +181,7 @@ const EVCalibet: React.FC = () => {
     updateConnector((prev) => ({ ...prev, status }));
   };
 
-  /** ---------- Meter Values Loop (เหมือนตัวอย่าง JS) ---------- */
+  /** ---------- Meter Values Loop ---------- */
   const stopMeterLoop = () => {
     if (meterIntervalRef.current !== null) {
       window.clearInterval(meterIntervalRef.current);
@@ -142,28 +190,34 @@ const EVCalibet: React.FC = () => {
     }
   };
 
-  const startMeterLoop = () => {
-    stopMeterLoop();
+  // ดึง logic จากตัวอย่าง HTML → เพิ่ม SoC / meter แล้วค่อยส่ง MeterValues
+  const sendMeterValues = () => {
+    const state = connectorRef.current;
 
-    appendLog(
-      "[SYSTEM] MeterValues loop started (simulate SoC & energy every 10s)"
-    );
+    if (!state.transactionId) {
+      appendLog(
+        "[SYSTEM] No active transaction. Stopping MeterValues loop."
+      );
+      stopMeterLoop();
+      return;
+    }
 
-    meterIntervalRef.current = window.setInterval(() => {
-      const state = connectorRef.current;
+    // ยัง Charging และ SoC < 100 → เพิ่มค่า
+    if (state.status === "Charging" && state.soc < 100) {
+      const nextSoc = Math.min(100, state.soc + 2); // +2% / รอบ
+      const nextMeterWh = state.meterWh + 100; // +100Wh / รอบ
+      const nextEnergyKWh = state.energyKWh + 0.1; // สมมุติ 0.1kWh / รอบ
 
-      // ไม่มี transaction หรือไม่ได้ Charging แล้ว ไม่ทำอะไร
-      if (!state.transactionId || state.status !== "Charging") {
-        return;
-      }
+      updateConnector((prev) => ({
+        ...prev,
+        soc: nextSoc,
+        meterWh: nextMeterWh,
+        energyKWh: nextEnergyKWh,
+        // ผูกค่า Output Power ให้เท่ากับ Energy delivered เสมอ
+        powerKw: nextEnergyKWh,
+      }));
 
-      const nextSoc = Math.min(100, state.soc + 2);
-      const isFull = nextSoc >= 100;
-      const nextEnergyKWh = state.energyKWh + 0.2; // ~0.2kWh ต่อรอบ
-      const nextMeterWh = state.meterWh + 100; // 100Wh ต่อรอบ
-
-      if (!isFull) {
-        // ส่ง MeterValues ไปที่ CSMS
+      if (nextSoc < 100) {
         const msg: OcppRawMessage = [
           2,
           generateUUID(),
@@ -188,27 +242,31 @@ const EVCalibet: React.FC = () => {
         ];
         sendOcppMessage(msg);
       }
+    } else if (state.soc >= 100 && state.status === "Charging") {
+      appendLog(
+        "[SYSTEM] Battery full (100%), simulating transition to SuspendedEV."
+      );
+      sendStatusNotification("SuspendedEV");
+      return;
+    } else if (state.status !== "Charging") {
+      appendLog(
+        "[SYSTEM] Status changed from Charging. Stopping MeterValues loop."
+      );
+      stopMeterLoop();
+      return;
+    }
+  };
 
-      updateConnector((prev) => {
-        const latest: ConnectorState = {
-          ...prev,
-          soc: nextSoc,
-          energyKWh: nextEnergyKWh,
-          meterWh: nextMeterWh,
-          powerKw: isFull ? 0 : prev.powerKw,
-          status: isFull ? "SuspendedEV" : prev.status,
-        };
-        return latest;
-      });
+  const startMeterLoop = () => {
+    stopMeterLoop();
 
-      if (isFull) {
-        appendLog(
-          "[SYSTEM] Battery full (100%), send StatusNotification(SuspendedEV)"
-        );
-        sendStatusNotification("SuspendedEV");
-        stopMeterLoop();
-      }
-    }, 10000); // ทุก 10 วินาทีเหมือนตัวอย่าง
+    appendLog(
+      "[SYSTEM] MeterValues loop started (simulate SoC & energy every 2s)"
+    );
+
+    meterIntervalRef.current = window.setInterval(() => {
+      sendMeterValues();
+    }, 2000); // ทุก 2 วินาที
   };
 
   /** ---------- Connect / Disconnect ---------- */
@@ -221,6 +279,11 @@ const EVCalibet: React.FC = () => {
   };
 
   const handleConnect = () => {
+    if (!wsUrl) {
+      appendLog("[ERROR] WebSocket URL is empty");
+      return;
+    }
+
     try {
       if (socketRef.current) {
         socketRef.current.close();
@@ -289,13 +352,10 @@ const EVCalibet: React.FC = () => {
 
   /** ---------- CALLRESULT Handler ---------- */
   const handleCallResult = (payload: any) => {
+    if (!payload || typeof payload !== "object") return;
+
     // BootNotification.conf
-    if (
-      payload &&
-      typeof payload === "object" &&
-      "status" in payload &&
-      "interval" in payload
-    ) {
+    if ("status" in payload && "interval" in payload) {
       if (payload.status === "Accepted") {
         const intervalSec = payload.interval || 300;
         appendLog(
@@ -319,24 +379,23 @@ const EVCalibet: React.FC = () => {
     }
 
     // StartTransaction.conf
-    if (
-      payload &&
-      typeof payload === "object" &&
-      "transactionId" in payload
-    ) {
+    if ("transactionId" in payload) {
       const txId = payload.transactionId as number;
       appendLog(
         `[SYSTEM] StartTransaction accepted. Tx ID = ${txId} (Connector 1)`
       );
 
       updateConnector((prev) => {
+        // ตั้ง SoC เริ่มต้นแบบสุ่ม 20–30%
         const baseSoc =
           prev.soc > 0 ? prev.soc : Math.floor(Math.random() * 10) + 20;
         const next: ConnectorState = {
           ...prev,
           transactionId: txId,
           status: "Charging",
-          powerKw: 11.2,
+          // เริ่มต้นจาก 0 แล้วค่อยให้ loop ดันค่า power/energy ให้เท่ากัน
+          powerKw: 0,
+          energyKWh: 0,
           soc: baseSoc,
           startedAt: Date.now(),
         };
@@ -347,8 +406,16 @@ const EVCalibet: React.FC = () => {
       startMeterLoop();
     }
 
-    // StopTransaction.conf
-    if (payload && typeof payload === "object" && "idTagInfo" in payload) {
+    // StopTransaction.conf → ทำงานเฉพาะถ้า status ปัจจุบันเป็น Finishing
+    if ("idTagInfo" in payload) {
+      const current = connectorRef.current;
+      if (current.status !== "Finishing") {
+        appendLog(
+          "[SYSTEM] StopTransaction.conf received but status is not Finishing → ignore (likely StartTransaction.conf)"
+        );
+        return;
+      }
+
       appendLog("[SYSTEM] StopTransaction confirmed.");
 
       updateConnector((prev) => {
@@ -372,7 +439,7 @@ const EVCalibet: React.FC = () => {
     }
   };
 
-  /** ---------- CALL Handler (RemoteStart, RemoteStop, ChangeAvailability) ---------- */
+  /** ---------- CALL Handler ---------- */
   const handleCall = (messageId: string, action: string, payload: any) => {
     appendLog(
       `[SYSTEM] Received CALL from Server: ${action} / ได้รับ CALL จากเซิร์ฟเวอร์: ${action}`
@@ -416,6 +483,7 @@ const EVCalibet: React.FC = () => {
         if (connectorRef.current.transactionId === txId) {
           responsePayload = { status: "Accepted" };
 
+          // หยุด loop ทันทีเหมือนตัวอย่าง
           stopMeterLoop();
           setTimeout(() => {
             sendStatusNotification("Finishing");
@@ -598,7 +666,11 @@ const EVCalibet: React.FC = () => {
     !connector.transactionId &&
     (connector.status === "Preparing" || connector.status === "Available");
 
-  const canStop = !!connector.transactionId;
+  const canStop =
+    !!connector.transactionId &&
+    (connector.status === "Charging" ||
+      connector.status === "SuspendedEV" ||
+      connector.status === "Finishing");
 
   /** ---------- Derived UI Values ---------- */
   const durationMinutes = useMemo(() => {
@@ -607,10 +679,15 @@ const EVCalibet: React.FC = () => {
     return Math.max(0, Math.floor((now - connector.startedAt) / 60000));
   }, [connector.startedAt, connector.transactionId, connector.soc]);
 
-  const socStrokeRadius = 70;
-  const socCircumference = 2 * Math.PI * socStrokeRadius;
-  const socOffset =
-    socCircumference - (connector.soc / 100) * socCircumference || 0;
+  // วงกลมสองชั้น: Grid (วงนอก) / Solar (วงใน)
+  const outerRadius = 76; // Grid
+  const innerRadius = 62; // Solar
+  const outerCircumference = 2 * Math.PI * outerRadius;
+  const innerCircumference = 2 * Math.PI * innerRadius;
+  const outerOffset =
+    outerCircumference - (connector.soc / 100) * outerCircumference || 0;
+  const innerOffset =
+    innerCircumference - (connector.soc / 100) * innerCircumference || 0;
 
   const evseStatusColor =
     connector.status === "Charging"
@@ -633,6 +710,11 @@ const EVCalibet: React.FC = () => {
     Unavailable: "ไม่พร้อมใช้งาน",
   };
 
+  // แยกค่า Energy เป็น Solar / Grid เพื่อแสดงผล
+  const totalEnergyDisplay = connector.energyKWh;
+  const solarEnergyDisplay = totalEnergyDisplay * 0.4;
+  const gridEnergyDisplay = totalEnergyDisplay * 0.6;
+
   /** ---------- Cleanup ---------- */
   useEffect(() => {
     return () => {
@@ -644,18 +726,59 @@ const EVCalibet: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ถ้าไม่มี cabinet (เข้าหน้านี้ตรง ๆ) แสดงข้อความ + ปุ่ม back
+  if (!cabinet) {
+    return (
+      <div className="min-h-screen w-full bg-white mt-14 sm:mt-0">
+        <div className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm">
+          <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center">
+            <h1 className="text-sm sm:text-base font-semibold tracking-wide">
+              Monitor Cabinet EV
+            </h1>
+          </div>
+        </div>
+
+        <div className="max-w-screen-xl mx-auto px-4 py-8">
+          <p className="text-slate-600 mb-4">
+            ไม่พบข้อมูลตู้ชาร์จ (cabinet) ที่ส่งมาจากหน้าก่อนหน้า
+          </p>
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+          >
+            กลับไปหน้าเลือก Cabinet
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   /** ---------- Render ---------- */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 text-slate-900">
-      {/* Header */}
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-sky-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <h1 className="text-sm sm:text-base font-semibold tracking-wide text-sky-900">
-            EV Cabinet • Power Monitor
-          </h1>
-          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs text-slate-500">
+    <div className="min-h-screen w-full bg-gradient-to-br from-sky-50 via-white to-sky-100 text-slate-900 mt-14 sm:mt-0">
+      {/* Header แถบฟ้าเล็ก + ปุ่ม Back + ชื่อ Cabinet */}
+      <header className="sticky top-0 z-20 bg-blue-600 text-white shadow-sm">
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate(-1)}
+              className="inline-flex items-center rounded-lg bg-white/95 px-3 py-1.5 text-xs sm:text-sm font-semibold text-blue-600 shadow-sm hover:bg-white"
+            >
+              ← Back
+            </button>
+            <div className="flex flex-col">
+              <span className="text-[11px] uppercase tracking-wide opacity-90">
+                Monitor Cabinet EV
+              </span>
+              <span className="text-xs sm:text-sm font-semibold">
+                {cabinet.Name}
+                {cabinet.ChargePoint ? ` • ${cabinet.ChargePoint}` : ""}
+              </span>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs text-blue-50">
             <FiWifi
-              className={isConnected ? "text-emerald-400" : "text-slate-400"}
+              className={isConnected ? "text-emerald-300" : "text-blue-200"}
             />
             {isConnected ? "Connected" : "Not connected"}
           </span>
@@ -677,6 +800,13 @@ const EVCalibet: React.FC = () => {
                 className="w-full text-xs sm:text-sm rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
                 placeholder="wss://your-server/ocpp/CP_1"
               />
+              <p className="mt-1 text-[11px] text-slate-400">
+                จาก Cabinet:{" "}
+                <span className="font-medium">
+                  {cabinet.UrlWebsocket}
+                  {cabinet.ChargePoint ? ` + ${cabinet.ChargePoint}` : ""}
+                </span>
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -720,46 +850,86 @@ const EVCalibet: React.FC = () => {
                   className="w-full h-full"
                   aria-label="State of Charge"
                 >
+                  {/* Track วงนอก (Grid) */}
                   <circle
                     cx="100"
                     cy="100"
-                    r={socStrokeRadius}
+                    r={outerRadius}
                     fill="none"
                     stroke="#E2E8F0"
-                    strokeWidth="14"
+                    strokeWidth="10"
                   />
+                  {/* Track วงใน (Solar) */}
                   <circle
                     cx="100"
                     cy="100"
-                    r={socStrokeRadius}
+                    r={innerRadius}
                     fill="none"
-                    stroke="url(#socGrad)"
-                    strokeWidth="14"
+                    stroke="#E2E8F0"
+                    strokeWidth="10"
+                  />
+
+                  {/* วงนอก Grid */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r={outerRadius}
+                    fill="none"
+                    stroke="url(#gridGrad)"
+                    strokeWidth="10"
                     strokeLinecap="round"
-                    strokeDasharray={socCircumference}
-                    strokeDashoffset={socOffset}
+                    strokeDasharray={outerCircumference}
+                    strokeDashoffset={outerOffset}
                     transform="rotate(-90 100 100)"
                     className="transition-all duration-500"
                   />
+
+                  {/* วงใน Solar */}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r={innerRadius}
+                    fill="none"
+                    stroke="url(#solarGrad)"
+                    strokeWidth="10"
+                    strokeLinecap="round"
+                    strokeDasharray={innerCircumference}
+                    strokeDashoffset={innerOffset}
+                    transform="rotate(-90 100 100)"
+                    className="transition-all duration-500"
+                  />
+
                   <defs>
+                    {/* Grid Gradient (วงนอก) */}
                     <linearGradient
-                      id="socGrad"
+                      id="gridGrad"
+                      x1="0"
+                      y1="0"
+                      x2="1"
+                      y2="0"
+                    >
+                      <stop offset="0%" stopColor="#0ea5e9" />
+                      <stop offset="50%" stopColor="#0284c7" />
+                      <stop offset="100%" stopColor="#0369a1" />
+                    </linearGradient>
+                    {/* Solar Gradient (วงใน) */}
+                    <linearGradient
+                      id="solarGrad"
                       x1="0"
                       y1="0"
                       x2="1"
                       y2="0"
                     >
                       <stop offset="0%" stopColor="#22c55e" />
-                      <stop offset="50%" stopColor="#22c55e" />
-                      <stop offset="100%" stopColor="#16a34a" />
+                      <stop offset="50%" stopColor="#16a34a" />
+                      <stop offset="100%" stopColor="#15803d" />
                     </linearGradient>
                   </defs>
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r={socStrokeRadius - 20}
-                    fill="#F8FAFC"
-                  />
+
+                  {/* วงกลมพื้นหลังตรงกลาง */}
+                  <circle cx="100" cy="100" r={48} fill="#F8FAFC" />
+
+                  {/* ตัวเลข % ตรงกลาง */}
                   <text
                     x="50%"
                     y="50%"
@@ -772,10 +942,22 @@ const EVCalibet: React.FC = () => {
                   </text>
                 </svg>
               </div>
+
+              {/* ค่า Energy / Solar / Grid */}
               <p className="mt-2 text-xs text-slate-500">
                 Energy delivered:{" "}
-                <span className="font-semibold text-sky-700">
+                <span className="font-semibold text-black">
                   {connector.energyKWh.toFixed(1)} kWh
+                </span>
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Solar:{" "}
+                <span className="font-semibold text-emerald-600">
+                  {solarEnergyDisplay.toFixed(1)} kWh
+                </span>{" "}
+                · Grid:{" "}
+                <span className="font-semibold text-sky-700">
+                  {gridEnergyDisplay.toFixed(1)} kWh
                 </span>
               </p>
             </div>
@@ -917,12 +1099,25 @@ const EVCalibet: React.FC = () => {
             <p className="text-xs sm:text-sm font-semibold text-slate-700">
               Event Log
             </p>
-            <button
-              onClick={() => setLogs([])}
-              className="text-[11px] text-slate-400 hover:text-slate-600"
-            >
-              Clear
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (logsEndRef.current) {
+                    logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+                className="inline-flex items-center gap-1 text-[11px] text-sky-600 hover:text-sky-800"
+              >
+                <FiArrowDown className="text-xs" />
+                Latest
+              </button>
+              <button
+                onClick={() => setLogs([])}
+                className="text-[11px] text-slate-400 hover:text-slate-600"
+              >
+                Clear
+              </button>
+            </div>
           </div>
           <div className="h-32 sm:h-40 overflow-y-auto rounded-lg bg-sky-50 text-[11px] sm:text-xs text-slate-700 px-3 py-2 border border-sky-100">
             {logs.length === 0 ? (
@@ -930,11 +1125,28 @@ const EVCalibet: React.FC = () => {
                 ...waiting for events (BootNotification / Heartbeat / etc.)
               </p>
             ) : (
-              logs.map((line, idx) => (
-                <p key={idx} className="whitespace-pre-wrap">
-                  {line}
-                </p>
-              ))
+              <>
+                {logs.map((line, idx) => {
+                  const isSystem = line.includes("[SYSTEM]");
+                  const isRecv = line.includes("[RECV]");
+                  const colorClass = isSystem
+                    ? "text-amber-600"
+                    : isRecv
+                    ? "text-sky-700"
+                    : "";
+
+                  return (
+                    <p
+                      key={idx}
+                      className={`whitespace-pre-wrap ${colorClass}`}
+                    >
+                      {line}
+                    </p>
+                  );
+                })}
+                {/* จุดอ้างอิงสำหรับ scroll ไป log ล่าสุด */}
+                <div ref={logsEndRef} />
+              </>
             )}
           </div>
         </section>
