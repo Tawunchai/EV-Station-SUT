@@ -2,13 +2,7 @@ import axios from "axios";
 import { LoginInterface } from "../interface/Login"
 import { EmployeeInterface } from "../interface/IEmployee";
 import { UsersInterface } from "../interface/IUser";
-
-const apiUrl = "https://payment-project-t4dj.onrender.com";
-//const apiUrl = "http://10.0.14.228:8000";
-//const apiUrl = "http://10.167.17.128:8000";
-//const apiUrl = "http://192.168.1.141:8000";
-//const apiUrl = "http://localhost:8000";
-//const apiUrl = "http://192.168.1.141:9000";
+import { apiUrl } from "./index"
 
 axios.defaults.withCredentials = true; // ✅ ให้ cookie แนบอัตโนมัติ
 
@@ -162,14 +156,14 @@ export const GetEmployeeByUserID = async (
       headers: getHeaders(),
     });
 
-    console.log("Response from API:", response.data); 
-    return response.data.employeeID; 
+    console.log("Response from API:", response.data);
+    return response.data.employeeID;
   } catch (error: any) {
     console.error(
       "Error fetching EmployeeID:",
       error.response?.data || error.message
     );
-    return false; 
+    return false;
   }
 };
 

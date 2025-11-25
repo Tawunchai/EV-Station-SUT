@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { connectOcppSocket } from "../../../services";
+import { connectOcppSocket } from "../../../../services";
 
 interface MessageLog {
   id: number;
