@@ -5,7 +5,6 @@ import {
   FiZap,
   FiBarChart2,
   FiBatteryCharging,
-  FiClock,
   FiSun,
 } from "react-icons/fi";
 import { FaCarSide } from "react-icons/fa";
@@ -24,12 +23,24 @@ type Parameter = {
   icon: React.ReactNode;
 };
 
+// ✅ ปรับให้ตรงกับ JSON ที่ส่งมา
 type SolarData = {
+  device_id?: string;
+  type?: string;
   payload?: {
+    device_id?: string;
     timestamp?: string;
     data?: {
-      power_in?: number;
       battery_percentage?: number;
+      battery_power?: number;
+      current?: number;
+      grid_power?: number;
+      power_in?: number;
+      power_out?: number;
+      solar_irradiance?: number;
+      status?: string;
+      temperature?: number;
+      voltage?: number;
     };
   };
 };
@@ -59,7 +70,7 @@ const Index: React.FC = () => {
   const solar =
     (location.state as { solar?: SolarInterface } | null)?.solar || null;
 
-  // ---------- STATE ----------
+  // ---------- STATE ---------- //
   const [solarData, setSolarData] = useState<SolarData | null>(null);
   const [powerSeries, setPowerSeries] = useState<number[]>([]);
   const [isLive, setIsLive] = useState(false);
@@ -69,16 +80,18 @@ const Index: React.FC = () => {
     // ถ้าไม่มี Solar หรือไม่มี SolarPoint ให้ไม่ต้องเชื่อมต่อ
     if (!solar || !solar.SolarPoint) return;
 
-    const deviceId = solar.SolarPoint; // ใช้ Point แทน "solar_001"
+    const deviceId = solar.SolarPoint; // เช่น "solar_001"
 
     const socket = connectSolarSocket((data: SolarData) => {
+      // data ตรงกับ JSON: { device_id, payload: { data: {...}, timestamp }, type }
       setSolarData(data);
       setIsLive(true);
 
       // ✅ เก็บค่า power_in เพื่อใช้แสดงในกราฟย้อนหลัง
-      if (data?.payload?.data?.power_in !== undefined) {
+      const powerInRealtime = data?.payload?.data?.power_in;
+      if (powerInRealtime !== undefined) {
         setPowerSeries((prev) => {
-          const updated = [...prev, data.payload!.data!.power_in!];
+          const updated = [...prev, powerInRealtime];
           return updated.slice(-10); // เก็บไว้ 10 จุดล่าสุด
         });
       }
@@ -122,15 +135,25 @@ const Index: React.FC = () => {
   }
 
   // ---------- เตรียมค่าที่จะใช้แสดง ---------- //
-  const powerIn = solarData?.payload?.data?.power_in ?? 0;
-  const battery = solarData?.payload?.data?.battery_percentage ?? 0;
+  const payloadData = solarData?.payload?.data;
+
+  const powerIn = payloadData?.power_in ?? 0;
+  const battery = payloadData?.battery_percentage ?? 0;
+  const batteryPower = payloadData?.battery_power ?? 0;
+  const gridPower = payloadData?.grid_power ?? 0;
+  const powerOut = payloadData?.power_out ?? 0;
+  const solarIrradiance = payloadData?.solar_irradiance ?? 0;
+  const temperature = payloadData?.temperature ?? 0;
+  const voltage = payloadData?.voltage ?? 0;
+  const current = payloadData?.current ?? 0;
+  const solarStatus = payloadData?.status ?? "Unknown";
+
   const updatedTime = solarData?.payload?.timestamp
     ? new Date(solarData.payload.timestamp).toLocaleTimeString()
     : "Waiting...";
 
-  // ตัวอย่างการประมาณค่า grid / load เพื่อใช้แสดงผล
-  const estimatedGrid = powerIn > 0 ? -Math.round(powerIn * 0.25) : 0;
-  const loadPower = powerIn + estimatedGrid;
+  // ✅ ใช้ power_out เป็นโหลดฝั่ง EV
+  const loadPower = powerOut;
   const batteryLabel = battery > 0 ? `${battery.toFixed(0)}%` : "None";
 
   const params: Parameter[] = [
@@ -142,12 +165,12 @@ const Index: React.FC = () => {
     },
     {
       name: "Power Out",
-      value: `0.00 kWh`,
+      value: `${powerOut.toFixed(2)} W`,
       status: "ON",
       icon: <FiBarChart2 className="text-xl md:text-2xl text-blue-600" />,
     },
     {
-      name: "Battery",
+      name: "Battery %",
       value: `${battery.toFixed(1)}%`,
       status: "ON",
       icon: (
@@ -155,10 +178,34 @@ const Index: React.FC = () => {
       ),
     },
     {
-      name: "Time",
-      value: updatedTime,
+      name: "Battery Power",
+      value: `${batteryPower.toFixed(2)} W`,
       status: "ON",
-      icon: <FiClock className="text-xl md:text-2xl text-blue-600" />,
+      icon: <FiBatteryCharging className="text-xl md:text-2xl text-blue-600" />,
+    },
+    {
+      name: "Grid Power",
+      value: `${gridPower.toFixed(2)} W`,
+      status: "ON",
+      icon: <FiZap className="text-xl md:text-2xl text-blue-600" />,
+    },
+    {
+      name: "Solar Irradiance",
+      value: `${solarIrradiance.toFixed(1)} W/m²`,
+      status: "ON",
+      icon: <FiSun className="text-xl md:text-2xl text-blue-600" />,
+    },
+    {
+      name: "Voltage",
+      value: `${voltage.toFixed(1)} V`,
+      status: "ON",
+      icon: <FiZap className="text-xl md:text-2xl text-blue-600" />,
+    },
+    {
+      name: "Current",
+      value: `${current.toFixed(2)} A`,
+      status: "ON",
+      icon: <FiBarChart2 className="text-xl md:text-2xl text-blue-600" />,
     },
   ];
 
@@ -192,6 +239,9 @@ const Index: React.FC = () => {
               <FiSun className={isLive ? "text-yellow-300" : "text-blue-100"} />
               {isLive ? "Receiving data..." : "Waiting signal..."}
             </span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+              {solarStatus}
+            </span>
           </div>
         </div>
       </header>
@@ -212,6 +262,9 @@ const Index: React.FC = () => {
                   <p className="text-3xl md:text-4xl font-extrabold text-blue-700">
                     {battery.toFixed(1)}%
                   </p>
+                  <p className="text-xs md:text-sm text-emerald-600 font-semibold mt-1">
+                    {solarStatus}
+                  </p>
                   <p className="text-sm md:text-base text-gray-500">
                     Battery Capacity
                   </p>
@@ -222,6 +275,9 @@ const Index: React.FC = () => {
                   </p>
                   <p className="text-sm md:text-base font-semibold">
                     {updatedTime}
+                  </p>
+                  <p className="text-[11px] md:text-xs text-gray-500 mt-1">
+                    Device: {solarData?.device_id ?? "-"}
                   </p>
                 </div>
               </div>
@@ -426,8 +482,7 @@ const Index: React.FC = () => {
                   <div className="w-16 h-16 rounded-full bg-white border-2 border-slate-200 shadow-sm flex flex-col items-center justify-center">
                     <FiZap className="text-blue-600 text-base md:text-lg mb-0.5" />
                     <span className="text-[11px] md:text-xs font-semibold text-blue-700">
-                      {estimatedGrid >= 0 ? "" : "-"}
-                      {Math.abs(estimatedGrid).toFixed(0)}W
+                      {gridPower.toFixed(0)}W
                     </span>
                   </div>
                 </div>
@@ -449,8 +504,39 @@ const Index: React.FC = () => {
                     <span className="text-[11px] md:text-xs font-semibold text-blue-700">
                       {batteryLabel}
                     </span>
+                    <span className="text-[9px] md:text-[10px] text-slate-500">
+                      {batteryPower.toFixed(0)}W
+                    </span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* 🔹 ค่า Temp / Irradiance / Voltage / Current แสดงแบบสรุปเล็ก ๆ ใต้ Power Flow */}
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] md:text-xs">
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <p className="text-slate-500">Temperature</p>
+                <p className="font-semibold text-blue-700">
+                  {temperature.toFixed(1)} °C
+                </p>
+              </div>
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <p className="text-slate-500">Irradiance</p>
+                <p className="font-semibold text-blue-700">
+                  {solarIrradiance.toFixed(1)} W/m²
+                </p>
+              </div>
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <p className="text-slate-500">Voltage</p>
+                <p className="font-semibold text-blue-700">
+                  {voltage.toFixed(1)} V
+                </p>
+              </div>
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+                <p className="text-slate-500">Current</p>
+                <p className="font-semibold text-blue-700">
+                  {current.toFixed(2)} A
+                </p>
               </div>
             </div>
           </div>
@@ -514,9 +600,7 @@ const Index: React.FC = () => {
 
                 {/* Filled area */}
                 <polyline
-                  points={
-                    points ? `${points} 720,220 0,220` : "0,220 720,220"
-                  }
+                  points={points ? `${points} 720,220 0,220` : "0,220 720,220"}
                   fill="url(#areaGradBlue)"
                   stroke="none"
                 />
