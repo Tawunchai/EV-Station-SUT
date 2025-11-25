@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/Tawunchai/work-project/config"
 	"github.com/Tawunchai/work-project/entity"
@@ -146,8 +149,6 @@ func broadcastToFrontend(deviceID string, msg []byte) {
 	}
 }
 
-
-// solar 
 // ==============================
 //   LIST ALL SOLAR
 // ==============================
@@ -169,23 +170,77 @@ func ListSolar(c *gin.Context) {
 //   CREATE SOLAR
 // ==============================
 //
+
 func CreateSolar(c *gin.Context) {
+	db := config.DB()
+
+	// รับข้อมูลจาก form (multipart/form-data)
 	name := c.PostForm("name")
 	urlWS := c.PostForm("url_websocket")
 	solarPoint := c.PostForm("solar_point")
+	description := c.PostForm("description")
+	location := c.PostForm("location")
 
 	if name == "" || urlWS == "" || solarPoint == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกข้อมูลให้ครบ Name, UrlWebsocket, SolarPoint"})
 		return
 	}
 
+	// ---- จัดการรูปภาพ (picture) แบบ News ----
+	var filePath string
+
+	file, err := c.FormFile("picture")
+	if err == nil && file != nil {
+		// ตรวจสอบประเภทไฟล์
+		validTypes := []string{"image/jpeg", "image/png", "image/gif"}
+		isValid := false
+		contentType := file.Header.Get("Content-Type")
+		for _, t := range validTypes {
+			if contentType == t {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รูปภาพต้องเป็นไฟล์ .jpg, .png, .gif เท่านั้น"})
+			return
+		}
+
+		// สร้างโฟลเดอร์ uploads/solar ถ้ายังไม่มี
+		uploadDir := "uploads/solar"
+		if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างโฟลเดอร์เก็บไฟล์ได้"})
+			return
+		}
+
+		// สร้างชื่อไฟล์ใหม่กันชื่อซ้ำ
+		ext := filepath.Ext(file.Filename)
+		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+		filePath = filepath.Join(uploadDir, newFileName)
+
+		// บันทึกไฟล์
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		// ถ้าอยาก "บังคับให้มีรูป" เหมือน News:
+		// c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาอัปโหลดรูปภาพ"})
+		// return
+		// ตอนนี้จะปล่อยให้ว่างได้
+		filePath = "" // ไม่มีรูป
+	}
+
 	s := entity.Solar{
 		Name:         name,
 		UrlWebsocket: urlWS,
 		SolarPoint:   solarPoint,
+		Description:  description,
+		Location:     location,
+		Picture:      filePath, // เก็บ path รูป
 	}
 
-	if err := config.DB().Create(&s).Error; err != nil {
+	if err := db.Create(&s).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -201,11 +256,12 @@ func CreateSolar(c *gin.Context) {
 //   UPDATE SOLAR BY ID
 // ==============================
 //
+
 func UpdateSolarByID(c *gin.Context) {
 	id := c.Param("id")
 
-	var s entity.Solar
 	db := config.DB()
+	var s entity.Solar
 
 	// ตรวจสอบว่ามี record?
 	if err := db.First(&s, id).Error; err != nil {
@@ -213,11 +269,49 @@ func UpdateSolarByID(c *gin.Context) {
 		return
 	}
 
-	// รับค่าใหม่
+	// รับค่าใหม่จาก form
 	name := c.PostForm("name")
 	urlWS := c.PostForm("url_websocket")
 	solarPoint := c.PostForm("solar_point")
+	description := c.PostForm("description")
+	location := c.PostForm("location")
 
+	// อัปโหลดรูปใหม่ (ถ้ามี)
+	file, err := c.FormFile("picture")
+	if err == nil && file != nil {
+		validTypes := []string{"image/jpeg", "image/png", "image/gif"}
+		isValid := false
+		contentType := file.Header.Get("Content-Type")
+		for _, t := range validTypes {
+			if contentType == t {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รูปภาพต้องเป็น .jpg, .png, .gif เท่านั้น"})
+			return
+		}
+
+		uploadDir := "uploads/solar"
+		if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างโฟลเดอร์เก็บไฟล์ได้"})
+			return
+		}
+
+		ext := filepath.Ext(file.Filename)
+		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+		filePath := filepath.Join(uploadDir, newFileName)
+
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		s.Picture = filePath // อัปเดตรูปใหม่
+	}
+
+	// อัปเดต field ที่ส่งมา (ถ้ามี)
 	if name != "" {
 		s.Name = name
 	}
@@ -226,6 +320,12 @@ func UpdateSolarByID(c *gin.Context) {
 	}
 	if solarPoint != "" {
 		s.SolarPoint = solarPoint
+	}
+	if description != "" {
+		s.Description = description
+	}
+	if location != "" {
+		s.Location = location
 	}
 
 	// บันทึก
@@ -245,6 +345,7 @@ func UpdateSolarByID(c *gin.Context) {
 //   DELETE SOLAR BY ID
 // ==============================
 //
+
 func DeleteSolarByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -269,6 +370,7 @@ func DeleteSolarByID(c *gin.Context) {
 //   GET SOLAR BY ID
 // ==============================
 //
+
 func GetSolarByID(c *gin.Context) {
 	id := c.Param("id")
 

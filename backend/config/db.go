@@ -156,12 +156,17 @@ func seedMasters(db *gorm.DB) {
 	db.FirstOrCreate(&energyGrid, &entity.EnergySource{Name: "Grid"})
 
 	s1 := entity.Solar{
-		Name:         "Solar_001",
-        UrlWebsocket: "wss://payment-project-t4dj.onrender.com/solar/",
+		Name:         "Solar Cell",
+		UrlWebsocket: "wss://payment-project-t4dj.onrender.com/solar/",
 		SolarPoint:   "solar_001",
+
+		Description: "Main solar panel for EV project",
+		Picture:     "uploads/user/solarpic.jpg",
+		Location:    "Building A, Roof Floor",
 	}
 
-	db.FirstOrCreate(&s1, entity.Solar{Name: "Solar_001"})
+	// สร้างถ้ายังไม่มี
+	db.FirstOrCreate(&s1, entity.Solar{Name: "Solar Cell"})
 
 	// Methods (แก้คำสะกดให้ตรงกัน)
 	method1 := entity.Method{Medthod: "QR Payment"}
@@ -433,16 +438,16 @@ func seedContent(db *gorm.DB) {
 	db.FirstOrCreate(send, entity.SendEmail{Email: send.Email})
 
 	cabinet1 := &entity.EVCabinet{
-		Name:        "EV Station",
-		Description: "เครื่องชาร์จสำหรับรถไฟฟ้า รองรับ Solar และ Grid",
-		Location:    "มหาวิทยาลัยเทคโนโลยีสุรนารี",
-		Status:      "Active",
-		Latitude:    14.8802,
-		Longitude:   102.018,
-		Image:       "uploads/cabinet/cabinet.jpg",
+		Name:         "EV Station",
+		Description:  "เครื่องชาร์จสำหรับรถไฟฟ้า รองรับ Solar และ Grid",
+		Location:     "มหาวิทยาลัยเทคโนโลยีสุรนารี",
+		Status:       "Active",
+		Latitude:     14.8802,
+		Longitude:    102.018,
+		Image:        "uploads/cabinet/cabinet.jpg",
 		UrlWebsocket: "wss://payment-project-t4dj.onrender.com/ocpp/",
-		ChargePoint: "CP_1",
-		EmployeeID:  &emp.ID,
+		ChargePoint:  "CP_1",
+		EmployeeID:   &emp.ID,
 	}
 
 	// ✅ ใช้ Where() เพื่อป้องกันซ้ำตาม Name
@@ -516,24 +521,24 @@ func seedContent(db *gorm.DB) {
 	// ⭐ สร้าง EVcharging (ไม่มี EVCabinetID แล้ว!)
 	// -----------------------------
 	ev1 := entity.EVcharging{
-		Name:        "Solar",
-		Description: "Solar is Good Power",
-		Price:       2,
-		Picture:     "uploads/evcharging/solar.jpg",
-		EmployeeID:  empIDPtr,
-		StatusID:    status1.ID,
-		TypeID:      type1.ID,
+		Name:           "Solar",
+		Description:    "Solar is Good Power",
+		Price:          2,
+		Picture:        "uploads/evcharging/solar.jpg",
+		EmployeeID:     empIDPtr,
+		StatusID:       status1.ID,
+		TypeID:         type1.ID,
 		EnergySourceID: 1,
 	}
 
 	ev2 := entity.EVcharging{
-		Name:        "Grid",
-		Description: "Grid is Bad Power",
-		Price:       5,
-		Picture:     "uploads/evcharging/grid.jpg",
-		EmployeeID:  empIDPtr,
-		StatusID:    status1.ID,
-		TypeID:      type1.ID,
+		Name:           "Grid",
+		Description:    "Grid is Bad Power",
+		Price:          5,
+		Picture:        "uploads/evcharging/grid.jpg",
+		EmployeeID:     empIDPtr,
+		StatusID:       status1.ID,
+		TypeID:         type1.ID,
 		EnergySourceID: 2,
 	}
 

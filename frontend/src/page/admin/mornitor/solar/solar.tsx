@@ -1,3 +1,5 @@
+// src/page/admin/mornitor/solar/after-solar/index.tsx
+
 import React, { useEffect, useState } from "react";
 import {
   FiZap,
@@ -7,7 +9,10 @@ import {
   FiSun,
 } from "react-icons/fi";
 import { FaCarSide } from "react-icons/fa";
-import { connectSolarSocket } from "../../../services";
+import { useLocation, useNavigate } from "react-router-dom";
+
+import { connectSolarSocket } from "../../../../services";
+import type { SolarInterface } from "../../../../interface/ISolar";
 
 import Ocppconnect from "./test";
 
@@ -47,14 +52,28 @@ function toPolylinePoints(values: number[], width = 560, height = 120): string {
 }
 
 const Index: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // รับข้อมูล Solar จากหน้า BeforeSolar
+  const solar =
+    (location.state as { solar?: SolarInterface } | null)?.solar || null;
+
   // ---------- STATE ----------
   const [solarData, setSolarData] = useState<SolarData | null>(null);
   const [powerSeries, setPowerSeries] = useState<number[]>([]);
+  const [isLive, setIsLive] = useState(false);
 
-  // ---------- CONNECT WEBSOCKET ----------
+  // ---------- CONNECT WEBSOCKET ---------- //
   useEffect(() => {
-    const socket = connectSolarSocket((data) => {
+    // ถ้าไม่มี Solar หรือไม่มี SolarPoint ให้ไม่ต้องเชื่อมต่อ
+    if (!solar || !solar.SolarPoint) return;
+
+    const deviceId = solar.SolarPoint; // ใช้ Point แทน "solar_001"
+
+    const socket = connectSolarSocket((data: SolarData) => {
       setSolarData(data);
+      setIsLive(true);
 
       // ✅ เก็บค่า power_in เพื่อใช้แสดงในกราฟย้อนหลัง
       if (data?.payload?.data?.power_in !== undefined) {
@@ -63,11 +82,46 @@ const Index: React.FC = () => {
           return updated.slice(-10); // เก็บไว้ 10 จุดล่าสุด
         });
       }
-    }, "solar_001");
-    return () => socket.close();
-  }, []);
+    }, deviceId);
 
-  // ---------- เตรียมค่าที่จะใช้แสดง ----------
+    return () => {
+      try {
+        socket?.close();
+      } catch {
+        // ignore
+      }
+      setIsLive(false);
+    };
+  }, [solar]);
+
+  // ---------- ถ้าไม่มี Solar (เข้าหน้านี้ตรง ๆ) ---------- //
+  if (!solar) {
+    return (
+      <div className="min-h-screen bg-white mt-14 sm:mt-0">
+        <header className="sticky top-0 z-20 bg-blue-600 text-white shadow-sm">
+          <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center">
+            <h1 className="text-sm sm:text-base font-semibold tracking-wide">
+              Monitor Solar Station
+            </h1>
+          </div>
+        </header>
+
+        <div className="max-w-screen-xl mx-auto px-4 py-8">
+          <p className="text-slate-600 mb-4">
+            ไม่พบข้อมูล Solar ที่ส่งมาจากหน้าก่อนหน้า
+          </p>
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+          >
+            ← กลับไปหน้าเลือก Solar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- เตรียมค่าที่จะใช้แสดง ---------- //
   const powerIn = solarData?.payload?.data?.power_in ?? 0;
   const battery = solarData?.payload?.data?.battery_percentage ?? 0;
   const updatedTime = solarData?.payload?.timestamp
@@ -112,28 +166,43 @@ const Index: React.FC = () => {
   const points = toPolylinePoints(powerSeries, 720, 160);
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 mt-14 sm:mt-0">
-      {/* Top bar */}
-      <div
-        className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
-      >
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <h1 className="text-sm sm:text-base font-semibold tracking-wide">
-            Solar Station • Monitor
-          </h1>
-          <span className="text-[11px] sm:text-xs bg-white/15 px-2 py-1 rounded-lg border border-white/20">
-            Live
-          </span>
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 text-gray-900 mt-14 sm:mt-0">
+      {/* Header แบบเดียวกับ EVCalibet + ปุ่ม Back */}
+      <header className="sticky top-0 z-20 bg-blue-600 text-white shadow-sm">
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate(-1)}
+              className="inline-flex items-center rounded-lg bg-white/95 px-3 py-1.5 text-xs sm:text-sm font-semibold text-blue-600 shadow-sm hover:bg-white"
+            >
+              ← Back
+            </button>
+            <div className="flex flex-col">
+              <span className="text-[11px] uppercase tracking-wide opacity-90">
+                Monitor Solar Station
+              </span>
+              <span className="text-xs sm:text-sm font-semibold">
+                {solar.Name}
+                {solar.SolarPoint ? ` • ${solar.SolarPoint}` : ""}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col items-end text-[11px] sm:text-xs">
+            <span className="inline-flex items-center gap-1 mb-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
+              <FiSun className={isLive ? "text-yellow-300" : "text-blue-100"} />
+              {isLive ? "Receiving data..." : "Waiting signal..."}
+            </span>
+          </div>
         </div>
-      </div>
+      </header>
 
+      {/* Main Content */}
       <main className="w-full px-4 sm:px-6 pt-5 pb-24 max-w-screen-xl mx-auto">
         {/* 🔹 SECTION บน: ซ้าย = Status + Cards, ขวา = Power Flow */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
           {/* LEFT SIDE */}
           <div className="space-y-4">
-            {/* Hero — สรุปสถานะรวม */}
+            {/* Hero — สรุปสถานะแบตเตอรี่ */}
             <div className="rounded-2xl bg-white border border-gray-200 p-5 md:p-6 shadow-sm">
               <div className="flex items-end justify-between">
                 <div>
@@ -248,7 +317,7 @@ const Index: React.FC = () => {
                     strokeLinecap="round"
                   />
 
-                  {/* ✅ เส้นเชื่อมจาก Solar / Grid / Battery → EV (ใช้ path เดียวกับ animation) */}
+                  {/* ✅ เส้นเชื่อมจาก Solar / Grid / Battery → EV */}
                   <g
                     stroke="rgba(148,163,184,0.85)"
                     strokeWidth={12}
@@ -272,7 +341,7 @@ const Index: React.FC = () => {
                     </animateMotion>
                   </circle>
 
-                  {/* จุดเหลืองวิ่งจาก Grid -> EV (ตอนนี้อยู่บนเส้นเทาตรง ๆ) */}
+                  {/* จุดเหลืองวิ่งจาก Grid -> EV */}
                   <circle r={5} fill="#FACC15">
                     <animateMotion
                       dur="2.3s"
@@ -342,7 +411,7 @@ const Index: React.FC = () => {
                   </div>
                 </div>
 
-                {/* GRID — ปรับให้ต่ำลง (top ~76%) และจัด justify-center ให้ถูก */}
+                {/* GRID */}
                 <div
                   className="absolute flex flex-col items-center"
                   style={{
@@ -363,7 +432,7 @@ const Index: React.FC = () => {
                   </div>
                 </div>
 
-                {/* BATTERY — ให้สมมาตรกับ Grid */}
+                {/* BATTERY */}
                 <div
                   className="absolute flex flex-col items-center"
                   style={{
@@ -501,6 +570,7 @@ const Index: React.FC = () => {
         <div className="h-10" />
       </main>
 
+      {/* ทดสอบ OCPP / component อื่น ๆ */}
       <Ocppconnect />
     </div>
   );

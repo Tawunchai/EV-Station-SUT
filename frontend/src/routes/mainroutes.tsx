@@ -46,9 +46,10 @@ const ProfileAdmin = Loadable(lazy(() => import("../page/SocialProfile/SocialPro
 const Car = Loadable(lazy(() => import("../page/admin/car/index")));
 const CarData = Loadable(lazy(() => import("../page/admin/car/car_data")));
 const ServiceManage = Loadable(lazy(() => import("../page/admin/servicess/index")));
-const Solar = Loadable(lazy(() => import("../page/admin/mornitor/solar")));
-const EVCabinet = Loadable(lazy(() => import("../page/admin/mornitor/ev")));
-const BeforeEVCabinet = Loadable(lazy(() => import("../page/admin/mornitor/before_ev")));
+const Solar = Loadable(lazy(() => import("../page/admin/mornitor/solar/solar")));
+const BeforeSolar = Loadable(lazy(() => import("../page/admin/mornitor/solar/before_solar")));
+const EVCabinet = Loadable(lazy(() => import("../page/admin/mornitor/cabinet/ev")));
+const BeforeEVCabinet = Loadable(lazy(() => import("../page/admin/mornitor/cabinet/before_ev")));
 
 // ======================= ROUTES =======================
 
@@ -104,7 +105,8 @@ const AdminRoutes = (roleName: string | null): RouteObject[] => {
         { path: "New", element: <New /> },
         { path: "create-new", element: <Create_New /> },
         { path: "edit-new", element: <Edit_New /> },
-        { path: "Solar", element: <Solar /> },
+        { path: "Solar", element: <BeforeSolar /> },
+        { path: "after-solar", element: <Solar /> },
         { path: "after-cabinet", element: <EVCabinet /> },
         { path: "EV Cabinet", element: <BeforeEVCabinet /> },
         { path: "profile", element: <ProfileAdmin /> },

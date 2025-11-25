@@ -3,7 +3,7 @@ import { Spin, Tag, message, Tooltip } from "antd";
 import { FiMapPin, FiLink } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
-import { ListCabinetsEV, apiUrlPicture } from "../../../services";
+import { ListCabinetsEV, apiUrlPicture } from "../../../../services";
 
 type CabinetType = {
   ID: number;
