@@ -123,7 +123,7 @@ const Hero = ({}: HeaderProps) => {
                 </h1>
 
                 <p className="text-[13px] sm:text-base text-gray-600">
-                  ค้นหาสถานีชาร์จที่เหมาะกับคุณได้อย่างรวดเร็ว
+                  Quickly find the charging station that's right for you.
                 </p>
               </div>
 
@@ -157,7 +157,7 @@ const Hero = ({}: HeaderProps) => {
                   )}
 
                   <FaBolt className="text-lg" />
-                  {isChargingActive ? "กำลังชาร์จ" : "เริ่มชาร์จไฟฟ้า"}
+                  {isChargingActive ? "Charging" : "Start charging"}
                 </button>
 
                 {/* ปุ่มจอง */}
@@ -166,7 +166,7 @@ const Hero = ({}: HeaderProps) => {
                   onClick={() => navigate("/user/booking-ev")}
                 >
                   <FaCalendarCheck className="text-blue-600 text-lg" />
-                  จองเข้าชาร์จไฟฟ้า
+                  Reserve EV Charger
                 </button>
               </div>
 
@@ -320,10 +320,10 @@ const Hero = ({}: HeaderProps) => {
               </div>
 
               <h3 className="text-xl font-bold text-blue-900 tracking-tight">
-                คุณกำลังชาร์จอยู่
+                You are charging
               </h3>
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[260px]">
-                เลือกตู้ชาร์จที่คุณกำลังใช้งาน หรือซื้อไฟฟ้าเพิ่ม
+                Select a station to check status or add power.
               </p>
             </div>
 
@@ -365,7 +365,7 @@ const Hero = ({}: HeaderProps) => {
                   active:scale-[0.97] transition
                 "
               >
-                ซื้อไฟฟ้าเพิ่ม
+                Buy more power
               </button>
             </div>
           </div>

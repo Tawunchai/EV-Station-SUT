@@ -54,7 +54,7 @@ const Like: React.FC<LikeProps> = ({ reviewID, userID }) => {
     <div className="flex items-center justify-between gap-3">
       {/* ข้อความช่วยถามแบบอ่านง่าย */}
       <span className="text-[12px] sm:text-[13px] leading-6 text-gray-600">
-        {hasLiked ? "ขอบคุณสำหรับความคิดเห็นของคุณ" : "รีวิวนี้มีประโยชน์ไหม?"}
+        {hasLiked ? "Thank you for your comments." : "Was this review helpful??"}
       </span>
 
       {/* ปุ่มถูกใจโทนฟ้า EV แบบมินิมอล */}

@@ -103,10 +103,10 @@ const Review: React.FC = () => {
         <div className="mx-auto max-w-screen-lg px-4 py-10">
           <div className="mx-auto mb-6 max-w-md text-center">
             <h2 className="text-[22px] font-bold tracking-tight text-blue-800">
-              รีวิวจากผู้ใช้งาน
+              Customer Reviews
             </h2>
             <p className="mt-1 text-[12px] text-blue-900/60">
-              ประสบการณ์ชาร์จที่สะอาด ลื่นไหล และเชื่อถือได้
+              A clean, smooth and reliable charging experience
             </p>
           </div>
 

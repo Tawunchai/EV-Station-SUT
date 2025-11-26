@@ -289,20 +289,20 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                 <div className="absolute right-0 mt-2 w-[560px] rounded-2xl border border-gray-200 bg-white shadow-2xl z-50">
                   <div className="px-4 py-3 flex justify-between items-center border-b">
                     <span className="font-semibold text-sm text-gray-900">
-                      สถานีทั้งหมด
+                      All Stations
                     </span>
                     <button
                       onClick={() => setMapOpen(false)}
                       className="text-xs px-2 py-1 rounded-lg hover:bg-gray-100"
                     >
-                      ปิด
+                      Close
                     </button>
                   </div>
 
                   <div ref={mapElRef} style={{ width: "100%", height: 380 }} />
 
                   <div className="bg-gray-50 text-xs px-4 py-2 text-gray-700">
-                    ทั้งหมด {stations.length} สถานี
+                    All {stations.length} Stations
                   </div>
                 </div>
               )}
@@ -396,7 +396,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                     <div className="font-semibold text-gray-900">
                       {user ? `${user.FirstName ?? ""} ${user.LastName ?? ""}` : "Guest"}
                     </div>
-                    <div className="text-gray-500">โปรไฟล์</div>
+                    <div className="text-gray-500">Profile</div>
                   </div>
                 </div>
                 <button
@@ -406,7 +406,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                   }}
                   className="rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
                 >
-                  เปิด
+                  open
                 </button>
               </div>
 

@@ -31,13 +31,13 @@ const CardAddVehicle: React.FC<CardAddVehicleProps> = ({
         <div className="flex items-start justify-between gap-4 px-5 pt-5">
           <div className="min-w-0">
             <p className="text-[12px] font-medium tracking-wide text-blue-700/80">
-              เตรียมพร้อมใช้งาน
+              Ready for Use
             </p>
             <h3 className="mt-0.5 text-[18px] font-semibold text-gray-900">
-              เพิ่มพาหนะของคุณ
+              Add your vehicle
             </h3>
             <p className="mt-1 text-[13px] leading-5 text-gray-600">
-              สามารถใช้งานสถานีได้
+              The station can be used
             </p>
           </div>
 
@@ -79,7 +79,7 @@ const CardAddVehicle: React.FC<CardAddVehicleProps> = ({
               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300
             "
           >
-            <span className="text-[14px]">เพิ่มพาหนะ</span>
+            <span className="text-[14px]">Add vehicle</span>
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/15">
               <svg
                 viewBox="0 0 24 24"

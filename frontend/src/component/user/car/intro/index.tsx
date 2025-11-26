@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
    HeaderBar (EV Gradient Blue)
    ========================= */
 const HeaderBar: React.FC<{ title?: string; onBack?: () => void }> = ({
-  title = "เพิ่มข้อมูลพาหนะ",
+  title = "Add vehicle information",
   onBack,
 }) => {
   const goBack = () => (onBack ? onBack() : window.history.back());
@@ -61,7 +61,7 @@ const Index: React.FC = () => {
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Header */}
-      <HeaderBar title="เพิ่มข้อมูลพาหนะ" onBack={() => navigate(-1)} />
+      <HeaderBar title="Add vehicle" onBack={() => navigate(-1)} />
 
       {/* Content */}
       <main className="flex-1 flex flex-col items-center justify-center px-6">
@@ -108,8 +108,8 @@ const Index: React.FC = () => {
         </div>
 
         {/* Title & Subtitle */}
-        <h1 className="mt-8 text-2xl sm:text-3xl font-bold text-gray-900">เพิ่มข้อมูลพาหนะ</h1>
-        <p className="mt-2 text-gray-500">เพื่อความพร้อมในการใช้บริการ</p>
+        <h1 className="mt-8 text-2xl sm:text-3xl font-bold text-gray-900">Add vehicle information</h1>
+        <p className="mt-2 text-gray-500">For service readiness</p>
       </main>
 
       {/* Bottom button */}
@@ -121,7 +121,7 @@ const Index: React.FC = () => {
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" strokeLinecap="round" />
           </svg>
-          เพิ่มพาหนะ
+          Add vehicle
         </button>
       </div>
     </div>

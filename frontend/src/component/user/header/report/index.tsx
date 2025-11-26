@@ -101,7 +101,7 @@ const ReportModal = ({ open, onClose }: Props) => {
           <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 ring-1 ring-inset ring-blue-100">
             <FaBolt className="text-blue-600" />
             <span className="text-sm font-semibold text-blue-700">
-              รายงานสถานี/การใช้งาน
+              Station/Usage Report
             </span>
           </span>
         </div>
@@ -110,7 +110,7 @@ const ReportModal = ({ open, onClose }: Props) => {
         <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
           <label className="mb-2 flex items-center gap-2 text-sm font-medium text-blue-800">
             <AiOutlineUpload size={20} />
-            อัปโหลดรูปภาพ (ไม่บังคับ)
+            Upload a photo (optional)
           </label>
 
           <ImgCrop rotationSlider>
@@ -133,14 +133,14 @@ const ReportModal = ({ open, onClose }: Props) => {
               {fileList.length < 1 && (
                 <div className="flex h-full w-full flex-col items-center justify-center text-gray-500 transition hover:text-blue-600">
                   <PlusOutlined style={{ fontSize: 24 }} />
-                  <div className="mt-2 text-[13px] font-medium">เพิ่มรูป</div>
+                  <div className="mt-2 text-[13px] font-medium">Add a photo</div>
                 </div>
               )}
             </Upload>
           </ImgCrop>
 
           <p className="mt-2 text-xs text-gray-500">
-            รองรับ JPEG/PNG • 1 รูป • ครอปได้ก่อนส่ง
+            Support JPEG/PNG • 1 image • Crop before sending
           </p>
         </div>
 
@@ -148,14 +148,14 @@ const ReportModal = ({ open, onClose }: Props) => {
         <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
           <label className="mb-2 flex items-center gap-2 text-sm font-medium text-blue-800">
             <AiOutlineFileText size={20} />
-            รายละเอียดคำอธิบาย <span className="text-red-500">*</span>
+            Detailed description <span className="text-red-500">*</span>
           </label>
           <textarea
             className="w-full rounded-xl border border-blue-100 bg-white p-3 text-[15px] text-gray-900
                        placeholder-gray-400 shadow-sm transition focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
             rows={5}
             required
-            placeholder="อธิบายปัญหาหรือสิ่งที่ต้องการรายงาน เช่น หัวชาร์จชำรุด สถานีใช้งานไม่ได้ ฯลฯ"
+            placeholder="Describe the problem or issue you want to report, such as a broken charger, an unusable station, etc."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
@@ -168,7 +168,7 @@ const ReportModal = ({ open, onClose }: Props) => {
             onClick={onClose}
             className="flex-1 h-11 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 transition hover:bg-gray-50"
           >
-            ยกเลิก
+            cancel
           </button>
           <button
             type="submit"

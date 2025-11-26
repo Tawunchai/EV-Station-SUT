@@ -295,7 +295,7 @@ const PayPalCard: React.FC = () => {
       {/* Content */}
       <main className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
         <div className="mb-4 flex items-center justify-between rounded-2xl bg-blue-50 px-4 py-3">
-          <div className="text-sm text-blue-900">ยอดชำระทั้งหมด</div>
+          <div className="text-sm text-blue-900">Total payment</div>
           <div className="text-xl font-bold text-blue-700">
             ฿{amountNumber.toFixed(2)}
           </div>
@@ -315,7 +315,7 @@ const PayPalCard: React.FC = () => {
                 <QRCode value={qrCode} size={180} errorLevel="H" />
               ) : (
                 <div className="w-[180px] h-[180px] flex items-center justify-center bg-gray-100 text-gray-400 rounded-lg">
-                  กำลังสร้าง QR Code...
+                  Generating QR Code...
                 </div>
               )}
             </div>
@@ -324,7 +324,7 @@ const PayPalCard: React.FC = () => {
           {/* Upload Section */}
           <div className="mt-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-2">
-              อัปโหลดสลิปชำระเงิน
+              Upload payment slip
             </h2>
 
             {uploadedFile ? (
@@ -358,9 +358,9 @@ const PayPalCard: React.FC = () => {
                 onDragOver={handleDragOver}
               >
                 <FileImageOutlined style={{ fontSize: 44, marginBottom: 10 }} />
-                <p className="text-sm font-medium">ยังไม่มีสลิปที่อัปโหลด</p>
+                <p className="text-sm font-medium">No uploaded slip yet.</p>
                 <p className="text-[12px] mt-1 text-gray-500 text-center px-2">
-                  คลิกหรือ “ลาก-วาง” ไฟล์สลิปมาที่นี่เพื่ออัปโหลด
+                  Click or “drag-drop” the slip file here to upload.
                 </p>
               </div>
             )}
@@ -387,7 +387,7 @@ const PayPalCard: React.FC = () => {
             className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition"
           >
             <FaUpload />
-            <span className="text-sm font-semibold">อัปโหลดสลิป</span>
+            <span className="text-sm font-semibold">Upload slip</span>
           </button>
 
           <button
@@ -400,7 +400,7 @@ const PayPalCard: React.FC = () => {
             }`}
           >
             <FaPaperPlane />
-            <span className="text-sm font-semibold">ส่งหลักฐาน</span>
+            <span className="text-sm font-semibold">Submit</span>
           </button>
         </div>
       </div>

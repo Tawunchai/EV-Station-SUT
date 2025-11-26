@@ -62,10 +62,10 @@ const New = () => {
       {/* Title */}
       <div className="mx-auto max-w-screen-lg px-4 pt-6 pb-3 text-center">
         <h1 className="text-[20px] md:text-[22px] font-bold tracking-tight text-blue-800">
-          ข่าวสาร & ประกาศ
+          News and Events
         </h1>
         <p className="mt-1 text-[12px] text-blue-900/60">
-          อัปเดตเรื่องราว EV ล่าสุดสำหรับคุณ
+          Keep up to date with the latest EV stories for you.
         </p>
       </div>
 

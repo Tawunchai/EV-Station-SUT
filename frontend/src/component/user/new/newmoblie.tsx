@@ -42,7 +42,7 @@ const NewsCarousel = () => {
       {/* Header */}
       <div className="mx-auto max-w-screen-lg flex items-center justify-between">
         <h2 className="text-[15px] md:text-base font-bold tracking-tight text-blue-800">
-          ข่าวสารและกิจกรรม
+          News and Events
         </h2>
 
         <Link
@@ -57,7 +57,7 @@ const NewsCarousel = () => {
             whitespace-nowrap
           "
         >
-          ดูทั้งหมด
+          View more
           <span aria-hidden>›</span>
         </Link>
       </div>
