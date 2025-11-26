@@ -51,11 +51,11 @@ var (
 // ⭐ โครงสร้างเก็บสถานะล่าสุดของแต่ละตู้
 // ============================================================================
 type ChargerStatus struct {
-	ChargerID   string `json:"chargerId"`
-	ConnectorID int    `json:"connectorId"`
-	Status      string `json:"status"`
-	ErrorCode   string `json:"errorCode"`
-	Connected   bool   `json:"connected"`
+	ChargerID     string    `json:"chargerId"`
+	ConnectorID   int       `json:"connectorId"`
+	Status        string    `json:"status"`
+	ErrorCode     string    `json:"errorCode"`
+	Connected     bool      `json:"connected"`
 	LastHeartbeat time.Time `json:"lastHeartbeat"`
 }
 
@@ -269,13 +269,13 @@ func HandleOCPP(c *gin.Context) {
 
 		// --------------------------------------------------------------------
 		// 3 = CALLRESULT (จากตู้ตอบกลับ CALL ของเรา เช่น RemoteStart)
-// --------------------------------------------------------------------
+		// --------------------------------------------------------------------
 		case 3:
 			handleCallResultFromCharger(chargerID, frame, messageID)
 
 		// --------------------------------------------------------------------
 		// 4 = CALLERROR (ตู้ตอบ error กลับ CALL ของเรา)
-// --------------------------------------------------------------------
+		// --------------------------------------------------------------------
 		case 4:
 			handleCallErrorFromCharger(chargerID, frame, messageID)
 
@@ -323,9 +323,9 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			3,
 			messageID,
 			map[string]interface{}{
-				"status":      "Accepted",     // Accepted / Pending / Rejected
-				"currentTime": nowOcppTime(),  // เวลาปัจจุบันใน server (UTC)
-				"interval":    30,             // heartbeat interval (วินาที)
+				"status":      "Accepted",    // Accepted / Pending / Rejected
+				"currentTime": nowOcppTime(), // เวลาปัจจุบันใน server (UTC)
+				"interval":    30,            // heartbeat interval (วินาที)
 			},
 		}
 
@@ -338,7 +338,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	// ---------------------------------------------------------------
 	// Heartbeat (ตู้ส่ง heartbeat มาเช็คว่ายังออนไลน์อยู่)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "Heartbeat":
 		statusMu.Lock()
 		st, ok := chargerStatuses[chargerID]
@@ -366,7 +366,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	// ---------------------------------------------------------------
 	// Authorize (ตู้ส่งเพื่อขอเช็ค idTag)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "Authorize":
 		idTag, _ := payload["idTag"].(string)
 		fmt.Println("🔐 Authorize request from", chargerID, "idTag =", idTag)
@@ -390,7 +390,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	// ---------------------------------------------------------------
 	// StatusNotification (ตู้บอกสถานะ Connector)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "StatusNotification":
 		fmt.Println("📥 StatusNotification from", chargerID)
 
@@ -410,11 +410,11 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		statusMu.Lock()
 		old := chargerStatuses[chargerID]
 		newSt := ChargerStatus{
-			ChargerID:    chargerID,
-			ConnectorID:  connectorID,
-			Status:       statusStr,
-			ErrorCode:    errorCode,
-			Connected:    true,
+			ChargerID:     chargerID,
+			ConnectorID:   connectorID,
+			Status:        statusStr,
+			ErrorCode:     errorCode,
+			Connected:     true,
 			LastHeartbeat: time.Now().UTC(),
 		}
 		if old.ChargerID != "" && newSt.ConnectorID == 0 {
@@ -432,7 +432,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	// ---------------------------------------------------------------
 	// StartTransaction (เริ่ม session จริงจากตู้)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "StartTransaction":
 		fmt.Println("🚗 StartTransaction received from", chargerID)
 
@@ -458,7 +458,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	// ---------------------------------------------------------------
 	// StopTransaction (จบ session จากตู้)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "StopTransaction":
 		fmt.Println("🛑 StopTransaction received — ending session for", chargerID)
 
@@ -482,7 +482,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	// ---------------------------------------------------------------
 	// MeterValues (ค่าพลังงาน kWh, current, voltage ฯลฯ)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "MeterValues":
 		fmt.Println("📊 MeterValues from", chargerID, "payload =", payload)
 
@@ -498,7 +498,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 	// ---------------------------------------------------------------
 	// DiagnosticsStatusNotification, FirmwareStatusNotification, DataTransfer ฯลฯ
 	// (ตอนนี้ตอบรับแบบ basic ไปก่อน)
-// ---------------------------------------------------------------
+	// ---------------------------------------------------------------
 	case "DiagnosticsStatusNotification", "FirmwareStatusNotification", "DataTransfer":
 		fmt.Printf("📥 %s from %s payload=%v\n", action, chargerID, payload)
 		response := []interface{}{3, messageID, map[string]interface{}{}}
@@ -596,7 +596,9 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 	chargersMu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("❌ charger %s not connected", chargerID)
+		err := fmt.Errorf("charger %s not connected", chargerID)
+		fmt.Println("❌", err)
+		return err
 	}
 
 	if connectorID <= 0 {
@@ -613,8 +615,8 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 		messageID,
 		"RemoteStartTransaction",
 		map[string]interface{}{
-			"connectorId":    connectorID,
-			"idTag":          idTag,
+			"connectorId":     connectorID,
+			"idTag":           idTag,
 			"chargingProfile": nil, // บางตู้ต้องการ field นี้ (null ได้)
 		},
 	}
@@ -632,7 +634,7 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 		return err
 	}
 
-	fmt.Println("➡️ RemoteStartTransaction sent to", chargerID, "connectorId =", connectorID)
+	fmt.Println("➡️ RemoteStartTransaction sent to", chargerID, "connectorId =", connectorID, "idTag =", idTag)
 	broadcastTextToFrontend("[SENT] RemoteStartTransaction to " + chargerID + "\n")
 	return nil
 }
@@ -646,7 +648,9 @@ func SendRemoteStopTransaction(chargerID string, txID int) error {
 	chargersMu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("❌ charger %s not connected", chargerID)
+		err := fmt.Errorf("charger %s not connected", chargerID)
+		fmt.Println("❌", err)
+		return err
 	}
 
 	if txID <= 0 {
@@ -693,17 +697,68 @@ type RemoteStartRequest struct {
 
 func RemoteStartHandler(c *gin.Context) {
 	var req RemoteStartRequest
+
+	// ลอง bind JSON จาก body
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "invalid body"})
+		fmt.Println("❌ RemoteStart invalid body:", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "invalid body",
+			"detail": err.Error(),
+		})
 		return
 	}
 
+	fmt.Printf("🟦 RemoteStartHandler request: %+v\n", req)
+
+	if req.ChargerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerId is required"})
+		return
+	}
+
+	// default ถ้า frontend ไม่ส่ง connectorId / idTag มา
+	if req.ConnectorID <= 0 {
+		req.ConnectorID = 1
+	}
+	if req.IdTag == "" {
+		req.IdTag = "EV-SIM-001"
+	}
+
+	// เช็กว่าตู้ต่ออยู่จริงไหม
+	chargersMu.Lock()
+	_, connected := chargers[req.ChargerID]
+	chargersMu.Unlock()
+	if !connected {
+		fmt.Println("❌ RemoteStart: charger not connected:", req.ChargerID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "charger not connected"})
+		return
+	}
+
+	// เช็กสถานะต้องเป็น Preparing ก่อนถึงจะเริ่มได้ (ตามที่ตั้งใจ)
+	statusMu.Lock()
+	st, ok := chargerStatuses[req.ChargerID]
+	statusMu.Unlock()
+	if !ok {
+		fmt.Println("❌ RemoteStart: no status for charger:", req.ChargerID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no status for this charger"})
+		return
+	}
+	if st.Status != "Preparing" {
+		fmt.Printf("❌ RemoteStart: charger %s status is %s (need Preparing)\n", req.ChargerID, st.Status)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "charger must be in Preparing state to start",
+			"status": st.Status,
+		})
+		return
+	}
+
+	// ส่งคำสั่ง RemoteStartTransaction
 	if err := SendRemoteStartTransaction(req.ChargerID, req.ConnectorID, req.IdTag); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		fmt.Println("❌ RemoteStart error:", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "RemoteStartTransaction sent"})
+	c.JSON(http.StatusOK, gin.H{"message": "RemoteStartTransaction sent"})
 }
 
 // ============================================================================
@@ -716,22 +771,23 @@ type RemoteStopRequest struct {
 func RemoteStopHandler(c *gin.Context) {
 	var req RemoteStopRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "invalid body"})
+		fmt.Println("❌ RemoteStop invalid body:", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
 
 	txID, ok := getTransactionID(req.ChargerID)
 	if !ok {
-		c.JSON(400, gin.H{"error": "no active transaction"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no active transaction"})
 		return
 	}
 
 	if err := SendRemoteStopTransaction(req.ChargerID, txID); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "RemoteStopTransaction sent"})
+	c.JSON(http.StatusOK, gin.H{"message": "RemoteStopTransaction sent"})
 }
 
 // ============================================================================
@@ -745,7 +801,7 @@ func GetChargerStatusHandler(c *gin.Context) {
 	statusMu.Unlock()
 
 	if !ok {
-		c.JSON(404, gin.H{"error": "no status for this charger"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "no status for this charger"})
 		return
 	}
 
@@ -755,7 +811,7 @@ func GetChargerStatusHandler(c *gin.Context) {
 	chargersMu.Unlock()
 	st.Connected = connected
 
-	c.JSON(200, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"data": st,
 	})
 }

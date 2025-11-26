@@ -50,8 +50,9 @@ const ChargingEV = () => {
   const [ocppStatus, setOcppStatus] = useState<string>("Unknown");
 
   // ⭐ เก็บค่าจาก hardware (เอาไว้ log + future UI)
-  //@ts-ignore
-  const [solarKwh, setSolarKwh] = useState<number | null>(null);//@ts-ignore
+  // @ts-ignore
+  const [solarKwh, setSolarKwh] = useState<number | null>(null);
+  // @ts-ignore
   const [gridKwh, setGridKwh] = useState<number | null>(null);
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
@@ -410,7 +411,16 @@ const ChargingEV = () => {
   const startDisabled =
     hasStarted || charging || isComplete || statusLabel !== "Preparing";
 
-  const cancelDisabled = !hasStarted || isComplete;
+  // ❗ แก้ตรงนี้: ผูกกับสถานะ OCPP แทน hasStarted
+  const cancelDisabled =
+    isComplete ||
+    !(
+      statusLabel === "Preparing" ||
+      statusLabel === "Charging" ||
+      statusLabel === "SuspendedEV" ||
+      statusLabel === "Finishing"
+    );
+
   const completeDisabled = !isComplete;
 
   return (
@@ -639,16 +649,6 @@ const ChargingEV = () => {
                     </span>
                   </div>
                 </div>
-
-                {/* (อาจจะใช้แสดงค่าพลังงานในอนาคต)
-                <div className="rounded-xl bg-gray-50 px-4 py-3">
-                  <div className="text-[11px] text-gray-500">พลังงานที่ใช้</div>
-                  <div className="mt-1 text-xs text-gray-700 space-y-0.5">
-                    <div>🌞 Solar: {solarKwh ?? "-"} kWh</div>
-                    <div>🔌 Grid: {gridKwh ?? "-"} kWh</div>
-                  </div>
-                </div>
-                */}
               </div>
             </div>
 
