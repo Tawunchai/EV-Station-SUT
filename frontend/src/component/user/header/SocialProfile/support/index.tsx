@@ -53,7 +53,7 @@ const SupportCard: React.FC = () => {
             <RiBugLine />
           </span>
           <span className="text-gray-900 text-sm md:text-base font-bold">
-            ติดต่อ / แจ้งปัญหา
+            Service Desk
           </span>
           <Tag color="blue" className="ml-2 hidden md:inline-flex">
             Service Desk
@@ -81,7 +81,7 @@ const SupportCard: React.FC = () => {
               {service.Email}
             </Link>
             <div className="mt-1 text-[12px] text-gray-500">
-              แนะนำให้แนบภาพหน้าจอ/วิดีโอ เพื่อช่วยตรวจสอบได้ไวขึ้น
+              Attaching screenshots/videos helps speed up verification.
             </div>
           </div>
         </div>
@@ -99,7 +99,7 @@ const SupportCard: React.FC = () => {
               {service.Phone}
             </Link>
             <div className="mt-1 text-[12px] text-gray-500">
-              โทรในเวลาทำการเพื่อการช่วยเหลือแบบเร่งด่วน
+              Call during business hours for urgent assistance.
             </div>
           </div>
         </div>
@@ -111,13 +111,13 @@ const SupportCard: React.FC = () => {
           </span>
           <div className="flex-1 min-w-0">
             <Text type="secondary" className="text-[12px] block">
-              สถานที่
+              Station
             </Text>
             <Paragraph className="!mb-1 text-sm md:text-base">
               {service.Location}
             </Paragraph>
             <Link href={service.MapURL} target="_blank" className="text-[13px]">
-              เปิดแผนที่ <RiExternalLinkLine className="inline -mt-1 ml-0.5" />
+              Open map <RiExternalLinkLine className="inline -mt-1 ml-0.5" />
             </Link>
           </div>
         </div>

@@ -6,7 +6,7 @@ import type { ModalInterface } from "../../../../interface/ICarCatalog";
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 
 const EVHeader: React.FC<{ title?: string; onBack?: () => void }> = ({
-  title = "เพิ่มพาหนะ",
+  title = "Add vehicles",
   onBack,
 }) => {
   const goBack = () => (onBack ? onBack() : window.history.back());
@@ -74,7 +74,7 @@ const BottomSheet: React.FC<{
         </div>
         <div className="px-4 py-2 flex items-center justify-between">
           <button className="text-blue-600 font-medium" onClick={onClose}>
-            ยกเลิก
+            cancel
           </button>
           <div className="text-slate-900 font-semibold">{title}</div>
           <div className="w-12" />
@@ -316,13 +316,13 @@ const AddCarPage: React.FC = () => {
   return (
     <form onSubmit={submit} className="min-h-screen bg-gray-50 flex flex-col">
       {contextHolder}
-      <EVHeader title="เพิ่มพาหนะ" onBack={() => navigate(-1)} />
+      <EVHeader title="Add vehicle" onBack={() => navigate(-1)} />
 
       <div className="flex-1 px-4 pt-4 pb-28 overflow-y-auto">
         <div className="max-w-3xl mx-auto space-y-6">
           {/* ===== ยี่ห้อ ===== */}
           <div>
-            <span className="text-sm text-gray-700">ยี่ห้อ *</span>
+            <span className="text-sm text-gray-700">brand *</span>
             {isMobile ? (
               <>
                 <button
@@ -337,7 +337,7 @@ const AddCarPage: React.FC = () => {
                   ) : (
                     <>
                       <span className={brand ? "text-slate-900" : "text-slate-400"}>
-                        {brand || "เลือกยี่ห้อ"}
+                        {brand || "Select brand"}
                       </span>
                       <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="m6 9 6 6 6-6" />
@@ -348,7 +348,7 @@ const AddCarPage: React.FC = () => {
                 {brand === "อื่นๆ" && (
                   <input
                     className="mt-3 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
-                    placeholder="ระบุยี่ห้อ"
+                    placeholder="Specify brand"
                     value={otherBrand}
                     onChange={(e) => setOtherBrand(e.target.value)}
                   />
@@ -365,7 +365,7 @@ const AddCarPage: React.FC = () => {
                     setOtherBrand("");
                   }}
                 >
-                  <option value="">เลือกยี่ห้อ</option>
+                  <option value="">Select brand</option>
                   {brandOptions.map((b) => (
                     <option key={b} value={b}>
                       {b}
@@ -375,7 +375,7 @@ const AddCarPage: React.FC = () => {
                 {brand === "อื่นๆ" && (
                   <input
                     className="rounded-xl border border-slate-300 p-3 bg-white outline-none"
-                    placeholder="ระบุยี่ห้อ"
+                    placeholder="Specify brand"
                     value={otherBrand}
                     onChange={(e) => setOtherBrand(e.target.value)}
                   />
@@ -386,7 +386,7 @@ const AddCarPage: React.FC = () => {
 
           {/* ===== รุ่น ===== */}
           <div>
-            <span className="text-sm text-gray-700">รุ่น *</span>
+            <span className="text-sm text-gray-700">model *</span>
             {isMobile ? (
               <>
                 <button
@@ -396,7 +396,7 @@ const AddCarPage: React.FC = () => {
                   className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-left bg-white flex items-center justify-between"
                 >
                   <span className={model ? "text-slate-900" : "text-slate-400"}>
-                    {model || "เลือกรุ่น"}
+                    {model || "model"}
                   </span>
                   <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="m6 9 6 6 6-6" />
@@ -405,7 +405,7 @@ const AddCarPage: React.FC = () => {
                 {(brand === "อื่นๆ" || model === "อื่นๆ") && (
                   <input
                     className="mt-3 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
-                    placeholder="ระบุรุ่น"
+                    placeholder="Specify model"
                     value={otherModel}
                     onChange={(e) => setOtherModel(e.target.value)}
                   />
@@ -419,7 +419,7 @@ const AddCarPage: React.FC = () => {
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                 >
-                  <option value="">เลือกรุ่น</option>
+                  <option value="">Select model</option>
                   {modelOptions.map((m) => (
                     <option key={m} value={m}>
                       {m}
@@ -429,7 +429,7 @@ const AddCarPage: React.FC = () => {
                 {(brand === "อื่นๆ" || model === "อื่นๆ") && (
                   <input
                     className="rounded-xl border border-slate-300 p-3 bg-white outline-none"
-                    placeholder="ระบุรุ่น"
+                    placeholder="Specify model"
                     value={otherModel}
                     onChange={(e) => setOtherModel(e.target.value)}
                   />
@@ -441,12 +441,12 @@ const AddCarPage: React.FC = () => {
           {/* ===== ทะเบียนพิเศษ ===== */}
           <div className="flex items-center gap-2">
             <Checkbox checked={isSpecialReg} onChange={(e) => setIsSpecialReg(e.target.checked)} />
-            <span>พาหนะของคุณเป็นทะเบียนพิเศษ</span>
+            <span>Your vehicle has a special registration.</span>
           </div>
 
           {/* ===== ทะเบียน ===== */}
           <div>
-            <span className="text-sm text-gray-700">ทะเบียน *</span>
+            <span className="text-sm text-gray-700">register *</span>
             <input
               className={`mt-2 w-full rounded-xl border p-3 bg-white outline-none ${
                 plateError ? "border-red-400" : "border-slate-300"
@@ -464,7 +464,7 @@ const AddCarPage: React.FC = () => {
 
           {/* ===== จังหวัด ===== */}
           <div>
-            <span className="text-sm text-gray-700">จังหวัด *</span>
+            <span className="text-sm text-gray-700">province *</span>
             {isMobile ? (
               <button
                 type="button"
@@ -484,7 +484,7 @@ const AddCarPage: React.FC = () => {
                 value={province}
                 onChange={(e) => setProvince(e.target.value)}
               >
-                <option value="">เลือกจังหวัด</option>
+                <option value="">Select a province</option>
                 {TH_PROVINCES.map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -505,14 +505,14 @@ const AddCarPage: React.FC = () => {
             !submitting ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300"
           }`}
         >
-          {submitting ? "กำลังบันทึก..." : "บันทึก"}
+          {submitting ? "Recording..." : "Save"}
         </button>
       </div>
 
       {/* BottomSheet (Mobile only) */}
       <BottomSheet
         open={isMobile && brandSheetOpen}
-        title="ยี่ห้อ"
+        title="brand"
         items={brandOptions.map((b) => ({ key: b, label: b }))}
         onClose={() => setBrandSheetOpen(false)}
         onSelect={(it) => {
@@ -522,7 +522,7 @@ const AddCarPage: React.FC = () => {
       />
       <BottomSheet
         open={isMobile && modelSheetOpen}
-        title="รุ่น"
+        title="model"
         items={modelOptions.map((m) => ({ key: m, label: m }))}
         onClose={() => setModelSheetOpen(false)}
         onSelect={(it) => {
@@ -532,7 +532,7 @@ const AddCarPage: React.FC = () => {
       />
       <BottomSheet
         open={isMobile && provinceSheetOpen}
-        title="จังหวัด"
+        title="province"
         items={TH_PROVINCES.map((p) => ({ key: p, label: p }))}
         onClose={() => setProvinceSheetOpen(false)}
         onSelect={(it) => {

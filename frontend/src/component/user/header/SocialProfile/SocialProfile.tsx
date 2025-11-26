@@ -33,7 +33,7 @@ const SocialProfile: React.FC = () => {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <Header title="My EV Profile" />
+      <Header title="My Profile" />
 
       {/* Main Container */}
       <div className="mx-auto w-full max-w-screen-sm md:max-w-6xl px-4 pb-8 md:pb-12">
@@ -62,7 +62,7 @@ const SocialProfile: React.FC = () => {
                       activeKey === "1" ? "text-blue-600" : "text-gray-500"
                     }`}
                   >
-                    🚙 โปรไฟล์ของฉัน
+                    🚙 Profile
                   </span>
                 ),
                 children: (
@@ -78,7 +78,7 @@ const SocialProfile: React.FC = () => {
                         <Cars userID={userID} />
                       ) : (
                         <div className="text-gray-400 text-sm">
-                          กำลังโหลดข้อมูลผู้ใช้...
+                          Loading user data...
                         </div>
                       )}
                       <br />
@@ -95,7 +95,7 @@ const SocialProfile: React.FC = () => {
                       activeKey === "2" ? "text-blue-600" : "text-gray-500"
                     }`}
                   >
-                    ⚡ ประวัติการจอง
+                    ⚡ Booking history
                   </span>
                 ),
                 children: (
@@ -114,7 +114,7 @@ const SocialProfile: React.FC = () => {
                       activeKey === "3" ? "text-blue-600" : "text-gray-500"
                     }`}
                   >
-                    🛠️ แจ้งปัญหา
+                    🛠️ Report
                   </span>
                 ),
                 children: (

@@ -73,11 +73,11 @@ const Footer: React.FC = () => {
   };
 
   const tabs: Tab[] = [
-    { key: "home", label: "หน้าหลัก", to: "/", icon: <AiFillHome />, "aria-label": "home" },
-    { key: "map", label: "แผนที่", to: "/user/map", icon: <HiOutlineMap />, "aria-label": "map" },
-    { key: "charge", label: "ชาร์จ", to: "/user/evs-selector", icon: <FaBolt />, "aria-label": "charge" },
-    { key: "news", label: "ข่าวสาร", to: "/user/all-news", icon: <RiNewspaperLine />, "aria-label": "news" },
-    { key: "account", label: "บัญชี", to: "/user/profile", icon: <FiUser />, "aria-label": "account" },
+    { key: "home", label: "Home", to: "/", icon: <AiFillHome />, "aria-label": "home" },
+    { key: "map", label: "Map", to: "/user/map", icon: <HiOutlineMap />, "aria-label": "map" },
+    { key: "charge", label: "Charge", to: "/user/evs-selector", icon: <FaBolt />, "aria-label": "charge" },
+    { key: "news", label: "News", to: "/user/all-news", icon: <RiNewspaperLine />, "aria-label": "news" },
+    { key: "account", label: "Account", to: "/user/profile", icon: <FiUser />, "aria-label": "account" },
   ];
 
   const isActive = (path: string) =>
@@ -133,7 +133,7 @@ const Footer: React.FC = () => {
                               : "mt-1 text-center text-[11px] font-semibold text-blue-700"
                           }
                         >
-                          {isChargingActive ? "กำลังชาร์จ" : tab.label}
+                          {isChargingActive ? "Charging" : tab.label}
                         </div>
                       </button>
                     </li>
@@ -233,12 +233,12 @@ const Footer: React.FC = () => {
 
               {/* TITLE */}
               <h3 className="text-xl font-bold text-blue-900 tracking-tight">
-                คุณกำลังชาร์จอยู่
+                You are charging
               </h3>
 
               {/* DESCRIPTION */}
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[260px]">
-                เลือกตู้ชาร์จที่คุณต้องการดูสถานะ หรือซื้อไฟฟ้าเพิ่ม
+                Select a station to check status or add power.
               </p>
             </div>
 
@@ -283,7 +283,7 @@ const Footer: React.FC = () => {
             active:scale-[0.97] transition-all
           "
               >
-                ซื้อไฟฟ้าเพิ่ม
+                Buy more power
               </button>
             </div>
           </div>

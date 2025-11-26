@@ -28,7 +28,7 @@ const BoltIcon: React.FC<{ className?: string }> = ({ className }) => (
    HeaderBar (Mobile)
    ========================= */
 const HeaderBar: React.FC<{ title?: string; onBack?: () => void }> = ({
-  title = "จองเข้าชาร์จไฟฟ้า",
+  title = "EV Station",
   onBack,
 }) => {
   const goBack = () => (onBack ? onBack() : window.history.back());
@@ -184,7 +184,7 @@ const EVMapMobile: React.FC = () => {
   if (!loading && !cabinets.length) {
     return (
       <div className="relative w-full h-screen bg-gradient-to-b from-blue-50 to-blue-100 overflow-hidden flex flex-col">
-        <HeaderBar title="EV Charging Station Map" onBack={() => navigate(-1)} />
+        <HeaderBar title="EV Station" onBack={() => navigate(-1)} />
         <div className="flex flex-1 items-center justify-center text-gray-500">
           <div className="text-center">
             <BoltIcon className="h-6 w-6 text-blue-500 mb-2" />
@@ -197,7 +197,7 @@ const EVMapMobile: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-blue-50 to-blue-100 overflow-hidden flex flex-col">
-      <HeaderBar title="EV Charging Station Map" onBack={() => navigate(-1)} />
+      <HeaderBar title="EV Station" onBack={() => navigate(-1)} />
 
       {/* Map */}
       <div className="flex-1 relative">
@@ -279,7 +279,7 @@ const EVMapMobile: React.FC = () => {
                     onClick={() => handleBookingClick(cabinet)}
                     className="mt-2 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] rounded-lg shadow-sm transition-all"
                   >
-                    จองจุดชาร์จนี้
+                    Reserve this charging point
                   </button>
                 </div>
               ))}
@@ -308,7 +308,7 @@ const EVMapMobile: React.FC = () => {
           ไม่พบข้อมูลรถของคุณ
         </h3>
         <p className="text-gray-600 mb-5">
-          ก่อนทำการจอง กรุณาเพิ่มข้อมูลรถของคุณในระบบ
+          Before making a reservation, please add your vehicle information to the system.
         </p>
 
         <div className="flex justify-center gap-3">

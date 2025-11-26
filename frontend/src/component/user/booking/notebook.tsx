@@ -27,7 +27,7 @@ const BoltIcon: React.FC<{ className?: string }> = ({ className }) => (
    HeaderBar (Desktop)
    ========================= */
 const HeaderBar: React.FC<{ title?: string; onBack?: () => void }> = ({
-  title = "EV Charging Station Map",
+  title = "EV Station",
   onBack,
 }) => {
   const goBack = () => (onBack ? onBack() : window.history.back());
@@ -264,7 +264,7 @@ const EVMapNotebook: React.FC = () => {
                     onClick={() => handleBookingClick(cabinet)}
                     className="mt-3 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition"
                   >
-                    จองจุดชาร์จนี้
+                    Reserve this charging point
                   </button>
                 </div>
               ))}
@@ -288,7 +288,7 @@ const EVMapNotebook: React.FC = () => {
         <div className="text-center">
           <div className="text-4xl mb-3">🚗</div>
           <h3 className="text-lg font-semibold text-blue-700">ไม่พบข้อมูลรถของคุณ</h3>
-          <p className="text-gray-600 mb-5">กรุณาเพิ่มข้อมูลรถก่อนทำการจอง</p>
+          <p className="text-gray-600 mb-5">Before making a reservation, please add your vehicle information to the system.</p>
 
           <div className="flex justify-center gap-3">
             <Button onClick={() => setShowCarModal(false)}>ยกเลิก</Button>

@@ -580,7 +580,7 @@ const ChargingEV = () => {
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-md w-full">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-base font-semibold text-blue-900">
-                <FaBolt className="text-blue-600" /> กำลังชาร์จ EV
+                <FaBolt className="text-blue-600" /> Charging
               </h2>
 
               <span
@@ -618,14 +618,14 @@ const ChargingEV = () => {
               {/* INFO */}
               <div className="flex-1 flex flex-col items-stretch gap-3 min-w-[160px]">
                 <div className="rounded-xl bg-blue-50 px-4 py-3">
-                  <div className="text-[11px] text-blue-900/70">เปอร์เซ็นต์</div>
+                  <div className="text-[11px] text-blue-900/70">Percent</div>
                   <div className="text-3xl font-extrabold text-blue-700">
                     {energy}%
                   </div>
                 </div>
 
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
-                  <div className="text-[11px] text-gray-500">เวลา</div>
+                  <div className="text-[11px] text-gray-500">Time</div>
                   <div className="font-semibold text-gray-800">
                     {formatTime(time)}
                   </div>
@@ -633,14 +633,14 @@ const ChargingEV = () => {
 
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
                   <div className="text-[11px] text-gray-500">
-                    กำลังชาร์จ (kW)
+                    Charging (kWh)
                   </div>
                   <div className="font-semibold text-gray-800">{estKW}</div>
                 </div>
 
                 {/* ⭐ ช่อง สถานะ เพิ่มใหม่ พร้อมสีตาม OCPP */}
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
-                  <div className="text-[11px] text-gray-500">สถานะ</div>
+                  <div className="text-[11px] text-gray-500">status</div>
                   <div className="mt-1">
                     <span
                       className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusClass}`}
@@ -666,7 +666,7 @@ const ChargingEV = () => {
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
                 >
-                  เริ่ม
+                  Start
                 </button>
 
                 {/* ยกเลิก */}
@@ -684,7 +684,7 @@ const ChargingEV = () => {
                         : "bg-red-500 text-white hover:bg-red-600"
                     }`}
                 >
-                  ยกเลิก
+                  Cancel
                 </button>
 
                 {/* เสร็จสิ้น */}
@@ -698,7 +698,7 @@ const ChargingEV = () => {
                         : "bg-green-600 text-white hover:bg-green-700"
                     }`}
                 >
-                  เสร็จสิ้น
+                  Finish
                 </button>
               </div>
             </div>

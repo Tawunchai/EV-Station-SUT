@@ -306,7 +306,7 @@ const Index: React.FC = () => {
         {/* เงิน */}
         <div className="mb-5 rounded-xl bg-gradient-to-r from-[#EAF3FF] via-[#F3F8FF] to-[#FFFFFF] border border-blue-100 p-3 shadow-sm">
           <label className="block text-xs mb-1 text-[#0A84FF]">
-            💵 ใส่จำนวนเงินที่ต้องการเติม (ขั้นต่ำ {minAmount.toFixed(2)} บาท)
+            💵 Enter top-up amount (min {minAmount.toFixed(2)} baht)
           </label>
 
           <div className="relative">
@@ -327,7 +327,7 @@ const Index: React.FC = () => {
 
         {/* Total */}
         <div className="mb-3 flex items-center justify-between rounded-2xl bg-blue-100 px-4 py-3">
-          <span className="text-sm text-blue-900">ยอดรวมทั้งหมด</span>
+          <span className="text-sm text-blue-900">Total Payment Amount</span>
           <span className="text-xl font-bold text-blue-700">
             ฿{totalAmount.toFixed(2)}
           </span>
@@ -335,7 +335,7 @@ const Index: React.FC = () => {
 
         {/* Cabinet Selector */}
         <section className="mb-5 rounded-2xl border bg-white px-4 py-3 shadow-sm">
-          <div className="mb-2 text-sm font-semibold">เลือกตู้ชาร์จ</div>
+          <div className="mb-2 text-sm font-semibold">Select a charging station</div>
 
           {loading ? (
             <div className="space-y-2">
@@ -413,11 +413,11 @@ const Index: React.FC = () => {
                       {/* Tag สถานะ */}
                       {isCharging ? (
                         <span className="rounded-xl bg-orange-500 px-2 py-1 text-[11px] text-white">
-                          กำลังชาร์จไฟ
+                          Charging
                         </span>
                       ) : isActive ? (
                         <span className="rounded-xl bg-blue-600 px-2 py-1 text-[11px] text-white">
-                          เลือกอยู่
+                          Choose
                         </span>
                       ) : null}
                     </div>
@@ -516,7 +516,7 @@ const Index: React.FC = () => {
       <div className="fixed bottom-0 inset-x-0 bg-white/90 border-t backdrop-blur px-4 py-3">
         <div className="flex items-center justify-between max-w-screen-sm mx-auto">
           <div>
-            <span className="text-xs text-gray-500">ยอดรวม</span>
+            <span className="text-xs text-gray-500">Total</span>
             <div className="text-lg font-bold text-blue-700">
               ฿{totalAmount.toFixed(2)}
             </div>

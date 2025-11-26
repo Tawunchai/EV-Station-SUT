@@ -382,25 +382,25 @@ func seedContent(db *gorm.DB) {
 	// GettingStarted
 	getting1 := entity.GettingStarted{
 		Picture:     "uploads/getting_started/gettingone.png",
-		Title:       "เตรียมความพร้อม",
-		Description: "จอดรถให้พอร์ตชาร์จใกล้กับตู้ชาร์จมากที่สุด จากนั้นดับเครื่องยนต์และปิดระบบขับเคลื่อน เเละเลือกหัวชาร์จที่ตรงกับพอร์ตของรถคุณ",
+		Title:       "Get ready",
+		Description: "Park your car so that the charging port is as close to the charging station as possible, then turn off the engine and drivetrain and select the charging port that matches your car's port.",
 		EmployeeID:  empIDPtr,
 	}
 	getting2 := entity.GettingStarted{
 		Picture:     "uploads/getting_started/gettingtwo.png",
-		Title:       "เริ่มการเชื่อมต่อและชาร์จ",
-		Description: "เสียบหัวชาร์จเข้ากับพอร์ตของรถให้แน่นจนล็อกเข้าที่ กดปุ่ม เริ่ม บนแอปพลิเคชันหรือที่หน้าจอของตู้ชาร์จ เพื่อเริ่มกระบวนการจ่ายไฟ",
+		Title:       "Start connecting and charging",
+		Description: "Insert the charger head firmly into the vehicle's port until it locks into place. Press the Start button on the app or on the charger's screen to begin the charging process.",
 		EmployeeID:  empIDPtr,
 	}
 	getting3 := entity.GettingStarted{
 		Picture:     "uploads/getting_started/gettingthree.png",
-		Title:       "สิ้นสุดการชาร์จและเก็บสาย",
-		Description: "เมื่อชาร์จถึงระดับที่ต้องการ ให้กดปุ่ม ยกเลิก หรือ เสร็จสิ้น ที่ตู้ชาร์จหรือในแอปพลิเคชัน เพื่อหยุดการชาร์จ",
+		Title:       "End charging and store cable",
+		Description: "When the charge reaches the desired level, press the Cancel or Finish button on the charger or in the app to stop charging.",
 		EmployeeID:  empIDPtr,
 	}
-	db.FirstOrCreate(&getting1, entity.GettingStarted{Title: "Best interest rates on the market"})
-	db.FirstOrCreate(&getting2, entity.GettingStarted{Title: "Prevent unstable prices"})
-	db.FirstOrCreate(&getting3, entity.GettingStarted{Title: "Best price on the market"})
+	db.FirstOrCreate(&getting1, entity.GettingStarted{Title: "Get ready"})
+	db.FirstOrCreate(&getting2, entity.GettingStarted{Title: "Start connecting and charging"})
+	db.FirstOrCreate(&getting3, entity.GettingStarted{Title: "End charging and store cable"})
 
 	// News
 	news1 := entity.New{

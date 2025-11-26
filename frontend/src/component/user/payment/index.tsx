@@ -327,17 +327,17 @@ const Index: React.FC = () => {
       <main className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
         <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-blue-900">ยอดชำระทั้งหมด</span>
+            <span className="text-sm text-blue-900">Total payment</span>
             <span className="text-xl font-bold text-blue-700">
               ฿{totalAmount.toFixed(2)}
             </span>
           </div>
-          <SmallNote>ตรวจสอบรายการก่อนชำระเงิน</SmallNote>
+          <SmallNote>Check the items before paying.</SmallNote>
         </div>
 
         {/* รายการสั่งซื้อ */}
         <section className="mb-6">
-          <SectionTitle>รายการสั่งซื้อ</SectionTitle>
+          <SectionTitle>Order list</SectionTitle>
           <div className="mt-3 rounded-2xl border border-gray-100">
             {chargers.map((item: any, index: number) => (
               <div key={index} className="px-4 py-3">
@@ -351,13 +351,13 @@ const Index: React.FC = () => {
                       {item.name}
                     </h3>
                     <p className="text-xs text-gray-500">
-                      เปอร์เซ็นต์การชาร์จ:{" "}
+                      Charge percentage:{" "}
                       <span className="font-semibold text-blue-700">
                         {item.percent ? `${item.percent}%` : "-"}
                       </span>
                     </p>
                     <p className="text-xs text-gray-500">
-                      กำลังไฟฟ้า:{" "}
+                      Energy:{" "}
                       <span className="font-semibold text-blue-700">
                         {item.power?.toFixed(2)}{" "}
                         <span className="text-[10px] text-blue-400">kWh</span>
@@ -378,11 +378,11 @@ const Index: React.FC = () => {
 
         {/* Payment Methods */}
         <section className="mb-6">
-          <SectionTitle>วิธีการชำระเงิน</SectionTitle>
+          <SectionTitle>Payment method</SectionTitle>
           <div className="mt-3 space-y-3">
             {isLoadingMethod ? (
               <p className="text-sm text-gray-500">
-                กำลังโหลดวิธีการชำระเงิน...
+                Loading payment methods...
               </p>
             ) : (
               <>
@@ -415,7 +415,7 @@ const Index: React.FC = () => {
                         <span>{coinMethod.Medthod}</span>
                         {user && (
                           <span className="text-[11px] text-blue-700 font-semibold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                            คุณมี {(user.Coin || 0).toFixed(2)} Coin
+                            You have {(user.Coin || 0).toFixed(2)} Coin.
                           </span>
                         )}
                       </div>
@@ -432,7 +432,7 @@ const Index: React.FC = () => {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-screen-sm items-center justify-between gap-3 px-4 py-3">
           <div className="flex flex-col leading-tight">
-            <span className="text-xs text-gray-500">ยอดสุทธิ</span>
+            <span className="text-xs text-gray-500">Net balance</span>
             <span className="text-lg font-bold text-blue-700">
               ฿{totalAmount.toFixed(2)}
             </span>

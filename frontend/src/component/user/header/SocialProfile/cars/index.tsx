@@ -88,7 +88,7 @@ const Cars: React.FC<CarsProps> = ({ userID }) => {
               <RiCarLine />
             </span>
             <span className="text-gray-900 text-sm md:text-base font-bold">
-              รถของฉัน
+              My Vehicles
             </span>
             <Tag color="blue" className="ml-2 hidden md:inline-flex">
               My Vehicles
@@ -111,7 +111,7 @@ const Cars: React.FC<CarsProps> = ({ userID }) => {
             <Empty
               description={
                 <span className="text-gray-500 text-xs">
-                  ยังไม่มีข้อมูลรถของคุณ
+                  Your vehicle information is not available yet.
                 </span>
               }
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -122,7 +122,7 @@ const Cars: React.FC<CarsProps> = ({ userID }) => {
               className="mt-3 text-xs bg-blue-600 hover:bg-blue-700 rounded-xl"
               onClick={() => navigate("/user/intro-cars")}
             >
-              เพิ่มรถคันใหม่
+              Add a new Vehicle
             </Button>
           </div>
         ) : (
@@ -149,12 +149,12 @@ const Cars: React.FC<CarsProps> = ({ userID }) => {
                         type="secondary"
                         className="text-xs block text-gray-500"
                       >
-                        ทะเบียน {car.LicensePlate} | {car.City}
+                        register {car.LicensePlate} | {car.City}
                       </Text>
                       {car.SpecialNumber && (
                         <div className="mt-1 flex items-center gap-1 text-[12px] text-yellow-600 font-semibold">
                           <RiCheckboxCircleLine />
-                          ทะเบียนพิเศษ
+                          Special registration
                         </div>
                       )}
                     </div>
@@ -180,7 +180,7 @@ const Cars: React.FC<CarsProps> = ({ userID }) => {
                 className="bg-blue-600 hover:bg-blue-700 rounded-xl"
                 onClick={() => navigate("/user/intro-cars")}
               >
-                เพิ่มรถคันใหม่
+                Add a new Vehicle
               </Button>
             </div>
           </div>

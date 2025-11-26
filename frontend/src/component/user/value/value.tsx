@@ -35,7 +35,7 @@ const Value = () => {
             Value We Give to You
           </h2>
           <p className="mt-2 text-[13px] leading-6 text-blue-900/70">
-            เราพร้อมมอบประสบการณ์ EV ที่ลื่นไหล ปลอดภัย และเชื่อถือได้
+            Ready to deliver a smooth & reliable EV experience.
           </p>
         </div>
 

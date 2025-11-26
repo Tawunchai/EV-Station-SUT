@@ -203,7 +203,7 @@ const Index: React.FC = () => {
                 onClick={() => openGoogleMaps(selectedStation)}
                 className="flex-1 rounded-2xl border border-blue-300 py-3 text-blue-700"
               >
-                นำทาง
+                navigate
               </button>
             </div>
           </div>
@@ -219,10 +219,10 @@ const Index: React.FC = () => {
           <div className="flex items-center justify-between py-2">
             <div>
               <span className="text-gray-500">
-                ค้นเจอ <b className="text-blue-600">{stations.length}</b> สถานี
+                Found <b className="text-blue-600">{stations.length}</b> Station
               </span>
               <div className="text-[12px] text-gray-400">
-                อัปเดตล่าสุด {formatNow()}
+                Latest update {formatNow()}
               </div>
             </div>
 

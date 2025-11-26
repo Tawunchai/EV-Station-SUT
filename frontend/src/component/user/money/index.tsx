@@ -266,7 +266,7 @@ const AddMoneyCoin: React.FC = () => {
               <BoltIcon className="h-5 w-5 text-white" />
             </span>
             <span className="text-sm md:text-base font-semibold tracking-wide">
-              เติม Coin (PromptPay)
+              Top up Coin
             </span>
           </div>
         </div>
@@ -282,7 +282,7 @@ const AddMoneyCoin: React.FC = () => {
       {/* MAIN */}
       <main className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
         <div className="mb-4 flex justify-between rounded-2xl bg-blue-50 px-4 py-3">
-          <div className="text-sm text-blue-900">ยอดที่จะชำระ</div>
+          <div className="text-sm text-blue-900">Amount to be paid</div>
           <div className="text-xl font-bold text-blue-700">
             ฿{totalAmount.toFixed(2)}
           </div>
@@ -299,7 +299,7 @@ const AddMoneyCoin: React.FC = () => {
                 <QRCode value={qrCode} size={180} errorLevel="H" />
               ) : (
                 <div className="w-[180px] h-[180px] flex items-center justify-center bg-gray-100 text-gray-400 rounded-lg">
-                  ใส่จำนวนเงินเพื่อสร้าง QR
+                  Enter the amount to generate QR code.
                 </div>
               )}
             </div>
@@ -308,7 +308,7 @@ const AddMoneyCoin: React.FC = () => {
           {/* จำนวน Coin */}
           <div className="mt-5">
             <label className="block text-sm font-semibold text-gray-900 mb-2">
-              จำนวน Coin ที่ต้องการเติม
+              Number of Coins to top up
             </label>
             <div className="rounded-xl border border-gray-200 p-2">
               <InputNumber
@@ -326,7 +326,7 @@ const AddMoneyCoin: React.FC = () => {
           {/* Upload Slip */}
           <div className="mt-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-2">
-              อัปโหลดสลิปชำระเงิน
+              Upload payment slip
             </h2>
             {uploadedFile ? (
               <div className="relative mb-2 flex justify-center border rounded-xl p-2 bg-white">
@@ -350,9 +350,9 @@ const AddMoneyCoin: React.FC = () => {
                 onDragOver={handleDragOver}
               >
                 <FileImageOutlined style={{ fontSize: 44, marginBottom: 10 }} />
-                <p className="text-sm font-medium">ยังไม่มีสลิปที่อัปโหลด</p>
+                <p className="text-sm font-medium">No uploaded slip yet.</p>
                 <p className="text-xs mt-1 text-gray-500 text-center px-2">
-                  คลิกหรือ “ลาก-วาง” ไฟล์สลิปมาที่นี่
+                  Click or “drag-drop” the slip file here.
                 </p>
               </div>
             )}
@@ -375,7 +375,7 @@ const AddMoneyCoin: React.FC = () => {
             className="flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white bg-blue-600 hover:bg-blue-700"
           >
             <FaUpload />
-            <span className="text-sm font-semibold">อัปโหลดสลิป</span>
+            <span className="text-sm font-semibold">Upload slip</span>
           </button>
 
           <button
@@ -388,7 +388,7 @@ const AddMoneyCoin: React.FC = () => {
             }`}
           >
             <FaPaperPlane />
-            <span className="text-sm font-semibold">ส่งหลักฐาน</span>
+            <span className="text-sm font-semibold">Submit</span>
           </button>
         </div>
       </div>

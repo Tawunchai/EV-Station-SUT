@@ -94,7 +94,7 @@ const NewsListMobile: React.FC = () => {
               <RiNewspaperLine className="h-5 w-5 text-white" />
             </span>
             <span className="text-sm md:text-base font-semibold tracking-wide">
-              ข่าวสารและกิจกรรม
+              News and Events
             </span>
           </div>
         </div>

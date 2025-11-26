@@ -98,14 +98,14 @@ const HistoryPay: React.FC = () => {
         icon: <FaCoins className="text-base text-white" />,
         bg: "bg-yellow-400",
         title: methodName || "Coins",
-        desc: "ชำระด้วย Coins",
+        desc: "Pay with Coins",
       };
     }
     return {
       icon: <FaPaypal className="text-base text-white" />,
       bg: "bg-blue-500",
       title: methodName || "QR Payment",
-      desc: "ชำระผ่าน PromptPay/QR",
+      desc: "Pay via PromptPay/QR",
     };
   };
 
@@ -148,7 +148,7 @@ const HistoryPay: React.FC = () => {
           return {
             icon: <FaMoneyBillWave className="text-white text-base" />,
             bg: "bg-green-500",
-            title: "เติม Coins",
+            title: "Add Coins",
             desc: `Ref: ${it.ReferenceNumber}`,
             amountNum: amount,
             amountText: `+${fmt(amount)} Coins`,
@@ -241,21 +241,21 @@ const HistoryPay: React.FC = () => {
                         : "Loading..."}
                     </div>
                     <div className="text-xs text-gray-500 truncate">
-                      กระเป๋าเงินของฉัน
+                      My wallet
                     </div>
                   </div>
                   <button
                     onClick={() => navigate("/user/add-coins")}
                     className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
                   >
-                    เติมเงิน
+                    Top up
                   </button>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-xl bg-blue-50 p-3">
                     <div className="text-[11px] text-blue-900">
-                      ยอดคงเหลือ (Coins)
+                      Balance (Coins)
                     </div>
                     <div className="mt-1 text-lg font-bold text-blue-700">
                       {fmt(coinBalance)}
@@ -263,7 +263,7 @@ const HistoryPay: React.FC = () => {
                   </div>
                   <div className="rounded-xl bg-blue-50 p-3">
                     <div className="text-[11px] text-blue-900">
-                      รวมธุรกรรมทั้งหมด
+                      Total transactions
                     </div>
                     <div className="mt-1 text-lg font-bold text-blue-700">
                       {fmt(totalAmount)} ฿
@@ -277,7 +277,7 @@ const HistoryPay: React.FC = () => {
           {/* RIGHT HISTORY */}
           <main className="md:col-span-8 mt-4 md:mt-0">
             <div className="mb-2 text-sm md:text-base font-bold text-gray-900">
-              ประวัติการชำระเงิน
+              Payment history
             </div>
 
             <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
@@ -292,16 +292,16 @@ const HistoryPay: React.FC = () => {
                 </div>
               ) : transactions.length === 0 ? (
                 <div className="p-6 text-center text-sm text-gray-400">
-                  ไม่มีประวัติการชำระเงิน
+                  No payment history
                 </div>
               ) : (
                 <>
                   {/* Header (Desktop) */}
                   <div className="hidden md:grid grid-cols-[6fr_2fr_2fr_2.5fr] gap-3 px-5 py-3 text-xs font-semibold text-gray-600 bg-gray-50 border-b border-gray-100">
-                    <div>ประเภท / รายละเอียด</div>
-                    <div>วันที่</div>
-                    <div>เวลา</div>
-                    <div className="text-right">จำนวน</div>
+                    <div>Type / Details</div>
+                    <div>Date</div>
+                    <div>Time</div>
+                    <div className="text-right">Quantity</div>
                   </div>
 
                   {/* Desktop Rows */}

@@ -239,7 +239,7 @@ const BookingDate: React.FC = () => {
      ========================= */
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-blue-100 flex flex-col w-full overflow-x-hidden">
-      <HeaderBar title="Book Charging Station" onBack={() => navigate(-1)} />
+      <HeaderBar title="Book EV Station" onBack={() => navigate(-1)} />
 
       <div className="flex justify-center mt-4 px-4 w-full">
         <Card className="w-full max-w-md md:max-w-3xl rounded-2xl shadow-lg border border-blue-100 bg-white">
@@ -288,7 +288,7 @@ const BookingDate: React.FC = () => {
             {/* 🔹 การจองในวันนั้น */}
             <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 mb-4">
               <h3 className="text-blue-700 font-semibold mb-2 text-sm md:text-base flex items-center gap-2">
-                <FaUserCircle /> การจองในวันที่{" "}
+                <FaUserCircle /> Booking on date{" "}
                 {selectedDate?.format("YYYY-MM-DD") || "—"}
               </h3>
 
@@ -313,7 +313,7 @@ const BookingDate: React.FC = () => {
                 ))
               ) : (
                 <p className="text-gray-500 text-center text-sm">
-                  ยังไม่มีการจองในวันนี้
+                  No reservations today
                 </p>
               )}
             </div>
@@ -358,7 +358,7 @@ const BookingDate: React.FC = () => {
                   onClick={handleBooking}
                   disabled={!selectedSlot}
                 >
-                  ยืนยันการจอง
+                  Confirm booking
                 </Button>
               </>
             )}
