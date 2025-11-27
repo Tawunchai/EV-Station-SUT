@@ -220,7 +220,7 @@ func SeedIfUsersEmpty(db *gorm.DB) {
 		Password:    hashedPassword,
 		Profile:     "uploads/user/avatar1.jpg",
 		PhoneNumber: "0935096372",
-		Coin:        0,
+		Coin:        10000,
 		GenderID:    1,
 		UserRoleID:  3,
 	}

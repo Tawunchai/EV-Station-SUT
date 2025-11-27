@@ -441,15 +441,15 @@ const Index: React.FC = () => {
           <button
             onClick={handlePayment}
             disabled={isProcessing || isLoadingMethod || chargers.length === 0}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white transition ${
+            className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${
               isProcessing || isLoadingMethod || chargers.length === 0
                 ? "bg-blue-300"
-                : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800"
+                : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
             }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />
             <span className="text-sm font-semibold">
-              {isProcessing ? "กำลังประมวลผล..." : "ชำระเงิน"}
+              {isProcessing ? "Processing..." : "Payment"}
             </span>
           </button>
         </div>

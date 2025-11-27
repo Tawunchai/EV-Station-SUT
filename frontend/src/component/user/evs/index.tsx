@@ -532,7 +532,9 @@ const Index: React.FC = () => {
             }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />
-            Next
+            <span className="text-sm font-semibold">
+              Next
+            </span>
           </button>
         </div>
       </div>
