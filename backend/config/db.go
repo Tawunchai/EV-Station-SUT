@@ -660,6 +660,7 @@ func SeedPayments(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error
 				Price:        float64(price1),
 				Power:        quantity1,
 				Percent:      20.00,
+				RemainingPower: 0,
 			}
 			if err := db.FirstOrCreate(
 				&evcp1,
@@ -674,6 +675,7 @@ func SeedPayments(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error
 				Price:        float64(price2),
 				Power:        quantity2,
 				Percent:      80.00,
+				RemainingPower: 0,
 			}
 			if err := db.FirstOrCreate(
 				&evcp2,

@@ -10,6 +10,8 @@ type ChargingSession struct {
 	CreatedAt time.Time
 	Status bool
 
+	StartEnergy float64  
+
 	PaymentID uint
 	Payment   Payment `gorm:"foreignKey:PaymentID"`
 }

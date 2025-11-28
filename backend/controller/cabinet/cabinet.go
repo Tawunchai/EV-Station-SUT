@@ -229,3 +229,27 @@ func DeleteEVCabinetByID(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "EVCabinet deleted successfully"})
 }
+
+
+// GET /ev-cabinets/:id
+func GetCabinetByID(c *gin.Context) {
+	// ดึง param :id จาก URL
+	idParam := c.Param("id")
+	id, err := strconv.ParseUint(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "รหัสตู้ไม่ถูกต้อง"})
+		return
+	}
+
+	db := config.DB()
+
+	var cabinet entity.EVCabinet
+
+	if err := db.First(&cabinet, uint(id)).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบบันทึกตู้ชาร์จ"})
+		return
+	}
+
+	c.JSON(http.StatusOK, cabinet)
+}
