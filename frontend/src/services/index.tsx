@@ -1967,6 +1967,31 @@ export const ListCabinetsEV = async (): Promise<EVCabinetInterface[] | null> => 
   }
 };
 
+export const GetCabinetByID = async (
+  id: number
+): Promise<EVCabinetInterface | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/ev-cabinets/${id}`, {
+      headers: {
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data as EVCabinetInterface;
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error: any) {
+    console.error(
+      "Error fetching EV cabinet by ID:",
+      error?.response?.data || error.message
+    );
+    return null;
+  }
+};
+
 // services/bookingService.ts Use
 export const ListBookingByEVCabinetIDandStartDate = async (
   evCabinetID: number,
@@ -2417,19 +2442,44 @@ export const connectHardwareSocket = (onMessage: (data: any) => void) => {
 };
 
 /** 🔧 ส่งคำสั่งดึงข้อมูลพลังงาน (Solar + Grid) */
-export const requestEnergyUsage = async (deviceID: string) => {
+export const requestEnergyUsage = async (
+  deviceID: string,
+  paymentID?: number | string,
+  energySources?: string[]
+) => {
   try {
-    const response = await axios.post(`${apiUrl}/hardware/request-energy`, {
+    const body: any = {
       device_id: deviceID,
-    });
+    };
 
-    console.log("📤 Sent command: get_energy_usage →", deviceID);
+    // ⭐ แนบ payment_id ไปด้วย (ส่งเป็น string ปลอดภัยสุด)
+    if (paymentID !== undefined && paymentID !== null) {
+      body.payment_id = String(paymentID);
+    }
+
+    // ⭐ แนบ energy_sources → มาจาก Payment.EVChargingPayments[].EVcharging.EnergySource.Name
+    if (energySources && energySources.length > 0) {
+      body.energy_sources = energySources; // เช่น ["solar", "grid"]
+    }
+
+    const response = await axios.post(`${apiUrl}/hardware/request-energy`, body);
+
+    console.log(
+      "📤 Sent command: get_energy_usage →",
+      deviceID,
+      "payment_id:",
+      body.payment_id,
+      "energy_sources:",
+      body.energy_sources
+    );
     return response.data;
   } catch (err) {
     console.error("❌ Failed to request energy usage:", err);
     throw err;
   }
 };
+
+
 
 /** 📤 ส่งคำสั่งจาก Web → Backend → Hardware */
 export const sendHardwareCommand = (

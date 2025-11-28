@@ -215,6 +215,7 @@ func main() {
 		public.POST("/create-evcabinet", cabinet.CreateEVCabinet) // เพิ่มข้อมูลใหม่
 		public.PUT("/evcabinet/:id", cabinet.UpdateEVCabinetByID) // อัปเดตข้อมูลตาม ID
 		public.DELETE("/evcabinet/:id", cabinet.DeleteEVCabinetByID)
+		public.GET("/ev-cabinets/:id", cabinet.GetCabinetByID)
 
 		//Notify
 		public.GET("/booking/reminder", notify.SendBookingReminder)

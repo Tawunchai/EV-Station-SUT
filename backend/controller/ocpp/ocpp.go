@@ -4,11 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
+
+	"github.com/Tawunchai/work-project/config"
+	"github.com/Tawunchai/work-project/entity"
 )
 
 // ============================================================================
@@ -314,7 +319,6 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 	// BootNotification (ตู้แจ้งตัวเข้าระบบ)
 	// ---------------------------------------------------------------
 	case "BootNotification":
-		// อ่านค่า chargePointVendor, chargePointModel ถ้าต้องการ log
 		vendor, _ := payload["chargePointVendor"].(string)
 		model, _ := payload["chargePointModel"].(string)
 		fmt.Printf("🔌 BootNotification from %s | Vendor=%s Model=%s\n", chargerID, vendor, model)
@@ -323,9 +327,9 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			3,
 			messageID,
 			map[string]interface{}{
-				"status":      "Accepted",    // Accepted / Pending / Rejected
-				"currentTime": nowOcppTime(), // เวลาปัจจุบันใน server (UTC)
-				"interval":    30,            // heartbeat interval (วินาที)
+				"status":      "Accepted",
+				"currentTime": nowOcppTime(),
+				"interval":    30,
 			},
 		}
 
@@ -337,7 +341,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// Heartbeat (ตู้ส่ง heartbeat มาเช็คว่ายังออนไลน์อยู่)
+	// Heartbeat
 	// ---------------------------------------------------------------
 	case "Heartbeat":
 		statusMu.Lock()
@@ -365,19 +369,18 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// Authorize (ตู้ส่งเพื่อขอเช็ค idTag)
+	// Authorize
 	// ---------------------------------------------------------------
 	case "Authorize":
 		idTag, _ := payload["idTag"].(string)
 		fmt.Println("🔐 Authorize request from", chargerID, "idTag =", idTag)
 
-		// สำหรับ demo: ยอมรับทุก idTag
 		response := []interface{}{
 			3,
 			messageID,
 			map[string]interface{}{
 				"idTagInfo": map[string]interface{}{
-					"status": "Accepted", // Accepted, Blocked, Expired, Invalid, ConcurrentTx
+					"status": "Accepted",
 				},
 			},
 		}
@@ -389,7 +392,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// StatusNotification (ตู้บอกสถานะ Connector)
+	// StatusNotification
 	// ---------------------------------------------------------------
 	case "StatusNotification":
 		fmt.Println("📥 StatusNotification from", chargerID)
@@ -431,7 +434,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// StartTransaction (เริ่ม session จริงจากตู้)
+	// StartTransaction
 	// ---------------------------------------------------------------
 	case "StartTransaction":
 		fmt.Println("🚗 StartTransaction received from", chargerID)
@@ -457,7 +460,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// StopTransaction (จบ session จากตู้)
+	// StopTransaction
 	// ---------------------------------------------------------------
 	case "StopTransaction":
 		fmt.Println("🛑 StopTransaction received — ending session for", chargerID)
@@ -481,12 +484,19 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// MeterValues (ค่าพลังงาน kWh, current, voltage ฯลฯ)
+	// MeterValues
 	// ---------------------------------------------------------------
 	case "MeterValues":
 		fmt.Println("📊 MeterValues from", chargerID, "payload =", payload)
 
-		// คุณสามารถ parse ค่า kWh, current ฯลฯ เก็บ DB ได้ตรงนี้
+		energyWh := extractEnergyActiveImportRegister(payload)
+		if energyWh > 0 {
+			// ดึง DB จาก config เหมือน controller อื่น
+			dbConn := config.DB()
+			if err := updateStartEnergyByChargePoint(dbConn, chargerID, energyWh); err != nil {
+				fmt.Println("❌ updateStartEnergyByChargePoint error:", err)
+			}
+		}
 
 		response := []interface{}{3, messageID, map[string]interface{}{}}
 		if err := conn.WriteJSON(response); err != nil {
@@ -496,8 +506,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	// ---------------------------------------------------------------
-	// DiagnosticsStatusNotification, FirmwareStatusNotification, DataTransfer ฯลฯ
-	// (ตอนนี้ตอบรับแบบ basic ไปก่อน)
+	// DiagnosticsStatusNotification, FirmwareStatusNotification, DataTransfer
 	// ---------------------------------------------------------------
 	case "DiagnosticsStatusNotification", "FirmwareStatusNotification", "DataTransfer":
 		fmt.Printf("📥 %s from %s payload=%v\n", action, chargerID, payload)
@@ -510,7 +519,6 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 	default:
 		fmt.Printf("⚠️ Unhandled CALL action=%s from %s payload=%v\n", action, chargerID, payload)
-		// ตอบเป็น CALLERROR หรือ CALLRESULT ว่าง ๆ ก็ได้ แล้วแต่จะดีไซน์
 		response := []interface{}{3, messageID, map[string]interface{}{}}
 		if err := conn.WriteJSON(response); err != nil {
 			fmt.Println("❌ Failed to send generic CALLRESULT:", err)
@@ -518,7 +526,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 	}
 }
 
-// CALLRESULT from Charger → CSMS (ตอบกลับ RemoteStart / RemoteStop ฯลฯ)
+// CALLRESULT from Charger → CSMS
 func handleCallResultFromCharger(chargerID string, frame []interface{}, messageID string) {
 	var payload map[string]interface{}
 	if len(frame) >= 3 {
@@ -582,7 +590,7 @@ func handleCallErrorFromCharger(chargerID string, frame []interface{}, messageID
 		fmt.Printf("❌ CALLERROR for %s from %s: action=%s code=%s desc=%s details=%v\n",
 			messageID, chargerID, pending.Action, errorCode, errorDescription, details)
 	} else {
-		fmt.Printf("❌ CALLERROR (unknown messageId=%s) from %s code=%s desc=%s details=%v\n",
+			fmt.Printf("❌ CALLERROR (unknown messageId=%s) from %s code=%s desc=%s details=%v\n",
 			messageID, chargerID, errorCode, errorDescription, details)
 	}
 }
@@ -617,7 +625,7 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 		map[string]interface{}{
 			"connectorId":     connectorID,
 			"idTag":           idTag,
-			"chargingProfile": nil, // บางตู้ต้องการ field นี้ (null ได้)
+			"chargingProfile": nil,
 		},
 	}
 
@@ -698,7 +706,6 @@ type RemoteStartRequest struct {
 func RemoteStartHandler(c *gin.Context) {
 	var req RemoteStartRequest
 
-	// ลอง bind JSON จาก body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fmt.Println("❌ RemoteStart invalid body:", err)
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -715,7 +722,6 @@ func RemoteStartHandler(c *gin.Context) {
 		return
 	}
 
-	// default ถ้า frontend ไม่ส่ง connectorId / idTag มา
 	if req.ConnectorID <= 0 {
 		req.ConnectorID = 1
 	}
@@ -723,7 +729,6 @@ func RemoteStartHandler(c *gin.Context) {
 		req.IdTag = "EV-SIM-001"
 	}
 
-	// เช็กว่าตู้ต่ออยู่จริงไหม
 	chargersMu.Lock()
 	_, connected := chargers[req.ChargerID]
 	chargersMu.Unlock()
@@ -733,7 +738,6 @@ func RemoteStartHandler(c *gin.Context) {
 		return
 	}
 
-	// เช็กสถานะต้องเป็น Preparing ก่อนถึงจะเริ่มได้ (ตามที่ตั้งใจ)
 	statusMu.Lock()
 	st, ok := chargerStatuses[req.ChargerID]
 	statusMu.Unlock()
@@ -751,7 +755,6 @@ func RemoteStartHandler(c *gin.Context) {
 		return
 	}
 
-	// ส่งคำสั่ง RemoteStartTransaction
 	if err := SendRemoteStartTransaction(req.ChargerID, req.ConnectorID, req.IdTag); err != nil {
 		fmt.Println("❌ RemoteStart error:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -805,7 +808,6 @@ func GetChargerStatusHandler(c *gin.Context) {
 		return
 	}
 
-	// double-check ว่ายัง connect อยู่ไหม (เผื่อ map status ค้าง)
 	chargersMu.Lock()
 	_, connected := chargers[chargerID]
 	chargersMu.Unlock()
@@ -814,4 +816,113 @@ func GetChargerStatusHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": st,
 	})
+}
+
+// ============================================================================
+// 🧩 Helper: ดึงค่า Energy.Active.Import.Register (Wh) จาก MeterValues payload
+// ============================================================================
+func extractEnergyActiveImportRegister(payload map[string]interface{}) float64 {
+	meterValuesRaw, ok := payload["meterValue"].([]interface{})
+	if !ok || len(meterValuesRaw) == 0 {
+		return 0
+	}
+
+	mv0, ok := meterValuesRaw[0].(map[string]interface{})
+	if !ok {
+		return 0
+	}
+
+	sampledValuesRaw, ok := mv0["sampledValue"].([]interface{})
+	if !ok || len(sampledValuesRaw) == 0 {
+		return 0
+	}
+
+	for _, sv := range sampledValuesRaw {
+		m, ok := sv.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		measurand, _ := m["measurand"].(string)
+		if measurand != "Energy.Active.Import.Register" {
+			continue
+		}
+
+		if valStr, ok := m["value"].(string); ok && valStr != "" {
+			f, err := strconv.ParseFloat(valStr, 64)
+			if err != nil {
+				fmt.Println("⚠️ parse Energy.Active.Import.Register (string) failed:", err)
+				return 0
+			}
+			return f
+		}
+
+		if valNum, ok := m["value"].(float64); ok {
+			return valNum
+		}
+	}
+
+	return 0
+}
+
+// ============================================================================
+// 🧩 Logic: Update StartEnergy โดยใช้ ChargePoint (chargerID)
+// ============================================================================
+func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy float64) error {
+	if db == nil {
+		return fmt.Errorf("db is nil")
+	}
+	if chargePoint == "" {
+		return fmt.Errorf("chargePoint is required")
+	}
+	if startEnergy <= 0 {
+		return nil
+	}
+
+	var sessions []entity.ChargingSession
+	if err := db.
+		Where("status = ? AND start_energy = 0", true).
+		Preload("Payment").
+		Find(&sessions).Error; err != nil {
+		return fmt.Errorf("query active charging sessions failed: %w", err)
+	}
+
+	if len(sessions) == 0 {
+		return nil
+	}
+
+	for _, s := range sessions {
+		if s.PaymentID == 0 || s.Payment.ID == 0 {
+			continue
+		}
+
+		if s.Payment.EVCabinetID == nil {
+			continue
+		}
+
+		var cab entity.EVCabinet
+		if err := db.First(&cab, *s.Payment.EVCabinetID).Error; err != nil {
+			if err != gorm.ErrRecordNotFound {
+				fmt.Printf("⚠️ find EVCabinet failed (paymentID=%d): %v\n", s.PaymentID, err)
+			}
+			continue
+		}
+
+		if cab.ChargePoint != chargePoint {
+			continue
+		}
+
+		s.StartEnergy = startEnergy
+
+		if err := db.Save(&s).Error; err != nil {
+			return fmt.Errorf("update StartEnergy failed for sessionID=%d: %w", s.ID, err)
+		}
+
+		fmt.Printf("✅ Update StartEnergy sessionID=%d chargePoint=%s startEnergy=%.2f Wh\n",
+			s.ID, chargePoint, startEnergy)
+
+		return nil
+	}
+
+	return nil
 }

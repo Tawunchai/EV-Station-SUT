@@ -43,6 +43,7 @@ func PaymentSuccess(c *gin.Context) {
 		Token:     token,
 		ExpiresAt: time.Now().Add(300 * time.Minute),
 		Status:    true,
+		StartEnergy: 0,
 		PaymentID: req.PaymentID,
 	}
 
@@ -105,6 +106,10 @@ func GetDataByUserID(c *gin.Context) {
 	err = db.
 		Where("user_id = ? AND status = ?", uint(userID), true).
 		Preload("Payment").
+        Preload("Payment.EVCabinet").
+		Preload("Payment.EVChargingPayments").
+		Preload("Payment.EVChargingPayments.EVcharging").
+		Preload("Payment.EVChargingPayments.EVcharging.EnergySource").
 		Find(&sessions).Error
 
 	if err != nil {

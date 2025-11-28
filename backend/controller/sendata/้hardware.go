@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+
+	// 👇 ใช้ module path โปรเจกต์ของคุณ
+	"github.com/Tawunchai/work-project/config"
+	"github.com/Tawunchai/work-project/entity"
 )
 
 // ======================================================
@@ -105,7 +110,13 @@ func HandleHardware(c *gin.Context) {
 
 		fmt.Printf("📦 Data from '%s': %s\n", deviceID, string(msg))
 
-		// ส่งข้อมูลจาก hardware → frontend ทุกตัว
+		// 🧠 ถ้าเป็น message type = "remaining_energy" → อัปเดต RemainingPower ใน DB + คืนเงิน
+		msgType, _ := jsonData["type"].(string)
+		if msgType == "remaining_energy" {
+			go handleRemainingEnergyMessage(jsonData)
+		}
+
+		// ส่งข้อมูลจาก hardware → frontend ทุกตัว (ไม่เปลี่ยนแปลง payload)
 		broadcastToFrontend(msg)
 	}
 }
@@ -139,7 +150,7 @@ func SendCommandToHardware(deviceID string, payload interface{}) {
 	}
 
 	msg := map[string]interface{}{
-		"type": "command",
+		"type":    "command",
 		"payload": payload,
 	}
 
@@ -158,7 +169,9 @@ func SendCommandToHardware(deviceID string, payload interface{}) {
 // 🆕 Controller API: ขอข้อมูล Solar + Grid จาก Hardware
 // ======================================================
 type EnergyRequest struct {
-	DeviceID string `json:"device_id"`
+	DeviceID      string   `json:"device_id"`
+	PaymentID     string   `json:"payment_id"`      // ⭐ รับเป็น string (จะได้ยืดหยุ่น)
+	EnergySources []string `json:"energy_sources"` // ⭐ เช่น ["Solar", "Grid"]
 }
 
 func RequestEnergyUsage(c *gin.Context) {
@@ -171,18 +184,174 @@ func RequestEnergyUsage(c *gin.Context) {
 		return
 	}
 
-	// 🧠 คำสั่งที่ต้องการส่งไป hardware
+	// 🧠 คำสั่งที่ต้องการส่งไป hardware + แนบ payment_id + energy_sources
 	command := map[string]interface{}{
-		"command": "get_energy_usage",
+		"command":        "get_remaining_energy",
+		"payment_id":     body.PaymentID,
+		"energy_sources": body.EnergySources, // เช่น ["Solar", "Grid"]
 	}
 
+	// ยังเก็บรูปแบบเดิม คือส่ง payload เป็น JSON string (แต่ถูก marshal อีกชั้นใน SendCommandToHardware)
 	jsonCmd, _ := json.Marshal(command)
 
 	// ส่งคำสั่งถึง hardware
 	SendCommandToHardware(body.DeviceID, jsonCmd)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "command sent to hardware",
-		"device_id": body.DeviceID,
+		"message":        "command sent to hardware",
+		"device_id":      body.DeviceID,
+		"payment_id":     body.PaymentID,
+		"energy_sources": body.EnergySources,
 	})
+}
+
+// ======================================================
+// 🧠 Handle remaining_energy message จาก hardware
+//    {"type":"remaining_energy","payload":{"Solar":10,"Grid":10},"payment_id":"245"}
+//    - payload = พลังงานที่เหลือ (kWh) → บันทึกลง RemainingPower
+//    - ใช้ EVcharging.Price * RemainingPower รวมเป็นยอดคืน (refundTotal)
+//    - หา ChargingSession จาก PaymentID → UserID → อัปเดต Coin
+// ======================================================
+func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
+	// 1) ดึง payment_id
+	rawPaymentID, ok := jsonData["payment_id"]
+	if !ok {
+		fmt.Println("⚠️ remaining_energy message missing payment_id")
+		return
+	}
+
+	paymentStr := fmt.Sprintf("%v", rawPaymentID)
+	paymentUint64, err := strconv.ParseUint(paymentStr, 10, 64)
+	if err != nil {
+		fmt.Println("⚠️ cannot parse payment_id:", paymentStr, "err:", err)
+		return
+	}
+	paymentID := uint(paymentUint64)
+
+	// 2) ดึง payload เป็น map[string]float64
+	payloadRaw, ok := jsonData["payload"]
+	if !ok {
+		fmt.Println("⚠️ remaining_energy message missing payload")
+		return
+	}
+
+	payloadMap, ok := payloadRaw.(map[string]interface{})
+	if !ok {
+		fmt.Printf("⚠️ remaining_energy payload is not an object: %#v\n", payloadRaw)
+		return
+	}
+
+	db := config.DB()
+
+	// 3) โหลด EVChargingPayment ของ PaymentID นี้ พร้อม EVcharging + EnergySource
+	var evPays []entity.EVChargingPayment
+	if err := db.
+		Preload("EVcharging").
+		Preload("EVcharging.EnergySource").
+		Where("payment_id = ?", paymentID).
+		Find(&evPays).Error; err != nil {
+
+		fmt.Println("❌ DB error while loading EVChargingPayment:", err)
+		return
+	}
+
+	if len(evPays) == 0 {
+		fmt.Println("ℹ️ No EVChargingPayment found for payment_id =", paymentID)
+		return
+	}
+
+	fmt.Printf("🔍 Found %d EVChargingPayment rows for payment_id=%d\n", len(evPays), paymentID)
+
+	// 4) คำนวณยอดคืนรวม (refundTotal) จาก energy ที่เหลือของแต่ละ source
+	refundTotal := 0.0
+
+	// loop ทีละ source ใน payload เช่น Solar / Grid
+	for sourceName, remainingVal := range payloadMap {
+		// JSON number → float64
+		remainingKwh, ok := remainingVal.(float64)
+		if !ok {
+			fmt.Printf("⚠️ value for source %s is not number: %#v\n", sourceName, remainingVal)
+			continue
+		}
+
+		fmt.Printf("⚡ Remaining energy from payload: source=%s remaining=%.3f kWh\n", sourceName, remainingKwh)
+
+		// หา EVChargingPayment ที่ EnergySource.Name ตรงกับ key
+		for i := range evPays {
+			p := &evPays[i]
+
+			if p.EVcharging.EnergySource == nil {
+				continue
+			}
+
+			if p.EVcharging.EnergySource.Name != sourceName {
+				continue
+			}
+
+			// ❗ ตอนนี้ payload = พลังงานที่เหลืออยู่แล้ว → บันทึกลง RemainingPower ตรง ๆ
+			p.RemainingPower = remainingKwh
+
+			// UPDATE RemainingPower ลง DB
+			if err := db.Model(&entity.EVChargingPayment{}).
+				Where("id = ?", p.ID).
+				Update("remaining_power", remainingKwh).Error; err != nil {
+
+				fmt.Printf("❌ Failed to update RemainingPower for EVChargingPayment ID=%d: %v\n", p.ID, err)
+			} else {
+				fmt.Printf("✅ Updated RemainingPower: EVChargingPayment ID=%d, Source=%s, Power=%.3f, Remaining=%.3f\n",
+					p.ID,
+					sourceName,
+					p.Power,
+					remainingKwh,
+				)
+			}
+
+			// 💰 คำนวณยอดคืนสำหรับ source นี้
+			pricePerKwh := p.EVcharging.Price
+			refundForThis := remainingKwh * pricePerKwh
+			refundTotal += refundForThis
+
+			fmt.Printf("💰 Refund calc → Source=%s, Remaining=%.3f kWh, Price=%.2f, Refund=%.2f (subtotal)\n",
+				sourceName, remainingKwh, pricePerKwh, refundForThis)
+		}
+	}
+
+	if refundTotal <= 0 {
+		fmt.Println("ℹ️ No refund to apply (refundTotal <= 0)")
+		return
+	}
+
+	// 5) หา ChargingSession เพื่อรู้ว่าเป็นของ User คนไหน
+	var session entity.ChargingSession
+	if err := db.
+		Where("payment_id = ?", paymentID).
+		First(&session).Error; err != nil {
+
+		fmt.Printf("⚠️ Cannot find ChargingSession for payment_id=%d: %v\n", paymentID, err)
+		return
+	}
+
+	// 6) โหลด User แล้วอัปเดต Coin
+	var user entity.User
+	if err := db.
+		First(&user, session.UserID).Error; err != nil {
+
+		fmt.Printf("⚠️ Cannot find User for user_id=%d: %v\n", session.UserID, err)
+		return
+	}
+
+	oldCoin := user.Coin
+	newCoin := oldCoin + refundTotal
+
+	if err := db.
+		Model(&entity.User{}).
+		Where("id = ?", user.ID).
+		Update("coin", newCoin).Error; err != nil {
+
+		fmt.Printf("❌ Failed to update user coin (user_id=%d): %v\n", user.ID, err)
+		return
+	}
+
+	fmt.Printf("💰 Refund applied → user_id=%d, old_coin=%.2f, refund=%.2f, new_coin=%.2f\n",
+		user.ID, oldCoin, refundTotal, newCoin)
 }

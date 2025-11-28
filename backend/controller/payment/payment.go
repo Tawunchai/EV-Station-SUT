@@ -260,6 +260,7 @@ func CreateEVChargingPayment(c *gin.Context) {
 		Price:        input.Price,
 		Percent:      input.Percent, // ✅ ใช้ Percent แทน Quantity
 		Power:        input.Power,   // ✅ เพิ่ม Power
+		RemainingPower: 0,
 	}
 
 	// ✅ บันทึกลงฐานข้อมูล
