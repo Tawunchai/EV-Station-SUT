@@ -48,7 +48,7 @@ func AddLogin(c *gin.Context) {
 		token,
 		86400, // อายุ 1 วัน
 		"/",
-		"evstation-sut.it.com", // ✅ ใช้ domain ของ backend https://evstation-sut.it.com/
+		"api.evstation-sut.it.com", // ✅ ใช้ domain ของ backend https://evstation-sut.it.com/
 		true,  // Secure (HTTPS เท่านั้น)
 		true,  // HttpOnly
 	)
@@ -64,7 +64,7 @@ func Logout(c *gin.Context) {
 		"",
 		-1,
 		"/",
-		"evstation-sut.it.com", // ต้องตรงกับ domain ตอน login
+		"api.evstation-sut.it.com", // ต้องตรงกับ domain ตอน login
 		true,
 		true,
 	)
