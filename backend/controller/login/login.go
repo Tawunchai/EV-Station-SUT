@@ -48,7 +48,7 @@ func AddLogin(c *gin.Context) {
 		token,
 		86400, // อายุ 1 วัน
 		"/",
-		"payment-project-t4dj.onrender.com", // ✅ ใช้ domain ของ backend
+		"evstation-sut.it.com", // ✅ ใช้ domain ของ backend https://evstation-sut.it.com/
 		true,  // Secure (HTTPS เท่านั้น)
 		true,  // HttpOnly
 	)
@@ -64,7 +64,7 @@ func Logout(c *gin.Context) {
 		"",
 		-1,
 		"/",
-		"payment-project-t4dj.onrender.com", // ต้องตรงกับ domain ตอน login
+		"evstation-sut.it.com", // ต้องตรงกับ domain ตอน login
 		true,
 		true,
 	)
