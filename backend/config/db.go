@@ -102,6 +102,7 @@ func SetupDatabase() {
 	// AutoMigrate ทุก entity
 	if err := db.AutoMigrate(
 		&entity.Brand{},
+		&entity.Hardware{},
 		&entity.EnergySource{},
 		&entity.Solar{},
 		&entity.Modal{},
@@ -179,6 +180,14 @@ func seedMasters(db *gorm.DB) {
 	// ถ้ายังไม่มีใน DB ให้สร้าง ถ้ามีแล้วก็จะไม่สร้างซ้ำ
 	db.FirstOrCreate(&energySolar, &entity.EnergySource{Name: "Solar"})
 	db.FirstOrCreate(&energyGrid, &entity.EnergySource{Name: "Grid"})
+
+	// Banking (ตัวอย่าง)
+	Hardware := entity.Hardware{
+		Name: "Hardware One",
+		UrlWebsocket:   "wss://api.evstation-sut.it.com/hardware/",
+		HardwarePoint:   "hardware_001",
+	}
+	db.FirstOrCreate(&Hardware, &entity.Hardware{HardwarePoint: "hardware_001"})
 
 	s1 := entity.Solar{
 		Name:         "Solar Cell",
