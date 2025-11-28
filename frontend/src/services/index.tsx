@@ -34,8 +34,8 @@ import { SolarInterface } from "../interface/ISolar";
 //export const apiUrl = "http://localhost:8000";
 //export const apiUrlPicture = "http://192.168.1.141:8000/";
 //export const apiUrl = "http://192.168.1.141:8000";
-export const apiUrlPicture = "https://payment-project-t4dj.onrender.com/";
-export const apiUrl = "https://payment-project-t4dj.onrender.com";
+export const apiUrlPicture = "https://api.evstation-sut.it.com/";
+export const apiUrl = "https://api.evstation-sut.it.com";
 
 const getAuthHeader = () => {
   const token = localStorage.getItem("token");
