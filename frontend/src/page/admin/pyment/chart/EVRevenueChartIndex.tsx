@@ -1,3 +1,4 @@
+// EVRevenueChartIndex.tsx
 import React, { useState } from "react";
 import { DropDownListComponent } from "@syncfusion/ej2-react-dropdowns";
 import TimeRangeSelector from "./TimeRangeSelector";
@@ -10,16 +11,28 @@ const dropdownData = [
   { Id: "year", Time: "Year(s)" },
 ];
 
+// ตั้งค่า helper ให้ "day" = 7 วันย้อนหลัง
 const initRangeFor = (type: "day" | "month" | "year") => {
   if (type === "day") {
-    const end = new Date(); end.setHours(23, 59, 59, 999);
-    const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const start = new Date(end);
+    // 7 วันย้อนหลัง (วันนี้ + ย้อนหลังไปอีก 6 วัน)
+    start.setDate(end.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+
     return [start, end] as [Date, Date];
   }
+
   if (type === "month") {
     const now = new Date();
-    return { month: String(now.getMonth() + 1).padStart(2, "0"), year: String(now.getFullYear()) };
+    return {
+      month: String(now.getMonth() + 1).padStart(2, "0"),
+      year: String(now.getFullYear()),
+    };
   }
+
   const y = new Date().getFullYear();
   return [y, y] as [number, number];
 };
@@ -27,8 +40,15 @@ const initRangeFor = (type: "day" | "month" | "year") => {
 const EVRevenueChartIndex: React.FC = () => {
   // @ts-ignore
   const { currentMode } = useStateContext();
-  const [timeRangeType, setTimeRangeType] = useState<"day" | "month" | "year">("month");
-  const [selectedRange, setSelectedRange] = useState<any>(() => initRangeFor("month"));
+
+  // ✅ default เปลี่ยนเป็น "day"
+  const [timeRangeType, setTimeRangeType] =
+    useState<"day" | "month" | "year">("day");
+
+  // ✅ default range ใช้ initRangeFor("day") = 7 วันย้อนหลัง
+  const [selectedRange, setSelectedRange] = useState<any>(() =>
+    initRangeFor("day")
+  );
 
   const handleTimeChange = (t: "day" | "month" | "year") => {
     setTimeRangeType(t);

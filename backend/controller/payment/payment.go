@@ -86,9 +86,16 @@ func ListPayment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, payments)
 }
+
+// ใช้ struct นี้เป็น response ออกไปให้ frontend
+type PaymentWithEVCharging struct {
+	Payment            entity.Payment              `json:"payment"`
+	EVChargingPayments []entity.EVChargingPayment  `json:"ev_charging_payments"`
+}
+
 // GET /payments/user/:user_id
 func ListPaymentByUserID(c *gin.Context) {
-	// ดึงค่า user_id จาก path parameter
+	// 1) รับ user_id จาก path
 	userIDParam := c.Param("user_id")
 	userID, err := strconv.ParseUint(userIDParam, 10, 64)
 	if err != nil {
@@ -96,26 +103,64 @@ func ListPaymentByUserID(c *gin.Context) {
 		return
 	}
 
-	var payments []entity.Payment
 	db := config.DB()
 
-	// ดึงข้อมูลการชำระเงินทั้งหมดของ user_id นั้น พร้อม preload ความสัมพันธ์
-	result := db.Preload("User").Preload("Method").
+	// 2) ดึง Payment ทั้งหมดของ user พร้อม User, Method
+	var payments []entity.Payment
+	if err := db.
+		Preload("User").
+		Preload("Method").
 		Where("user_id = ?", uint(userID)).
-		Find(&payments)
+		Find(&payments).Error; err != nil {
 
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// ถ้าไม่พบข้อมูล
+	// ถ้าไม่พบ payment เลย
 	if len(payments) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"message": "no payments found for this user"})
 		return
 	}
 
-	c.JSON(http.StatusOK, payments)
+	// 3) รวบรวม payment_id ทั้งหมดไว้ไป query EVChargingPayment ทีเดียว (กัน N+1 query)
+	paymentIDs := make([]uint, 0, len(payments))
+	for _, p := range payments {
+		paymentIDs = append(paymentIDs, p.ID)
+	}
+
+	// 4) ดึง EVChargingPayment ทั้งหมดที่ผูกกับ payment_id ชุดนี้
+	//    และ Preload EVcharging มาด้วยตามที่ต้องการ
+	var evChargingPayments []entity.EVChargingPayment
+	if err := db.
+		Preload("EVcharging").
+		Where("payment_id IN ?", paymentIDs).
+		Find(&evChargingPayments).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 5) ทำ map[PaymentID] → []EVChargingPayment เพื่อประกบใส่แต่ละ payment
+	evMap := make(map[uint][]entity.EVChargingPayment)
+	for _, evPay := range evChargingPayments {
+		evMap[evPay.PaymentID] = append(evMap[evPay.PaymentID], evPay)
+	}
+
+	// 6) รวมข้อมูลเป็น slice ของ PaymentWithEVCharging ส่งออกไป
+	response := make([]PaymentWithEVCharging, 0, len(payments))
+	for _, p := range payments {
+		item := PaymentWithEVCharging{
+			Payment:            p,
+			EVChargingPayments: evMap[p.ID], // ถ้าไม่มีจะเป็น nil/[] ว่าง ๆ
+		}
+		response = append(response, item)
+	}
+
+	// 7) ส่ง JSON ออกไป
+	c.JSON(http.StatusOK, gin.H{
+		"data": response,
+	})
 }
 
 func CreatePayment(c *gin.Context) {
