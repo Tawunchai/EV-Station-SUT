@@ -1,4 +1,3 @@
-// EVRevenueChart.tsx
 import React, { useEffect, useState } from "react";
 import {
   ChartComponent,
@@ -8,7 +7,7 @@ import {
   DateTime,
   Legend,
   Tooltip,
-  LineSeries,
+  ColumnSeries,
 } from "@syncfusion/ej2-react-charts";
 import { useStateContext } from "../../../../contexts/ContextProvider";
 import { ListEVChargingPayments } from "../../../../services";
@@ -56,17 +55,34 @@ const kMonth = (y: number, m1to12: number) =>
    TYPES
 ============================================================ */
 type SeriesPoint = { x: Date; y: number };
-type EvSeries = { name: string; evId: number; color: string; data: SeriesPoint[] };
+type EvSeries = {
+  name: string;
+  evId: number;
+  color: string;
+  gradId: string;
+  data: SeriesPoint[];
+};
 
-const PALETTE = [
-  "#2563eb",
-  "#ea580c",
-  "#1d4ed8",
-  "#c2410c",
-  "#1e40af",
-  "#9a3412",
-  "#1e3a8a",
-  "#7c2d12",
+/* ------------------------------------------------------------
+   COLOR PALETTE (minimal pastel เข้ม)
+------------------------------------------------------------ */
+/** Solar = ส้ม */
+const SOLAR_COLOR = "#f97316"; // orange-500
+/** Grid = ฟ้า */
+const GRID_COLOR = "#3b82f6"; // blue-500
+/** Summary (Total) = ม่วง */
+const SUMMARY_COLOR = "#7c3aed"; // violet-600
+
+/** สีสำหรับ EV อื่น ๆ */
+const DEFAULT_PALETTE = [
+  "#0ea5e9", // sky-500
+  "#22c55e", // emerald-500
+  "#14b8a6", // teal-500
+  "#6366f1", // indigo-500
+  "#facc15", // amber-400
+  "#ec4899", // pink-500
+  "#2dd4bf", // teal-400
+  "#a855f7", // violet-500
 ];
 
 /* ============================================================
@@ -82,11 +98,6 @@ const hexToRgb = (hex: string) => {
   };
 };
 
-const rgba = (hex: string, a: number) => {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgba(${r},${g},${b},${a})`;
-};
-
 const lighten = (hex: string, pct = 0.35) => {
   const { r, g, b } = hexToRgb(hex);
   return `rgb(
@@ -96,7 +107,7 @@ const lighten = (hex: string, pct = 0.35) => {
   )`;
 };
 
-const darken = (hex: string, pct = 0.2) => {
+const darken = (hex: string, pct = 0.18) => {
   const { r, g, b } = hexToRgb(hex);
   return `rgb(
     ${Math.round(r * (1 - pct))},
@@ -105,14 +116,79 @@ const darken = (hex: string, pct = 0.2) => {
   )`;
 };
 
+/**
+ * เลือกสีตามชื่อ EV:
+ * - ถ้ามีคำว่า "solar" → ส้ม
+ * - ถ้ามีคำว่า "grid"  → ฟ้า
+ * - อื่น ๆ → ใช้ DEFAULT_PALETTE ตาม index
+ */
+const getEvColor = (name: string, index: number) => {
+  const lower = (name || "").toLowerCase();
+  if (lower.includes("solar")) return SOLAR_COLOR;
+  if (lower.includes("grid")) return GRID_COLOR;
+  return DEFAULT_PALETTE[index % DEFAULT_PALETTE.length];
+};
+
+/**
+ * เลือก id ของ gradient ให้แต่ละ EV
+ */
+const getEvGradientId = (name: string, index: number) => {
+  const lower = (name || "").toLowerCase();
+  if (lower.includes("solar")) return "grad-solar";
+  if (lower.includes("grid")) return "grad-grid";
+  return `grad-ev-${index}`;
+};
+
 /* ============================================================
    LOADER
 ============================================================ */
 const Loader = () => (
-  <div className="flex items-center justify-center h-80 text-blue-700">
-    <span className="animate-spin border-4 border-blue-300 rounded-full border-t-transparent w-8 h-8 mr-3" />
+  <div className="flex items-center justify-center h-80 text-slate-700">
+    <span className="animate-spin border-4 border-slate-300 rounded-full border-t-transparent w-8 h-8 mr-3" />
     Loading...
   </div>
+);
+
+/* ============================================================
+   GRADIENT DEFINITIONS (สำหรับ bar ทุกตัว)
+============================================================ */
+const GradientDefs: React.FC = () => (
+  <svg width="0" height="0" style={{ position: "absolute" }}>
+    <defs>
+      {/* Solar (orange) */}
+      <linearGradient id="grad-solar" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stopColor={lighten(SOLAR_COLOR, 0.45)} />
+        <stop offset="100%" stopColor={SOLAR_COLOR} />
+      </linearGradient>
+
+      {/* Grid (blue) */}
+      <linearGradient id="grad-grid" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stopColor={lighten(GRID_COLOR, 0.45)} />
+        <stop offset="100%" stopColor={GRID_COLOR} />
+      </linearGradient>
+
+      {/* Summary (violet) */}
+      <linearGradient id="grad-summary" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stopColor={lighten(SUMMARY_COLOR, 0.5)} />
+        <stop offset="100%" stopColor={SUMMARY_COLOR} />
+      </linearGradient>
+
+      {/* Generic EV gradients */}
+      {DEFAULT_PALETTE.map((c, i) => (
+        <linearGradient
+          key={i}
+          id={`grad-ev-${i}`}
+          x1="0%"
+          y1="0%"
+          x2="0%"
+          y2="100%"
+        >
+          <stop offset="0%" stopColor={lighten(c, 0.4)} />
+          <stop offset="100%" stopColor={c} />
+        </linearGradient>
+      ))}
+    </defs>
+  </svg>
 );
 
 /* ============================================================
@@ -133,7 +209,6 @@ const EVRevenueChart: React.FC<{
      FETCH + BUILD DATA
   ============================================================= */
   useEffect(() => {
-
     // Validate range type
     const valid =
       (timeRangeType === "day" && isDateRange(selectedRange)) ||
@@ -158,9 +233,9 @@ const EVRevenueChart: React.FC<{
           return;
         }
 
-        /* ============================================================
+        /* ========================================================
            FILTER BY RANGE
-        ============================================================= */
+        ========================================================= */
         const filtered = (res as any[]).filter((r) => {
           const iso = r?.Payment?.Date;
           if (!iso) return false;
@@ -196,9 +271,9 @@ const EVRevenueChart: React.FC<{
           return;
         }
 
-        /* ============================================================
+        /* ========================================================
            GROUP BY EV
-        ============================================================= */
+        ========================================================= */
         type EvBucket = {
           name: string;
           items: EVChargingPayListmentInterface[];
@@ -213,11 +288,9 @@ const EVRevenueChart: React.FC<{
           byEv[evId].items.push(r);
         }
 
-        const colorFor = (i: number) => PALETTE[i % PALETTE.length];
-
-        /* ============================================================
+        /* ========================================================
            SUM FUNCTIONS
-        ============================================================= */
+        ========================================================= */
         const sumDaily = (rows: EVChargingPayListmentInterface[]) => {
           const map: Record<string, number> = {};
           for (const r of rows) {
@@ -258,16 +331,17 @@ const EVRevenueChart: React.FC<{
           return map;
         };
 
-        /* ============================================================
-           BUILD SERIES
-        ============================================================= */
+        /* ========================================================
+           BUILD SERIES (BAR / COLUMN)
+        ========================================================= */
         const build = (): EvSeries[] => {
           const out: EvSeries[] = [];
           const evIds = Object.keys(byEv).map(Number);
 
           evIds.forEach((evId, idx) => {
             const bucket = byEv[evId];
-            const color = colorFor(idx);
+            const color = getEvColor(bucket.name, idx);
+            const gradId = getEvGradientId(bucket.name, idx);
             let data: SeriesPoint[] = [];
 
             /* -------------------- DAILY -------------------- */
@@ -356,6 +430,7 @@ const EVRevenueChart: React.FC<{
               name: bucket.name,
               evId,
               color,
+              gradId,
               data: data.sort(
                 (a, b) => a.x.getTime() - b.x.getTime()
               ),
@@ -367,31 +442,70 @@ const EVRevenueChart: React.FC<{
 
         const allSeries = build();
 
-        setSeriesData(
-          allSeries.map((s) => ({
+        /* ========================================================
+           SUMMARY SERIES (รวมทุก EV)
+        ========================================================= */
+        const summaryMap = new Map<number, number>();
+
+        allSeries.forEach((s) => {
+          s.data.forEach((p) => {
+            const t = p.x.getTime();
+            summaryMap.set(t, (summaryMap.get(t) || 0) + p.y);
+          });
+        });
+
+        const summaryData: SeriesPoint[] = Array.from(summaryMap.entries())
+          .map(([t, y]) => ({ x: new Date(t), y }))
+          .sort((a, b) => a.x.getTime() - b.x.getTime());
+
+        /* ========================================================
+           BUILD FINAL SERIES DATA FOR CHART
+        ========================================================= */
+        const evSeriesForChart = allSeries.map((s) => {
+          const borderColor = darken(s.color, 0.25);
+
+          return {
             dataSource: s.data,
             xName: "x",
             yName: "y",
             name: s.name,
-            type: "Line",
-            width: 3,
-            fill: rgba(s.color, 0.15),
-            border: { width: 3, color: s.color },
-            marker: {
-              visible: true,
-              width: 10,
-              height: 10,
-              fill: lighten(s.color, 0.45),
-              border: {
-                width: 2,
-                color: darken(s.color, 0.25),
-              },
-            },
-            animation: { enable: true, duration: 1000 },
-          }))
-        );
+            type: "Column",
+            width: 1.1,
+            columnSpacing: 0.18,
+            border: { width: 1.2, color: borderColor },
+            fill: `url(#${s.gradId})`,
+            cornerRadius: { topLeft: 7, topRight: 7 },
+            marker: { visible: false },
+            animation: { enable: true, duration: 800 },
+          };
+        });
 
-        setNoData(allSeries.every((s) => s.data.length === 0));
+        const summarySeriesForChart =
+          summaryData.length > 0
+            ? [
+                {
+                  dataSource: summaryData,
+                  xName: "x",
+                  yName: "y",
+                  name: "Summary",
+                  type: "Column",
+                  width: 1.6,
+                  columnSpacing: 0.35,
+                  border: { width: 1.4, color: darken(SUMMARY_COLOR, 0.2) },
+                  fill: "url(#grad-summary)",
+                  cornerRadius: { topLeft: 9, topRight: 9 },
+                  marker: { visible: false },
+                  animation: { enable: true, duration: 900 },
+                },
+              ]
+            : [];
+
+        const finalSeries = [...evSeriesForChart, ...summarySeriesForChart];
+
+        setSeriesData(finalSeries);
+        setNoData(
+          finalSeries.every((s) => !s.dataSource || s.dataSource.length === 0)
+        );
       } catch {
         setSeriesData([]);
         setNoData(true);
@@ -433,12 +547,15 @@ const EVRevenueChart: React.FC<{
      RENDER
   ============================================================= */
   return (
-    <div className="w-full max-w-6xl mx-auto p-4 sm:p-6 bg-gradient-to-br from-blue-50 via-white to-blue-100 rounded-2xl shadow-sm border border-blue-200 text-blue-800">
+    <div className="w-full max-w-6xl mx-auto p-4 sm:p-6 bg-white dark:bg-secondary-dark-bg rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 text-slate-900 dark:text-gray-100">
+      {/* gradient defs สำหรับ bar ทั้งหมด */}
+      <GradientDefs />
+
       <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-2">
-        <p className="text-base sm:text-lg font-semibold">
+        <p className="text-base sm:text-lg font-semibold text-blue-900">
           EV Revenue Overview
         </p>
-        <span className="text-xs sm:text-sm px-2 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+        <span className="text-xs sm:text-sm px-2 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-200 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600">
           {timeRangeType === "day"
             ? "Daily"
             : timeRangeType === "month"
@@ -449,7 +566,7 @@ const EVRevenueChart: React.FC<{
 
       <div className="relative" style={{ minHeight: 440 }}>
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/60">
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/70 dark:bg-gray-900/60">
             <Loader />
           </div>
         )}
@@ -470,35 +587,41 @@ const EVRevenueChart: React.FC<{
                 intervalType: xIntervalType as any,
                 edgeLabelPlacement: "Shift",
                 majorGridLines: { width: 0 },
-                labelStyle: { color: "#2563EB", fontWeight: "600" },
+                labelStyle: {
+                  color: currentMode === "Dark" ? "#e5e7eb" : "#6b7280",
+                  fontWeight: "500",
+                },
               }}
               primaryYAxis={{
                 labelFormat: "{value} ฿",
                 majorGridLines: {
                   width: 1,
-                  dashArray: "5,5",
-                  color: "#DBEAFE",
+                  dashArray: "4,4",
+                  color: currentMode === "Dark" ? "#374151" : "#e5e7eb",
                 },
                 labelStyle: {
-                  color: "#2563EB",
-                  fontWeight: "600",
+                  color: currentMode === "Dark" ? "#e5e7eb" : "#6b7280",
+                  fontWeight: "500",
                 },
               }}
               tooltip={{
                 enable: true,
                 shared: true,
-                format:
-                  "<b>${series.name}</b> : ${point.y}",
+                format: "<b>${series.name}</b> : ${point.y} ",
               }}
               legendSettings={{
                 visible: true,
                 position: "Bottom",
                 alignment: "Center",
-                textStyle: { color: "#2563EB", fontWeight: "600" },
+                textStyle: {
+                  color: currentMode === "Dark" ? "#e5e7eb" : "#4b5563",
+                  fontWeight: "500",
+                },
               }}
+              background={currentMode === "Dark" ? "#111827" : "#ffffff"}
               chartArea={{ border: { width: 0 } }}
             >
-              <Inject services={[LineSeries, DateTime, Legend, Tooltip]} />
+              <Inject services={[ColumnSeries, DateTime, Legend, Tooltip]} />
               <SeriesCollectionDirective>
                 {seriesData.map((s, i) => (
                   <SeriesDirective key={i} {...s} />
