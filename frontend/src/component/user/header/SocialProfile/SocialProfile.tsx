@@ -62,7 +62,7 @@ const SocialProfile: React.FC = () => {
                       activeKey === "1" ? "text-blue-600" : "text-gray-500"
                     }`}
                   >
-                    🚙 Profile
+                    🪪 Profile
                   </span>
                 ),
                 children: (
@@ -95,7 +95,7 @@ const SocialProfile: React.FC = () => {
                       activeKey === "2" ? "text-blue-600" : "text-gray-500"
                     }`}
                   >
-                    ⚡ Booking history
+              🧾 history
                   </span>
                 ),
                 children: (
@@ -114,7 +114,7 @@ const SocialProfile: React.FC = () => {
                       activeKey === "3" ? "text-blue-600" : "text-gray-500"
                     }`}
                   >
-                    🛠️ Report
+                    🗂️ Help
                   </span>
                 ),
                 children: (

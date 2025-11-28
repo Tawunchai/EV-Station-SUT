@@ -337,8 +337,8 @@ const ChargingEV = () => {
           setGridKwh(gridVal);
         }
 
-        console.log("   🌞 Solar remaining =", solarVal);
-        console.log("   🔌 Grid remaining  =", gridVal);
+        console.log("🌞 Solar remaining =", solarVal);
+        console.log("🔌 Grid remaining  =", gridVal);
       } else {
         console.log("ℹ️ [HW] Other hardware message:", data);
       }

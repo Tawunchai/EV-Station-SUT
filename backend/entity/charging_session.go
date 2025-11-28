@@ -8,6 +8,8 @@ type ChargingSession struct {
 	Token     string `gorm:"uniqueIndex"`
 	ExpiresAt time.Time
 	CreatedAt time.Time
+	StartTime time.Time
+	EndTime time.Time
 	Status bool
 
 	StartEnergy float64  

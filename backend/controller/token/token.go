@@ -39,12 +39,14 @@ func PaymentSuccess(c *gin.Context) {
 	token := uuid.New().String()
 
 	session := entity.ChargingSession{
-		UserID:    req.UserID,
-		Token:     token,
-		ExpiresAt: time.Now().Add(300 * time.Minute),
-		Status:    true,
+		UserID:      req.UserID,
+		Token:       token,
+		ExpiresAt:   time.Now().Add(300 * time.Minute),
+		Status:      true,
 		StartEnergy: 0,
-		PaymentID: req.PaymentID,
+		PaymentID:   req.PaymentID,
+		StartTime:   time.Time{},
+		EndTime:     time.Time{},
 	}
 
 	// 🟦 บันทึกลงฐานข้อมูล
@@ -106,7 +108,7 @@ func GetDataByUserID(c *gin.Context) {
 	err = db.
 		Where("user_id = ? AND status = ?", uint(userID), true).
 		Preload("Payment").
-        Preload("Payment.EVCabinet").
+		Preload("Payment.EVCabinet").
 		Preload("Payment.EVChargingPayments").
 		Preload("Payment.EVChargingPayments.EVcharging").
 		Preload("Payment.EVChargingPayments.EVcharging.EnergySource").
@@ -125,8 +127,7 @@ func GetDataByUserID(c *gin.Context) {
 	})
 }
 
-
-// ✅ อัปเดต Status = false โดยอ้างอิงจาก PaymentID
+// ✅ อัปเดต Status = false และบันทึก EndTime = เวลาปัจจุบัน โดยอ้างอิงจาก PaymentID
 func UpdateStatusByPaymentID(c *gin.Context) {
 
 	// 1) รับค่า payment_id จาก URL
@@ -151,75 +152,82 @@ func UpdateStatusByPaymentID(c *gin.Context) {
 		return
 	}
 
-	// 3) อัปเดต Status = false
+	// 3) อัปเดต Status = false และ EndTime = time.Now()
+	now := time.Now()
+
 	if err := db.Model(&entity.ChargingSession{}).
 		Where("payment_id = ?", uint(paymentID)).
-		Update("status", false).Error; err != nil {
+		Updates(map[string]interface{}{
+			"status":   false,
+			"end_time": now,
+		}).Error; err != nil {
 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "อัปเดตสถานะไม่สำเร็จ"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "อัปเดตสถานะหรือ EndTime ไม่สำเร็จ"})
 		return
 	}
 
 	// 4) ส่ง Response กลับ
 	c.JSON(http.StatusOK, gin.H{
-		"message":         "อัปเดตสถานะสำเร็จ",
+		"message":         "อัปเดตสถานะและ EndTime สำเร็จ",
 		"payment_id":      paymentID,
 		"updated_records": len(sessions),
+		"end_time":        now,
 	})
 }
 
+
 // GET /charging-session/status/true
 func GetChargingSessionByStatus(c *gin.Context) {
-    var sessions []entity.ChargingSession
+	var sessions []entity.ChargingSession
 
-    db := config.DB()
+	db := config.DB()
 
-    // Query เฉพาะ Status = true
-    if err := db.
-        Where("status = ?", true).
-        Preload("Payment").
-        Preload("Payment.EVCabinet"). // preload ต่อไปยัง Cabinet
-        Find(&sessions).Error; err != nil {
+	// Query เฉพาะ Status = true
+	if err := db.
+		Where("status = ?", true).
+		Preload("Payment").
+		Preload("Payment.EVCabinet"). // preload ต่อไปยัง Cabinet
+		Find(&sessions).Error; err != nil {
 
-        c.JSON(http.StatusInternalServerError, gin.H{
-            "error": err.Error(),
-        })
-        return
-    }
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
-    c.JSON(http.StatusOK, gin.H{
-        "data": sessions,
-    })
+	c.JSON(http.StatusOK, gin.H{
+		"data": sessions,
+	})
 }
 
 // GET /charging-session/status/:user_id
 func GetChargingSessionByStatusAndUserID(c *gin.Context) {
 
-    // รับ user_id จาก param
-    userIDParam := c.Param("user_id")
-    userID, err := strconv.ParseUint(userIDParam, 10, 32)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
-        return
-    }
+	// รับ user_id จาก param
+	userIDParam := c.Param("user_id")
+	userID, err := strconv.ParseUint(userIDParam, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+		return
+	}
 
-    var sessions []entity.ChargingSession
-    db := config.DB()
+	var sessions []entity.ChargingSession
+	db := config.DB()
 
-    // Query: หาเฉพาะ Status = true และ UserID ที่ส่งมา
-    if err := db.
-        Where("status = ? AND user_id = ?", true, uint(userID)).
-        Preload("Payment").
-        Preload("Payment.EVCabinet").
-        Find(&sessions).Error; err != nil {
+	// Query: หาเฉพาะ Status = true และ UserID ที่ส่งมา
+	if err := db.
+		Where("status = ? AND user_id = ?", true, uint(userID)).
+		Preload("Payment").
+		Preload("Payment.EVCabinet").
+		Find(&sessions).Error; err != nil {
 
-        c.JSON(http.StatusInternalServerError, gin.H{
-            "error": err.Error(),
-        })
-        return
-    }
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
-    c.JSON(http.StatusOK, gin.H{
-        "data": sessions,
-    })
+	c.JSON(http.StatusOK, gin.H{
+		"data": sessions,
+	})
 }

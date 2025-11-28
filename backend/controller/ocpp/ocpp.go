@@ -879,10 +879,10 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 		return nil
 	}
 
+	// ดึงเฉพาะ session ที่ยังไม่ตั้งค่า StartEnergy และ StartTime
 	var sessions []entity.ChargingSession
 	if err := db.
 		Where("status = ? AND start_energy = 0", true).
-		Preload("Payment").
 		Find(&sessions).Error; err != nil {
 		return fmt.Errorf("query active charging sessions failed: %w", err)
 	}
@@ -892,7 +892,15 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 	}
 
 	for _, s := range sessions {
-		if s.PaymentID == 0 || s.Payment.ID == 0 {
+
+		// ต้องมี Payment และ EVCabinetID
+		if s.PaymentID == 0 {
+			continue
+		}
+
+		// โหลด Payment
+		if err := db.Preload("Payment").First(&s, s.ID).Error; err != nil {
+			fmt.Printf("⚠️ preload Payment failed (sessionID=%d): %v\n", s.ID, err)
 			continue
 		}
 
@@ -900,29 +908,39 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 			continue
 		}
 
+		// หา Cabinet
 		var cab entity.EVCabinet
 		if err := db.First(&cab, *s.Payment.EVCabinetID).Error; err != nil {
-			if err != gorm.ErrRecordNotFound {
-				fmt.Printf("⚠️ find EVCabinet failed (paymentID=%d): %v\n", s.PaymentID, err)
-			}
+			fmt.Printf("⚠️ find EVCabinet failed (paymentID=%d): %v\n", s.PaymentID, err)
 			continue
 		}
 
+		// ต้อง match chargePoint
 		if cab.ChargePoint != chargePoint {
 			continue
 		}
 
+		// อัปเดต StartEnergy
 		s.StartEnergy = startEnergy
 
-		if err := db.Save(&s).Error; err != nil {
-			return fmt.Errorf("update StartEnergy failed for sessionID=%d: %w", s.ID, err)
+		// อัปเดต StartTime เฉพาะครั้งแรกเท่านั้น
+		if s.StartTime.IsZero() {
+			s.StartTime = time.Now()
 		}
 
-		fmt.Printf("✅ Update StartEnergy sessionID=%d chargePoint=%s startEnergy=%.2f Wh\n",
-			s.ID, chargePoint, startEnergy)
+		// Save
+		if err := db.Save(&s).Error; err != nil {
+			return fmt.Errorf("update StartEnergy/StartTime failed for sessionID=%d: %w", s.ID, err)
+		}
+
+		fmt.Printf(
+			"✅ Update StartEnergy & StartTime sessionID=%d chargePoint=%s startEnergy=%.2f StartTime=%s\n",
+			s.ID, chargePoint, startEnergy, s.StartTime.Format(time.RFC3339),
+		)
 
 		return nil
 	}
 
 	return nil
 }
+
