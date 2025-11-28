@@ -157,7 +157,7 @@ func seedMasters(db *gorm.DB) {
 
 	s1 := entity.Solar{
 		Name:         "Solar Cell",
-		UrlWebsocket: "wss://payment-project-t4dj.onrender.com/solar/",
+		UrlWebsocket: "wss://api.evstation-sut.it.com/solar/",
 		SolarPoint:   "solar_001",
 
 		Description: "Main solar panel for EV project",
@@ -445,7 +445,7 @@ func seedContent(db *gorm.DB) {
 		Latitude:     14.8802,
 		Longitude:    102.018,
 		Image:        "uploads/cabinet/cabinet.jpg",
-		UrlWebsocket: "wss://payment-project-t4dj.onrender.com/ocpp/",
+		UrlWebsocket: "wss://api.evstation-sut.it.com/ocpp/",
 		ChargePoint:  "CP_1",
 		EmployeeID:   &emp.ID,
 	}

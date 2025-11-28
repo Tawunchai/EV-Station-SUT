@@ -1,5 +1,5 @@
 // ===============================
-// FULL CODE 100% — HEADER WITH EV MAP (FIXED)
+// FULL CODE 100% — HEADER WITH EV MAP (FIXED MOBILE MENU)
 // ===============================
 
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +9,6 @@ import { FaCarSide } from "react-icons/fa";
 import { MdOutlineReport, MdMap } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { message } from "antd";
-import OutsideClickHandler from "react-outside-click-handler";
 
 import ReportModal from "./report/index";
 
@@ -52,7 +51,7 @@ interface HeaderProps {
   scrollToNew?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ }) => {
+const Header: React.FC<HeaderProps> = ({}) => {
   const navigate = useNavigate();
 
   const [menuOpened, setMenuOpened] = useState(false);
@@ -83,7 +82,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
 
         const res = await getUserByID(uid);
         if (res) setUser(res);
-      } catch { }
+      } catch {}
     })();
   }, []);
 
@@ -130,7 +129,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
   useEffect(() => {
     if (!mapOpen) {
       if (mapInstance.current) {
-        mapInstance.current.remove(); // <-- FIX
+        mapInstance.current.remove();
         mapInstance.current = null;
       }
     }
@@ -144,7 +143,6 @@ const Header: React.FC<HeaderProps> = ({ }) => {
     if (!mapElRef.current) return;
     if (!stations.length) return;
 
-    // If exists → recreate
     if (mapInstance.current) {
       mapInstance.current.invalidateSize();
       return;
@@ -163,7 +161,6 @@ const Header: React.FC<HeaderProps> = ({ }) => {
 
     mapInstance.current = map;
 
-    // markers
     stations.forEach((st) => {
       const mk = L.marker([st.Latitude, st.Longitude], {
         icon: makeEVIcon(false),
@@ -350,79 +347,109 @@ const Header: React.FC<HeaderProps> = ({ }) => {
         </div>
       </header>
 
-      {/* MOBILE MENU */}
-      <OutsideClickHandler onOutsideClick={() => setMenuOpened(false)}>
-        {menuOpened && (
-          <>
-            <div className="fixed inset-0 bg-black/40 z-40" />
+      {/* MOBILE MENU (Bottom Sheet) */}
+      {menuOpened && (
+        <>
+          {/* คลิกพื้นหลังดำเพื่อปิด */}
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={() => setMenuOpened(false)}
+          />
 
-            <div className="fixed inset-x-0 bottom-0 bg-white p-4 rounded-t-3xl shadow-2xl z-50 animate-[sheetUp_180ms_ease-out]">
-              <div className="h-1.5 w-12 bg-gray-300 rounded-full mx-auto mb-2" />
-
+          <div className="fixed inset-x-0 bottom-0 bg-white p-4 rounded-t-3xl shadow-2xl z-50 animate-[sheetUp_180ms_ease-out]">
+            {/* แถบลาก + ปุ่มปิด */}
+            <div className="relative mb-2 flex items-center justify-center">
+              <div className="h-1.5 w-12 bg-gray-300 rounded-full" />
               <button
-                onClick={handleOpenReport}
-                className="w-full rounded-xl px-4 py-3 text-left text-gray-800 hover:bg-gray-50"
+                onClick={() => setMenuOpened(false)}
+                className="absolute right-1 p-2 rounded-full hover:bg-gray-100"
+                aria-label="Close menu"
               >
-                รายงานปัญหา (Report)
-              </button>
-
-              {/* Profile */}
-              {user && (
-                <button
-                  onClick={() => {
-                    navigate("/user/my-coins");
-                    setMenuOpened(false);
-                  }}
-                  className="w-full flex items-center gap-2 justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white"
+                <svg
+                  className="w-5 h-5 text-gray-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
                 >
-                  <GiTwoCoins className="text-lg" />
-                  My Coins: <b>{user.Coin}</b>
-                </button>
-              )}
-
-              {/* ✅ โปรไฟล์ */}
-              <div className="mt-1 flex items-center justify-between rounded-xl border border-gray-100 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <img
-                    src={user?.Profile ? `${apiUrlPicture}${user.Profile}` : undefined}
-                    alt="profile"
-                    className="h-9 w-9 rounded-full object-cover ring-1 ring-gray-200"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src =
-                        "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><rect width='100%' height='100%' fill='%23e5e7eb'/></svg>";
-                    }}
-                  />
-                  <div className="text-sm">
-                    <div className="font-semibold text-gray-900">
-                      {user ? `${user.FirstName ?? ""} ${user.LastName ?? ""}` : "Guest"}
-                    </div>
-                    <div className="text-gray-500">Profile</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    navigate("/user/profile");
-                    setMenuOpened(false);
-                  }}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
-                >
-                  open
-                </button>
-              </div>
-
-              <button
-                onClick={() => {
-                  handleLogout();
-                  setMenuOpened(false);
-                }}
-                className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white"
-              >
-                Logout
+                  <path d="M18 6 L6 18" strokeLinecap="round" />
+                  <path d="M6 6 L18 18" strokeLinecap="round" />
+                </svg>
               </button>
             </div>
-          </>
-        )}
-      </OutsideClickHandler>
+
+            <button
+              onClick={() => {
+                handleOpenReport();
+                // ไม่ต้องปิดเมนูทันที ถ้าอยากให้ปิดก็ uncomment บรรทัดล่าง
+                // setMenuOpened(false);
+              }}
+              className="w-full rounded-xl px-4 py-3 text-left text-gray-800 hover:bg-gray-50"
+            >
+              รายงานปัญหา (Report)
+            </button>
+
+            {/* ปุ่ม My Coins */}
+            {user && (
+              <button
+                onClick={() => {
+                  navigate("/user/my-coins");
+                  setMenuOpened(false);
+                }}
+                className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white"
+              >
+                <GiTwoCoins className="text-lg" />
+                My Coins: <b>{user.Coin}</b>
+              </button>
+            )}
+
+            {/* โปรไฟล์ */}
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-gray-100 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <img
+                  src={
+                    user?.Profile ? `${apiUrlPicture}${user.Profile}` : undefined
+                  }
+                  alt="profile"
+                  className="h-9 w-9 rounded-full object-cover ring-1 ring-gray-200"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src =
+                      "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><rect width='100%' height='100%' fill='%23e5e7eb'/></svg>";
+                  }}
+                />
+                <div className="text-sm">
+                  <div className="font-semibold text-gray-900">
+                    {user
+                      ? `${user.FirstName ?? ""} ${user.LastName ?? ""}`
+                      : "Guest"}
+                  </div>
+                  <div className="text-gray-500">Profile</div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  navigate("/user/profile");
+                  setMenuOpened(false);
+                }}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
+              >
+                open
+              </button>
+            </div>
+
+            {/* Logout */}
+            <button
+              onClick={() => {
+                handleLogout();
+                setMenuOpened(false);
+              }}
+              className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white"
+            >
+              Logout
+            </button>
+          </div>
+        </>
+      )}
 
       {/* REPORT MODAL */}
       <ReportModal open={modalOpen} onClose={() => setModalOpen(false)} />
