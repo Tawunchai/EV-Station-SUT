@@ -19,7 +19,7 @@ func ListCabinetEV(c *gin.Context) {
 	var cabinets []entity.EVCabinet
 
 	// ✅ โหลดความสัมพันธ์ด้วย Preload เช่น Employee, EVcharging, Booking
-	results := db.Preload("Employee.User").Find(&cabinets)
+	results := db.Preload("Employee.User").Preload("Hardware").Find(&cabinets)
 
 	if results.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": results.Error.Error()})
@@ -80,6 +80,9 @@ func CreateEVCabinet(c *gin.Context) {
 	urlWebsocket := c.PostForm("urlWebsocket") // เช่น wss://xxx/ocpp
 	chargePoint := c.PostForm("chargePoint")   // เช่น CP_1, ESP32-01
 
+	// ⭐ ใหม่: HardwareID
+	hardwareIDStr := c.PostForm("hardwareID")
+
 	latitude, _ := strconv.ParseFloat(latitudeStr, 64)
 	longitude, _ := strconv.ParseFloat(longitudeStr, 64)
 
@@ -90,6 +93,17 @@ func CreateEVCabinet(c *gin.Context) {
 			temp := uint(parsedID)
 			employeeID = &temp
 		}
+	}
+
+	// แปลง HardwareID (ถ้าส่งมา)
+	var hardwareID uint
+	if hardwareIDStr != "" {
+		parsedHardwareID, err := strconv.ParseUint(hardwareIDStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "HardwareID ไม่ถูกต้อง"})
+			return
+		}
+		hardwareID = uint(parsedHardwareID)
 	}
 
 	ev := entity.EVCabinet{
@@ -103,6 +117,7 @@ func CreateEVCabinet(c *gin.Context) {
 		Longitude:    longitude,
 		Image:        filePath,
 		EmployeeID:   employeeID,
+		HardwareID:   hardwareID, // ⭐ ผูก Hardware ตอนสร้าง
 	}
 
 	if err := config.DB().Create(&ev).Error; err != nil {
@@ -192,6 +207,16 @@ func UpdateEVCabinetByID(c *gin.Context) {
 		ev.ChargePoint = v
 	}
 
+	// ⭐ ใหม่: อัปเดต HardwareID
+	if v := c.PostForm("hardwareID"); v != "" {
+		hid, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "HardwareID ไม่ถูกต้อง"})
+			return
+		}
+		ev.HardwareID = uint(hid)
+	}
+
 	if err := db.Save(&ev).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -245,8 +270,8 @@ func GetCabinetByID(c *gin.Context) {
 
 	var cabinet entity.EVCabinet
 
-	if err := db.First(&cabinet, uint(id)).Error; err != nil {
-
+	// ✅ Preload Hardware
+	if err := db.Preload("Hardware").First(&cabinet, uint(id)).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบบันทึกตู้ชาร์จ"})
 		return
 	}

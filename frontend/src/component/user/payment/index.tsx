@@ -1,4 +1,5 @@
 // src/component/user/payment/index.tsx
+
 import React, { useEffect, useState, memo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import qrpayment from "../../../assets/PromptPay-logo.png";
@@ -11,8 +12,10 @@ import {
   CreateEVChargingPayment,
   apiUrlPicture,
   CreateChargingToken,
+  GetCabinetByID, // ⭐ ดึงข้อมูลตู้ชาร์จเพื่อนำ HardwarePoint มาใช้
+  connectHardwareSocket,
+  sendHardwareCommand,
 } from "../../../services";
-import { connectHardwareSocket, sendHardwareCommand } from "../../../services";
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { UsersInterface } from "../../../interface/IUser";
 import { MethodInterface } from "../../../interface/IMethod";
@@ -97,12 +100,15 @@ const Index: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoadingMethod, setIsLoadingMethod] = useState(true);
 
+  // ⭐ HardwarePoint จาก Hardware ของ Cabinet (เช่น "hardware_888")
+  const [hardwarePoint, setHardwarePoint] = useState<string | null>(null);
+
   const totalAmount = chargers.reduce(
     (sum: number, item: any) => sum + (item?.total || 0),
     0
   );
 
-  // โหลดข้อมูลผู้ใช้
+  // โหลดข้อมูลผู้ใช้ + Method
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -142,6 +148,39 @@ const Index: React.FC = () => {
     fetchUserData();
   }, [navigate]);
 
+  // ⭐ โหลดข้อมูล Cabinet โดยใช้ cabinet_id เพื่อดึง HardwarePoint มาใช้แทน "hardware_001"
+  useEffect(() => {
+    const loadCabinetHardware = async () => {
+      if (!cabinet_id) return;
+
+      try {
+        const idNum = Number(cabinet_id);
+        if (Number.isNaN(idNum)) {
+          console.warn("⚠️ cabinet_id ไม่ถูกต้อง:", cabinet_id);
+          return;
+        }
+
+        const cabinet = await GetCabinetByID(idNum);
+        console.log("🔍 Cabinet in payment page:", cabinet);
+
+        const hwPoint = (cabinet as any)?.Hardware?.HardwarePoint as
+          | string
+          | undefined;
+
+        if (hwPoint) {
+          setHardwarePoint(hwPoint);
+          console.log("✅ Loaded HardwarePoint from cabinet:", hwPoint);
+        } else {
+          console.log("ℹ️ Cabinet นี้ยังไม่ได้ผูก HardwarePoint");
+        }
+      } catch (err) {
+        console.error("❌ loadCabinetHardware error:", err);
+      }
+    };
+
+    loadCabinetHardware();
+  }, [cabinet_id]);
+
   // ฟังก์ชันส่งข้อมูลไป Hardware (ส่ง kWh + เปอร์เซ็นต์)
   const sendToHardware = (
     solar_kwh: number,
@@ -154,13 +193,22 @@ const Index: React.FC = () => {
 
       ws.onopen = () => {
         console.log("Connected to Hardware WebSocket");
+
+        if (!hardwarePoint) {
+          console.warn("⚠️ ไม่มี HardwarePoint จาก Cabinet, ยกเลิกการส่งคำสั่งไป hardware");
+          ws.close();
+          return;
+        }
+
         const command = {
           solar_kwh,
           grid_kwh,
           solar_percent,
           grid_percent,
         };
-        sendHardwareCommand(ws, "hardware_001", command);
+
+        // ⭐ ใช้ HardwarePoint จาก Cabinet แทน "hardware_001"
+        sendHardwareCommand(ws, hardwarePoint, command);
       };
 
       ws.onclose = () => console.warn("Hardware WebSocket disconnected");
@@ -221,7 +269,6 @@ const Index: React.FC = () => {
         method_id: coinMethod.ID!,
         reference_number: "",
         picture: null,
-        // 👇 ตรงนี้แหละที่แก้ให้ไม่เป็น null แล้ว
         ev_cabinet_id: cabinet_id ?? undefined,
       };
 

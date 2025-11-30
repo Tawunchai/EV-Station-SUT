@@ -1,25 +1,32 @@
 import React, { useEffect, useState } from "react";
 import { Upload, message, Select } from "antd";
 import ImgCrop from "antd-img-crop";
-import { StatusInterface } from "../../../../interface/IStatus";
-import { TypeInterface } from "../../../../interface/IType";
-import { CreateEV, ListCabinetsEV, ListEnergySource } from "../../../../services/index";
-import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
+import { StatusInterface } from "../../../../../interface/IStatus";
+import { TypeInterface } from "../../../../../interface/IType";
+import {
+  UpdateEVByID,
+  ListCabinetsEV,
+  apiUrlPicture,
+  ListEnergySource,
+} from "../../../../../services";
+import { getCurrentUser, initUserProfile } from "../../../../../services/httpLogin";
 import {
   FaTimes,
-  FaBolt,
+  FaEdit,
   FaImage,
   FaTag,
   FaMoneyBillWave,
   FaListAlt,
   FaInfoCircle,
   FaChargingStation,
+  FaBolt,
 } from "react-icons/fa";
-import { EnergySourceInterface } from "../../../../interface/IEnergySource";
+import { EnergySourceInterface } from "../../../../../interface/IEnergySource";
 
-interface CreateEVModalProps {
+interface EditEVModalProps {
   open: boolean;
   onClose: () => void;
+  evCharging: any;
   onSaved: () => void;
   statusList: StatusInterface[];
   typeList: TypeInterface[];
@@ -31,9 +38,10 @@ interface CabinetInterface {
   Location: string;
 }
 
-const CreateEVModal: React.FC<CreateEVModalProps> = ({
+const EditEVModal: React.FC<EditEVModalProps> = ({
   open,
   onClose,
+  evCharging,
   onSaved,
   statusList,
   typeList,
@@ -49,16 +57,15 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
   const [energySourceID, setEnergySourceID] = useState<number | undefined>(undefined);
   const [energySourceList, setEnergySourceList] = useState<EnergySourceInterface[]>([]);
 
-  // ⭐ เลือกหลาย Cabinet
+  // ⭐ multi-cabinet
   const [selectedCabinets, setSelectedCabinets] = useState<number[]>([]);
 
   const [fileList, setFileList] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
-
-  const [cabinets, setCabinets] = useState<CabinetInterface[]>([]);
   const [employeeID, setEmployeeID] = useState<number | null>(null);
+  const [cabinets, setCabinets] = useState<CabinetInterface[]>([]);
 
-  // โหลด employee_id
+  // โหลด employee
   useEffect(() => {
     const fetchEmployee = async () => {
       try {
@@ -66,8 +73,6 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
         const currentUser = getCurrentUser();
         if (currentUser?.employee_id) {
           setEmployeeID(currentUser.employee_id);
-        } else {
-          message.warning("ไม่พบรหัสพนักงาน กรุณาเข้าสู่ระบบใหม่");
         }
       } catch {
         message.error("โหลดข้อมูลผู้ใช้ล้มเหลว");
@@ -76,22 +81,19 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
     fetchEmployee();
   }, []);
 
-  // โหลด Cabinet + EnergySource ตอนเปิด modal
+  // โหลด Cabinets + EnergySource ตอนเปิด modal
   useEffect(() => {
     const fetchCab = async () => {
       try {
         const res = await ListCabinetsEV();
-        if (Array.isArray(res)) {
-          setCabinets(res);
-        } else {
-          setCabinets([]);
-        }
+        if (Array.isArray(res)) setCabinets(res);
+        else setCabinets([]);
       } catch {
         message.error("โหลดข้อมูล Cabinet ไม่สำเร็จ");
       }
     };
 
-    const fetchEnergySources = async () => {
+    const fetchEnergySource = async () => {
       try {
         const res = await ListEnergySource();
         if (Array.isArray(res)) {
@@ -106,80 +108,116 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
 
     if (open) {
       fetchCab();
-      fetchEnergySources();
+      fetchEnergySource();
     }
   }, [open]);
 
-  // Reset เมื่อเปิด modal
+  // โหลดข้อมูล EV ที่จะ edit
   useEffect(() => {
-    if (open) {
-      setName("");
-      setDescription("");
-      setPrice("");
-      setStatusID(undefined);
-      setTypeID(undefined);
+    if (!open || !evCharging) return;
+
+    setName(evCharging.Name ?? "");
+    setDescription(evCharging.Description ?? "");
+    setPrice(
+      evCharging.Price !== undefined && evCharging.Price !== null
+        ? String(evCharging.Price)
+        : ""
+    );
+
+    setStatusID(evCharging.StatusID ?? undefined);
+    setTypeID(evCharging.TypeID ?? undefined);
+
+    // ⭐ ตั้งค่า EnergySource จากข้อมูลเดิม
+    if (evCharging.EnergySourceID) {
+      setEnergySourceID(evCharging.EnergySourceID);
+    } else if (evCharging.EnergySource?.ID) {
+      setEnergySourceID(evCharging.EnergySource.ID);
+    } else {
       setEnergySourceID(undefined);
-      setSelectedCabinets([]); // reset
-      setFileList([]);
-      setSubmitting(false);
     }
-  }, [open]);
+
+    // ⭐ multi cabinet → เซ็ตค่าเป็น array [1, 2, 3]
+    if (Array.isArray(evCharging.Cabinets)) {
+      setSelectedCabinets(evCharging.Cabinets.map((c: any) => c.ID));
+    } else {
+      setSelectedCabinets([]);
+    }
+
+    // โหลดรูป
+    if (evCharging.Picture) {
+      setFileList([
+        {
+          uid: "-1",
+          name: "current_image.jpg",
+          status: "done",
+          url: apiUrlPicture + evCharging.Picture,
+          originFileObj: null,
+        },
+      ]);
+    } else {
+      setFileList([]);
+    }
+  }, [open, evCharging]);
 
   const isMobile =
     typeof window !== "undefined" &&
     window.matchMedia("(max-width: 768px)").matches;
 
-  // Submit
+  // Submit update
   const handleSubmit = async () => {
+    if (!evCharging?.ID) return message.error("ข้อมูล EV ไม่ถูกต้อง");
+
     if (
       !name ||
       !description ||
       !price ||
       !statusID ||
       !typeID ||
-      !energySourceID || // ⭐ ต้องเลือก Energy Source ด้วย
-      selectedCabinets.length === 0 ||
-      fileList.length === 0
+      !energySourceID || // ⭐ บังคับให้เลือก Energy Source
+      selectedCabinets.length === 0
     ) {
-      message.error("กรุณากรอกข้อมูลให้ครบถ้วน");
-      return;
+      return message.error("กรุณากรอกข้อมูลให้ครบถ้วน");
     }
 
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append("name", name);
-      formData.append("description", description);
-      formData.append("price", price);
-      formData.append("statusID", String(statusID));
-      formData.append("typeID", String(typeID));
+    const formData = new FormData();
+    formData.append("name", name);
+    formData.append("description", description);
+    formData.append("price", price);
+    formData.append("statusID", String(statusID));
+    formData.append("typeID", String(typeID));
 
-      // ⭐ ส่ง Energy Source ID → backend (key ต้องตรงกับ Go: energySourceID)
-      formData.append("energySourceID", String(energySourceID));
+    // ⭐ ส่ง Energy Source ID ไป backend
+    formData.append("energySourceID", String(energySourceID));
 
-      // ⭐ ส่งหลายตู้ → "1,3,5"
-      formData.append("cabinetIDs", selectedCabinets.join(","));
+    // ⭐ ส่งหลาย cabinet เช่น "1,3,5"
+    formData.append("cabinetIDs", selectedCabinets.join(","));
 
-      if (employeeID) formData.append("employeeID", String(employeeID));
+    if (employeeID) formData.append("employeeID", String(employeeID));
 
+    // ถ้ามีการอัปโหลดรูปใหม่
+    if (fileList.length > 0 && fileList[0].originFileObj) {
       formData.append("picture", fileList[0].originFileObj);
+    }
 
-      const result = await CreateEV(formData);
+    try {
+      setSubmitting(true);
+      const result = await UpdateEVByID(evCharging.ID, formData);
+
       if (result) {
-        message.success("สร้างข้อมูลสำเร็จ");
+        message.success("บันทึกการแก้ไขสำเร็จ");
         onSaved();
         onClose();
       } else {
-        message.error("ไม่สามารถสร้างข้อมูลได้");
+        message.error("บันทึกไม่สำเร็จ");
       }
-    } catch {
+    } catch (err) {
       message.error("เกิดข้อผิดพลาด");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Preview รูป
+  // preview image
   const onPreview = async (file: any) => {
     let src = file.url;
     if (!src && file.originFileObj) {
@@ -197,27 +235,20 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={submitting ? undefined : onClose}
-      />
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
-      <div className="relative w-full max-w-[600px] mx-4 md:mx-auto mb-8 md:mb-0">
+      <div className="relative w-full max-w-[600px] mx-4 mb-10">
         <div
-          className="bg-white rounded-2xl shadow-xl ring-1 ring-blue-100 flex flex-col overflow-hidden"
-          style={{ maxHeight: isMobile ? "78vh" : "82vh" }}
+          className="bg-white rounded-2xl shadow-2xl ring-1 ring-blue-200 flex flex-col overflow-hidden"
+          style={{ maxHeight: isMobile ? "80vh" : "85vh" }}
         >
           {/* HEADER */}
           <div className="px-5 py-4 bg-blue-600 text-white flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <FaBolt />
-              <h2 className="text-lg font-semibold">เพิ่มข้อมูล EV Charging</h2>
+              <FaEdit />
+              <h2 className="text-lg font-semibold">แก้ไข EV Charging</h2>
             </div>
-            <button
-              onClick={onClose}
-              disabled={submitting}
-              className="p-2 hover:bg-white/10 rounded-lg"
-            >
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg">
               <FaTimes />
             </button>
           </div>
@@ -239,7 +270,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
                   {fileList.length < 1 && (
                     <div className="flex flex-col items-center text-blue-500">
                       <FaImage size={24} />
-                      <span className="mt-1 text-sm">Upload</span>
+                      <span className="text-sm">Upload</span>
                     </div>
                   )}
                 </Upload>
@@ -287,7 +318,6 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
                     label: s.Status,
                     value: s.ID,
                   }))}
-                  allowClear
                   size="large"
                 />
               </label>
@@ -306,7 +336,6 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
                     label: t.Type,
                     value: t.ID,
                   }))}
-                  allowClear
                   size="large"
                 />
               </label>
@@ -333,7 +362,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
               {/* MULTI CABINET */}
               <label className="flex flex-col gap-1 md:col-span-2">
                 <span className="text-xs flex items-center gap-2">
-                  <FaChargingStation className="text-blue-500" /> ตู้ชาร์จ (เลือกได้หลายตัว)
+                  <FaChargingStation className="text-blue-500" /> ตู้ชาร์จ (เลือกหลายตัว)
                 </span>
                 <Select
                   mode="multiple"
@@ -371,7 +400,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
             <button
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2 rounded-xl border"
+              className="px-4 py-2 rounded-xl border border-blue-200"
             >
               ยกเลิก
             </button>
@@ -380,7 +409,7 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
               disabled={submitting}
               className="px-4 py-2 rounded-xl bg-blue-600 text-white"
             >
-              {submitting ? "กำลังบันทึก..." : "สร้าง"}
+              {submitting ? "กำลังบันทึก..." : "บันทึก"}
             </button>
           </div>
         </div>
@@ -389,4 +418,4 @@ const CreateEVModal: React.FC<CreateEVModalProps> = ({
   );
 };
 
-export default CreateEVModal;
+export default EditEVModal;

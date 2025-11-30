@@ -1,3 +1,5 @@
+// src/pages/admin/ev/EV.tsx  (หรือชื่อเดิมของไฟล์นี้)
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Table,
@@ -9,8 +11,6 @@ import {
   message,
   Spin,
   Empty,
-  Select,
-  Upload,
 } from "antd";
 import type { ColumnsType, TableProps } from "antd/es/table";
 import {
@@ -18,10 +18,8 @@ import {
   EditOutlined,
   PlusOutlined,
   SearchOutlined,
-  CloseOutlined, // <— ใช้ไอคอนกากะบาท
 } from "@ant-design/icons";
 import { Trash2 } from "react-feather";
-import ImgCrop from "antd-img-crop";
 
 import {
   ListEVCharging,
@@ -29,16 +27,19 @@ import {
   ListStatus,
   ListTypeEV,
   ListCabinetsEV,
-  CreateEVCabinet,
-  UpdateEVCabinetByID,
   DeleteEVCabinetByID,
   apiUrlPicture,
 } from "../../../services";
 import type { StatusInterface } from "../../../interface/IStatus";
 import type { TypeInterface } from "../../../interface/IType";
-import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
-import EditEVModal from "./edit";
-import CreateEVModal from "./create";
+
+import EditEVModal from "./charge/edit";
+import CreateEVModal from "./charge/create";
+import HardwareModal from "./hardware";
+
+// ⭐ Modal ใหม่ที่เราแยกไฟล์ออกไป
+import ModalCreateCabinet from "./cabinet/create";
+import ModalUpdateCabinet from "./cabinet/edit";
 
 // ---------- Interfaces ----------
 type RowType = {
@@ -49,7 +50,7 @@ type RowType = {
   Description: string;
   Price: number;
   Type: string;
-  EnergySource: string; // 🔋 แหล่งพลังงาน (Solar / Grid)
+  EnergySource: string;
   Status: string;
   EmployeeName: string;
   Picture: string;
@@ -60,7 +61,7 @@ type RowType = {
   Raw: any;
 };
 
-type CabinetType = {
+export type CabinetType = {
   ID: number;
   Name: string;
   Location: string;
@@ -72,6 +73,7 @@ type CabinetType = {
   EmployeeID?: number | null;
   UrlWebsocket?: string | null;
   ChargePoint?: string | null;
+  HardwareID?: number | null;
 };
 
 // ---------- Small Centered Modal Wrapper ----------
@@ -102,344 +104,6 @@ const EvModal: React.FC<{
   );
 };
 
-// ---------- Cabinet Create/Edit Modal (scrollable body + employeeID จาก localStorage) ----------
-const CabinetModal: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-  initial?: CabinetType | null;
-}> = ({ open, onClose, onSaved, initial }) => {
-  const isEdit = !!initial;
-
-  const [name, setName] = useState<string>("");
-  const [location, setLocation] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
-  const [description, setDescription] = useState<string>("");
-  const [latitude, setLatitude] = useState<string>("");
-  const [longitude, setLongitude] = useState<string>("");
-  const [urlWebsocket, setUrlWebsocket] = useState<string>("");
-  const [chargePoint, setChargePoint] = useState<string>("");
-  const [fileList, setFileList] = useState<any[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [employeeID, setEmployeeID] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    setName(initial?.Name ?? "");
-    setLocation(initial?.Location ?? "");
-    setStatus(initial?.Status ?? "");
-    setDescription(initial?.Description ?? "");
-    setLatitude(
-      initial?.Latitude !== undefined && initial?.Latitude !== null
-        ? String(initial.Latitude)
-        : ""
-    );
-    setLongitude(
-      initial?.Longitude !== undefined && initial?.Longitude !== null
-        ? String(initial.Longitude)
-        : ""
-    );
-    setUrlWebsocket(initial?.UrlWebsocket ?? "");
-    setChargePoint(initial?.ChargePoint ?? "");
-    setSubmitting(false);
-
-    if (initial?.Image) {
-      setFileList([
-        {
-          uid: "-1",
-          name: "current_image.jpg",
-          status: "done",
-          url: `${apiUrlPicture}${initial.Image}`,
-          originFileObj: null,
-        },
-      ]);
-    } else {
-      setFileList([]);
-    }
-  }, [open, initial]);
-
-  const validate = () => {
-    if (!name.trim()) return message.error("กรุณากรอกชื่อ Cabinet"), false;
-    if (!location.trim()) return message.error("กรุณากรอก Location"), false;
-    if (!status.trim()) return message.error("กรุณาเลือก Status"), false;
-    if (latitude && isNaN(Number(latitude)))
-      return message.error("Latitude ต้องเป็นตัวเลข"), false;
-    if (longitude && isNaN(Number(longitude)))
-      return message.error("Longitude ต้องเป็นตัวเลข"), false;
-    return true;
-  };
-
-  useEffect(() => {
-    const fetchEmployee = async () => {
-      try {
-        await initUserProfile();
-        const currentUser = getCurrentUser();
-        if (currentUser && currentUser.employee_id) {
-          setEmployeeID(currentUser.employee_id);
-        } else {
-          message.warning("ไม่พบรหัสพนักงาน กรุณาเข้าสู่ระบบใหม่อีกครั้ง");
-        }
-      } catch {
-        message.error("ไม่สามารถโหลดข้อมูลผู้ใช้ได้");
-      }
-    };
-    fetchEmployee();
-  }, []);
-
-  const handleSubmit = async () => {
-    if (!validate()) return;
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append("name", name.trim());
-      formData.append("description", description.trim());
-      formData.append("location", location.trim());
-      formData.append("status", status.trim());
-      formData.append("latitude", latitude.trim());
-      formData.append("longitude", longitude.trim());
-      formData.append("urlWebsocket", urlWebsocket.trim());
-      formData.append("chargePoint", chargePoint.trim());
-      if (employeeID) {
-        formData.append("employeeID", String(employeeID));
-      }
-
-      // รูปภาพคีย์ "image" ตาม backend
-      if (fileList.length > 0 && fileList[0].originFileObj) {
-        formData.append("image", fileList[0].originFileObj);
-      }
-
-      const result =
-        isEdit && initial
-          ? await UpdateEVCabinetByID(initial.ID, formData)
-          : await CreateEVCabinet(formData);
-
-      if (result) {
-        message.success(isEdit ? "แก้ไข Cabinet สำเร็จ" : "สร้าง Cabinet สำเร็จ");
-        onSaved();
-        onClose();
-      } else {
-        message.error(
-          isEdit ? "ไม่สามารถแก้ไข Cabinet ได้" : "ไม่สามารถสร้าง Cabinet ได้"
-        );
-      }
-    } catch {
-      message.error("เกิดข้อผิดพลาดระหว่างการบันทึก");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const onPreview = async (file: any) => {
-    let src = file.url;
-    if (!src && file.originFileObj) {
-      src = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file.originFileObj);
-        reader.onload = () => resolve(reader.result as string);
-      });
-    }
-    const imgWindow = window.open(src as string);
-    imgWindow?.document.write(`<img src="${src}" style="max-width: 100%;" />`);
-  };
-
-  if (!open) return null;
-
-  // ตรวจมือถือ (ง่าย ๆ ด้วย matchMedia)
-  const isMobile =
-    typeof window !== "undefined" &&
-    window.matchMedia("(max-width: 768px)").matches;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={submitting ? undefined : onClose}
-      />
-      <div className="relative w-full max-w-[680px] mx-4 md:mx-auto mb-8 md:mb-0">
-        {/* กล่อง modal ให้เป็น flex-col: header (fixed) + body (scroll) + footer (fixed) */}
-        <div
-          className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col"
-          style={{ maxHeight: isMobile ? "78vh" : "82vh" }}
-        >
-          {/* Header */}
-          <div
-            className="px-5 pt-3 pb-4 bg-blue-600 text-white flex justify-between items-center"
-            style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}
-          >
-            <h2 className="text-base md:text-lg font-semibold">
-              {isEdit ? "แก้ไข EV Cabinet" : "เพิ่ม EV Cabinet"}
-            </h2>
-            <button
-              onClick={onClose}
-              disabled={submitting}
-              title="ปิด"
-              aria-label="ปิด"
-              className="p-2 rounded-lg hover:bg-white/10 disabled:opacity-50 leading-none inline-flex items-center justify-center"
-            >
-              <CloseOutlined style={{ fontSize: 18 }} />
-            </button>
-          </div>
-
-          {/* Body (scroll area) */}
-          <div
-            className="px-5 py-5 bg-blue-50/40 space-y-4"
-            style={{
-              overflowY: "auto",
-              WebkitOverflowScrolling: "touch",
-              maxHeight: "100%",
-            }}
-          >
-            {/* Upload */}
-            <div className="flex justify-center">
-              <ImgCrop rotationSlider>
-                <Upload
-                  accept="image/*"
-                  listType="picture-card"
-                  fileList={fileList}
-                  onChange={({ fileList: newList }) => setFileList(newList)}
-                  onPreview={onPreview}
-                  beforeUpload={(file) => {
-                    if (!file.type?.startsWith("image/")) {
-                      message.error("กรุณาอัปโหลดเฉพาะไฟล์รูปภาพ");
-                      return Upload.LIST_IGNORE;
-                    }
-                    return false; // อัปโหลดตอน submit
-                  }}
-                  maxCount={1}
-                >
-                  {fileList.length < 1 && (
-                    <div className="text-blue-500">Upload</div>
-                  )}
-                </Upload>
-              </ImgCrop>
-            </div>
-
-            {/* Form */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">ชื่อ Cabinet</span>
-                <input
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="เช่น DC Cabinet #1"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">Location</span>
-                <input
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="เช่น Building A, Floor 1"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs text-slate-600">Status</span>
-                <Select
-                  className="w-full"
-                  placeholder="เลือกสถานะ"
-                  size="large"
-                  value={status || undefined}
-                  onChange={(v) => setStatus(String(v))}
-                  options={[
-                    { label: "Active", value: "Active" },
-                    { label: "Inactive", value: "Inactive" },
-                    { label: "Maintenance", value: "Maintenance" },
-                  ]}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs text-slate-600">Description</span>
-                <textarea
-                  rows={3}
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </label>
-
-              {/* UrlWebsocket */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">WebSocket URL</span>
-                <input
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="เช่น wss://example.com/ocpp/CP_1"
-                  value={urlWebsocket}
-                  onChange={(e) => setUrlWebsocket(e.target.value)}
-                />
-              </label>
-
-              {/* ChargePoint */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">Charge Point ID</span>
-                <input
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="เช่น CP_1, ESP32-01"
-                  value={chargePoint}
-                  onChange={(e) => setChargePoint(e.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">Latitude</span>
-                <input
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="เช่น 13.7563"
-                  inputMode="decimal"
-                  value={latitude}
-                  onChange={(e) => setLatitude(e.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">Longitude</span>
-                <input
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  placeholder="เช่น 100.5018"
-                  inputMode="decimal"
-                  value={longitude}
-                  onChange={(e) => setLongitude(e.target.value)}
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-5 py-4 bg-white border-t border-blue-100 flex gap-2 justify-end">
-            <button
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 h-10 rounded-xl border border-blue-200 bg-white text-blue-700 text-sm font-semibold hover:bg-blue-50 active:scale-[0.99] disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-blue-100 transition"
-            >
-              ยกเลิก
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="px-4 h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-sm hover:bg-blue-700 active:scale-[0.99] disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-blue-200 transition"
-            >
-              {submitting ? "กำลังบันทึก..." : isEdit ? "บันทึก" : "สร้าง"}
-            </button>
-          </div>
-
-          {/* safe-area ด้านล่างบนมือถือ */}
-          <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const EV: React.FC = () => {
   // ---------- EV Stations ----------
   const [loading, setLoading] = useState(false);
@@ -462,7 +126,10 @@ const EV: React.FC = () => {
   // ---------- EV Cabinets ----------
   const [cabinets, setCabinets] = useState<CabinetType[]>([]);
   const [loadingCabinets, setLoadingCabinets] = useState(false);
-  const [cabinetModalOpen, setCabinetModalOpen] = useState(false);
+
+  // แยก state สำหรับ create / update
+  const [createCabinetOpen, setCreateCabinetOpen] = useState(false);
+  const [updateCabinetOpen, setUpdateCabinetOpen] = useState(false);
   const [editingCabinet, setEditingCabinet] = useState<CabinetType | null>(
     null
   );
@@ -474,6 +141,9 @@ const EV: React.FC = () => {
 
   const [openCabinetListModal, setOpenCabinetListModal] = useState(false);
   const [selectedCabinets, setSelectedCabinets] = useState<any[]>([]);
+
+  // ⭐ Hardware Modal
+  const [hardwareModalOpen, setHardwareModalOpen] = useState(false);
 
   // ✅ Responsive scrollX
   const [scrollX, setScrollX] = useState(960);
@@ -498,7 +168,6 @@ const EV: React.FC = () => {
     setLoading(true);
     try {
       const evs = await ListEVCharging();
-      console.log(evs); // ดูข้อมูลจริงจาก backend
       if (evs) {
         const rows: RowType[] = evs.map((ev: any) => {
           const id = Number(ev.ID);
@@ -506,18 +175,15 @@ const EV: React.FC = () => {
             key: id,
             ID: id,
             Name: ev.Name ?? "-",
-            Email: ev.Employee?.User?.Email ?? "-", // (ใช้ได้หากต้องการเก็บไว้)
+            Email: ev.Employee?.User?.Email ?? "-",
             Description: ev.Description ?? "-",
             Price: Number(ev.Price ?? 0),
             Type: ev.Type?.Type ?? "-",
-            EnergySource: ev.EnergySource?.Name ?? "-", // 🔋 ดึงจาก relation EnergySource
+            EnergySource: ev.EnergySource?.Name ?? "-",
             Status: ev.Status?.Status ?? "-",
-
-            // ✅ เปลี่ยน Owner → ชื่อ Cabinet
             EmployeeName: Array.isArray(ev.Cabinets)
               ? ev.Cabinets.map((cab: any) => cab.Name).join(", ")
               : "-",
-
             Picture: ev.Picture ?? "",
             EmployeeID: ev.EmployeeID,
             StatusID: ev.StatusID,
@@ -560,6 +226,7 @@ const EV: React.FC = () => {
             EmployeeID: c.EmployeeID ?? null,
             UrlWebsocket: c.UrlWebsocket ?? null,
             ChargePoint: c.ChargePoint ?? null,
+            HardwareID: c.HardwareID ?? null, // ⭐ map มาด้วย
           }))
         );
       } else {
@@ -587,7 +254,7 @@ const EV: React.FC = () => {
         (r.Name ?? "").toLowerCase().includes(q) ||
         (r.Email ?? "").toLowerCase().includes(q) ||
         (r.Type ?? "").toLowerCase().includes(q) ||
-        (r.EnergySource ?? "").toLowerCase().includes(q) || // 🔍 ให้ search ตาม EnergySource ด้วย
+        (r.EnergySource ?? "").toLowerCase().includes(q) ||
         (r.Status ?? "").toLowerCase().includes(q) ||
         (r.EmployeeName ?? "").toLowerCase().includes(q)
     );
@@ -758,7 +425,6 @@ const EV: React.FC = () => {
         if (!Array.isArray(cabs) || cabs.length === 0)
           return <span className="text-gray-400">-</span>;
 
-        // ถ้ามีแค่ 1 ให้โชว์ชื่อเฉยๆ
         if (cabs.length === 1)
           return (
             <span className="font-medium text-blue-700">
@@ -766,7 +432,6 @@ const EV: React.FC = () => {
             </span>
           );
 
-        // ถ้ามีหลายอัน ให้เป็นปุ่ม "x Cabinets"
         return (
           <button
             onClick={() => {
@@ -814,14 +479,14 @@ const EV: React.FC = () => {
   // ---------- Cabinet actions ----------
   const openCreateCabinet = () => {
     setEditingCabinet(null);
-    setCabinetModalOpen(true);
+    setCreateCabinetOpen(true);
   };
   const openEditCabinet = (cab: CabinetType) => {
     setEditingCabinet(cab);
-    setCabinetModalOpen(true);
+    setUpdateCabinetOpen(true);
   };
 
-  // เปิด modal ยืนยันลบแบบ custom (เหมือน Charger)
+  // เปิด modal ยืนยันลบ Cabinet
   const openDeleteCabinetModal = (cab: CabinetType) => {
     selectedCabinetRef.current = cab;
     setOpenCabinetConfirm(true);
@@ -919,14 +584,23 @@ const EV: React.FC = () => {
           <h2 className="text-lg font-semibold text-blue-700">
             EV Cabinets
           </h2>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            className="bg-blue-600"
-            onClick={openCreateCabinet}
-          >
-            Add Cabinet
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* ปุ่ม Hardware → เปิด Modal Hardware */}
+            <Button
+              className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50"
+              onClick={() => setHardwareModalOpen(true)}
+            >
+              Hardware
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              className="bg-blue-600"
+              onClick={openCreateCabinet}
+            >
+              Add Cabinet
+            </Button>
+          </div>
         </div>
 
         {/* EV Cabinets Grid */}
@@ -964,11 +638,9 @@ const EV: React.FC = () => {
                       color={
                         cab.Status?.toLowerCase().includes("active")
                           ? "green"
-                          : cab.Status?.toLowerCase().includes(
-                              "maintenance"
-                            )
-                          ? "orange"
-                          : "default"
+                          : cab.Status?.toLowerCase().includes("maintenance")
+                            ? "orange"
+                            : "default"
                       }
                       className="mt-1"
                     >
@@ -1017,13 +689,29 @@ const EV: React.FC = () => {
           />
         )}
 
-        {/* Cabinet Modal */}
-        {cabinetModalOpen && (
-          <CabinetModal
-            open={cabinetModalOpen}
-            onClose={() => setCabinetModalOpen(false)}
+        {/* Cabinet Create / Update Modals */}
+        {createCabinetOpen && (
+          <ModalCreateCabinet
+            open={createCabinetOpen}
+            onClose={() => setCreateCabinetOpen(false)}
+            onSaved={onSavedCabinet}
+          />
+        )}
+
+        {updateCabinetOpen && editingCabinet && (
+          <ModalUpdateCabinet
+            open={updateCabinetOpen}
+            onClose={() => setUpdateCabinetOpen(false)}
             onSaved={onSavedCabinet}
             initial={editingCabinet}
+          />
+        )}
+
+        {/* Hardware Modal */}
+        {hardwareModalOpen && (
+          <HardwareModal
+            open={hardwareModalOpen}
+            onClose={() => setHardwareModalOpen(false)}
           />
         )}
 
@@ -1065,7 +753,7 @@ const EV: React.FC = () => {
           </div>
         </EvModal>
 
-        {/* Confirm Delete Cabinet (สไตล์เดียวกัน) */}
+        {/* Confirm Delete Cabinet */}
         <EvModal
           open={openCabinetConfirm}
           onClose={cancelDeleteCabinet}
@@ -1106,6 +794,7 @@ const EV: React.FC = () => {
           </div>
         </EvModal>
 
+        {/* Cabinet List Modal เมื่อกด x Cabinets */}
         {openCabinetListModal && (
           <EvModal
             open={openCabinetListModal}
@@ -1116,7 +805,6 @@ const EV: React.FC = () => {
                 รายการ EV Cabinets
               </h3>
 
-              {/* ถ้ามีมากกว่า 2 ให้ scroll */}
               <div
                 className="space-y-3"
                 style={{
@@ -1156,10 +844,10 @@ const EV: React.FC = () => {
                           cab.Status?.toLowerCase().includes("active")
                             ? "green"
                             : cab.Status?.toLowerCase().includes(
-                                "maintenance"
-                              )
-                            ? "orange"
-                            : "default"
+                              "maintenance"
+                            )
+                              ? "orange"
+                              : "default"
                         }
                       >
                         {cab.Status}

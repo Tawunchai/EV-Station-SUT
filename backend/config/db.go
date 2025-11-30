@@ -431,21 +431,21 @@ func seedContent(db *gorm.DB) {
 	uid1, uid2, uid3 := uint(1), uint(2), uint(3)
 	review1 := &entity.Review{
 		Rating:     5,
-		Comment:    "The zoo was incredibly well-maintained and the animals looked happy and healthy...",
+		Comment:    "The zoo was incredibly well-maintained and the animals looked happy and healthy",
 		ReviewDate: time.Now(),
 		Status:     true,
 		UserID:     &uid1,
 	}
 	review2 := &entity.Review{
 		Rating:     4,
-		Comment:    "Wide variety of animals, some areas overcrowded...",
+		Comment:    "Wide variety of animals, some areas overcrowded",
 		ReviewDate: time.Now(),
 		Status:     true,
 		UserID:     &uid2,
 	}
 	review3 := &entity.Review{
 		Rating:     3,
-		Comment:    "Interesting animals, facilities could be cleaner...",
+		Comment:    "Interesting animals, facilities could be cleaner",
 		ReviewDate: time.Now(),
 		Status:     true,
 		UserID:     &uid3,
@@ -482,6 +482,7 @@ func seedContent(db *gorm.DB) {
 		UrlWebsocket: "wss://api.evstation-sut.it.com/ocpp/",
 		ChargePoint:  "CP_1",
 		EmployeeID:   &emp.ID,
+		HardwareID: 1,
 	}
 
 	// ✅ ใช้ Where() เพื่อป้องกันซ้ำตาม Name
@@ -613,14 +614,14 @@ func seedContent(db *gorm.DB) {
 		Date:            time.Now(),
 		Amount:          100.00,
 		ReferenceNumber: "REF2024071401",
-		Picture:         "uploads/payment/1752000665992034400.jpg",
+		Picture:         "uploads/paymentcoin/1752515960262810900.jpg",
 		UserID:          uint(1),
 	}
 	payment2 := entity.PaymentCoin{
 		Date:            time.Now().Add(-24 * time.Hour),
 		Amount:          250.50,
 		ReferenceNumber: "REF2024071402",
-		Picture:         "uploads/payment/1752000665992034400.jpg",
+		Picture:         "uploads/paymentcoin/1752515960262810900.jpg",
 		UserID:          uint(1),
 	}
 	db.FirstOrCreate(&payment1, entity.PaymentCoin{ReferenceNumber: "REF2024071401"})

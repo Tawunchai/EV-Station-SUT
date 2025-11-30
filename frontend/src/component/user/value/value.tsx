@@ -1,3 +1,5 @@
+// src/component/user/value/index.tsx  (หรือ path ของไฟล์ Value เดิมของคุณ)
+
 import {
   Accordion,
   AccordionItem,
@@ -8,7 +10,8 @@ import {
 } from "react-accessible-accordion";
 import "react-accessible-accordion/dist/fancy-example.css";
 import { MdOutlineArrowDropDown } from "react-icons/md";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { ListGetStarted } from "../../../services";
 import { GetstartedInterface } from "../../../interface/IGetstarted";
 import Value1 from "../../../assets/picture/getStart_car_logo.jpg";
@@ -17,6 +20,14 @@ import defaultData from "../../../utils/accordion";
 const Value = () => {
   const [rows, setRows] = useState<GetstartedInterface[]>([]);
   const [ready, setReady] = useState(false);
+
+  const location = useLocation();
+
+  // ใช้ key ผูกกับ path เพื่อบังคับให้ header re-mount เมื่อกลับมาหน้านี้
+  const headerKey = useMemo(
+    () => `value-header-${location.pathname}`,
+    [location.pathname]
+  );
 
   useEffect(() => {
     (async () => {
@@ -30,13 +41,18 @@ const Value = () => {
     <section className="w-full">
       <div className="mx-auto max-w-screen-lg px-4 py-10">
         {/* Header */}
-        <div className="mb-6 text-center">
-          <h2 className="text-[22px] md:text-[24px] font-bold tracking-tight text-blue-900">
-            Value We Give to You
-          </h2>
-          <p className="mt-2 text-[13px] leading-6 text-blue-900/70">
-            Ready to deliver a smooth & reliable EV experience.
-          </p>
+        <div className="mb-6 flex justify-center text-center">
+          <div
+            key={headerKey}
+            className="inline-flex flex-col items-center text-center"
+          >
+            <h2 className="text-[22px] md:text-[24px] font-bold tracking-tight text-blue-900">
+              Value We Give to You
+            </h2>
+            <p className="mt-2 text-[13px] leading-6 text-blue-900/70">
+              Ready to deliver a smooth & reliable EV experience.
+            </p>
+          </div>
         </div>
 
         {/* Layout */}
@@ -58,11 +74,11 @@ const Value = () => {
           <div className="order-2">
             {ready && (
               <div
-                className={`${
+                className={
                   rows.length > 3
                     ? "max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-blue-300 scrollbar-track-transparent"
                     : ""
-                }`}
+                }
               >
                 <Accordion
                   allowMultipleExpanded={false}

@@ -1,3 +1,5 @@
+// src/component/user/review/index.tsx
+
 import { useEffect, useMemo, useState } from "react";
 import Slider, { Settings } from "react-slick";
 import Profile from "../../../assets/profile/people1.png";
@@ -52,28 +54,54 @@ const Review: React.FC = () => {
 
   const hasReviews = reviews.length > 0;
 
+  // ✅ key สำหรับบังคับให้ Slider re-init ทุกครั้งที่ข้อมูลเปลี่ยน
+  const sliderKey = useMemo(
+    () => reviews.map((r) => r.ID ?? "").join("-") || "no-reviews",
+    [reviews]
+  );
+
   // ✅ ตั้งค่า Slider
+  // - Desktop: แสดง 3 การ์ด (ถ้ามีน้อยกว่าก็ปรับตามจำนวน)
+  // - Tablet: 2
+  // - Mobile: 1
+  // - เลื่อนทีละ 1 การ์ดเสมอ
+  // - วนลูปถ้ามีข้อมูลมากกว่า 1 การ์ด
   const settings: Settings = useMemo(() => {
     const n = reviews.length;
-    const baseShow = Math.min(3, n || 1);
-    const showMd = Math.min(2, n || 1);
-    const showSm = Math.min(1, n || 1);
+
+    const baseShow = Math.min(3, n || 1); // lg: 3
+    const showMd = Math.min(2, n || 1);   // md: 2
+    const showSm = Math.min(1, n || 1);   // sm: 1
 
     return {
       dots: true,
       arrows: false,
-      infinite: n > baseShow,
+      infinite: n > 1,       // ✅ มี 2+ รีวิว → วนลูป (แม้จะมีแค่ 2 หรือ 3 การ์ด)
       speed: 450,
-      slidesToScroll: 1,
+      slidesToScroll: 1,     // ✅ เลื่อนทีละ 1 การ์ด
+      slidesToShow: baseShow,
       autoplay: n > 1,
       autoplaySpeed: 2600,
       cssEase: "linear",
       pauseOnHover: true,
       pauseOnFocus: true,
-      slidesToShow: baseShow,
       responsive: [
-        { breakpoint: 1024, settings: { slidesToShow: showMd, slidesToScroll: 1, infinite: n > showMd } },
-        { breakpoint: 640,  settings: { slidesToShow: showSm, slidesToScroll: 1, infinite: n > showSm } },
+        {
+          breakpoint: 1024,
+          settings: {
+            slidesToShow: showMd,
+            slidesToScroll: 1,
+            infinite: n > 1,
+          },
+        },
+        {
+          breakpoint: 640,
+          settings: {
+            slidesToShow: showSm,
+            slidesToScroll: 1,
+            infinite: n > 1,
+          },
+        },
       ],
     };
   }, [reviews.length]);
@@ -99,18 +127,20 @@ const Review: React.FC = () => {
   // ✅ แสดงรีวิว
   return (
     <section className="w-full">
-      <div className="">
+      <div>
         <div className="mx-auto max-w-screen-lg px-4 py-10">
-          <div className="mx-auto mb-6 max-w-md text-center">
-            <h2 className="text-[22px] font-bold tracking-tight text-blue-800">
+          {/* Header กันเพี้ยนแน่นอน */}
+          <div className="mb-6 flex w-full flex-col items-center justify-center">
+            <h2 className="block w-full text-center text-[22px] md:text-[26px] font-bold tracking-tight text-blue-800">
               Customer Reviews
             </h2>
-            <p className="mt-1 text-[12px] text-blue-900/60">
+            <p className="mt-1 block w-full text-center text-[12px] md:text-[13px] text-blue-900/60">
               A clean, smooth and reliable charging experience
             </p>
           </div>
 
-          <Slider {...settings}>
+          {/* Slider */}
+          <Slider key={sliderKey} {...settings}>
             {reviews.map((item, idx) => {
               const imageSrc = item?.User?.Profile
                 ? `${apiUrlPicture}${item.User.Profile}`
@@ -130,7 +160,7 @@ const Review: React.FC = () => {
                     <div className="h-[3px] w-full bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600" />
 
                     <div className="flex flex-1 flex-col p-5">
-                      {/* Header */}
+                      {/* Header การ์ดรีวิว */}
                       <div className="mb-3 flex items-center gap-3">
                         <div className="relative">
                           <span className="absolute inset-0 -z-10 rounded-full bg-blue-200/40 blur-[8px]" />
@@ -139,7 +169,8 @@ const Review: React.FC = () => {
                             className="h-12 w-12 rounded-full object-cover ring-2 ring-blue-100"
                             alt="user"
                             onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).src = Profile as unknown as string;
+                              (e.currentTarget as HTMLImageElement).src =
+                                Profile as unknown as string;
                             }}
                           />
                         </div>
@@ -164,9 +195,12 @@ const Review: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Quote */}
+                      {/* Quote Icon */}
                       <div className="pointer-events-none absolute right-3 top-3 opacity-10">
-                        <svg viewBox="0 0 24 24" className="h-6 w-6 text-blue-700">
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-6 w-6 text-blue-700"
+                        >
                           <path
                             fill="currentColor"
                             d="M7.17 6A5.17 5.17 0 0 0 2 11.17V22h8V10H5.17A3.17 3.17 0 0 1 8.34 6H7.17Zm9.66 0A5.17 5.17 0 0 0 11.66 11.17V22h8V10H16.83a3.17 3.17 0 0 1 3.17-3.17h-3.17Z"
@@ -189,10 +223,7 @@ const Review: React.FC = () => {
 
                       {/* Like */}
                       <div className="mt-auto">
-                        <Like
-                          reviewID={item.ID!}
-                          userID={userID ?? 0} // ✅ ใช้ userID ที่โหลดจาก cookie
-                        />
+                        <Like reviewID={item.ID!} userID={userID ?? 0} />
                       </div>
                     </div>
                   </article>
