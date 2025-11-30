@@ -12,6 +12,7 @@ import {
   CreateChargingToken,
   connectHardwareSocket,
   sendHardwareCommand,
+  GetCabinetByID, // ⭐ ใช้ดึง HardwarePoint จากตู้
 } from "../../../../services";
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 import { FileImageOutlined } from "@ant-design/icons";
@@ -37,6 +38,9 @@ const PayPalCard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // ⭐ HardwarePoint จาก Hardware ที่ผูกกับตู้ (เช่น "hardware_888")
+  const [hardwarePoint, setHardwarePoint] = useState<string | null>(null);
+
   // โหลด User จาก JWT
   useEffect(() => {
     const fetchUser = async () => {
@@ -58,6 +62,39 @@ const PayPalCard: React.FC = () => {
     };
     fetchUser();
   }, [navigate]);
+
+  // ⭐ โหลดข้อมูล Cabinet โดยใช้ cabinet_id → ดึง Hardware.HardwarePoint มาใช้แทน "hardware_001"
+  useEffect(() => {
+    const loadCabinetHardware = async () => {
+      if (!cabinet_id) return;
+
+      try {
+        const idNum = Number(cabinet_id);
+        if (Number.isNaN(idNum)) {
+          console.warn("⚠️ cabinet_id ไม่ถูกต้อง (QR Page):", cabinet_id);
+          return;
+        }
+
+        const cabinet = await GetCabinetByID(idNum);
+        console.log("🔍 Cabinet (QR Page):", cabinet);
+
+        const hwPoint = (cabinet as any)?.Hardware?.HardwarePoint as
+          | string
+          | undefined;
+
+        if (hwPoint) {
+          setHardwarePoint(hwPoint);
+          console.log("✅ Loaded HardwarePoint from cabinet (QR Page):", hwPoint);
+        } else {
+          console.log("ℹ️ Cabinet นี้ยังไม่ได้ผูก HardwarePoint (QR Page)");
+        }
+      } catch (err) {
+        console.error("❌ loadCabinetHardware error (QR Page):", err);
+      }
+    };
+
+    loadCabinetHardware();
+  }, [cabinet_id]);
 
   // โหลด PromptPay ของธนาคาร
   useEffect(() => {
@@ -96,21 +133,38 @@ const PayPalCard: React.FC = () => {
   ) => {
     try {
       const ws = connectHardwareSocket(() => {});
+
       ws.onopen = () => {
-        console.log("✅ Connected to Hardware WebSocket");
+        console.log("✅ Connected to Hardware WebSocket (QR Page)");
+
+        if (!hardwarePoint) {
+          console.warn(
+            "⚠️ ไม่มี HardwarePoint จาก Cabinet (QR Page), ยกเลิกการส่งคำสั่งไป hardware"
+          );
+          ws.close();
+          return;
+        }
+
         const command = {
           solar_kwh: solarKwh,
           grid_kwh: gridKwh,
           solar_percent: solarPercent,
           grid_percent: gridPercent,
         };
-        sendHardwareCommand(ws, "hardware_001", command);
-        console.log("📤 Sent Command to Hardware:", command);
+        // ⭐ ใช้ HardwarePoint จาก Cabinet แทน "hardware_001"
+        sendHardwareCommand(ws, hardwarePoint, command);
+        console.log("📤 Sent Command to Hardware:", {
+          device_id: hardwarePoint,
+          command,
+        });
       };
-      ws.onclose = () => console.warn("⚠️ Hardware WebSocket disconnected");
-      ws.onerror = (err) => console.error("❌ Hardware WebSocket error:", err);
+
+      ws.onclose = () =>
+        console.warn("⚠️ Hardware WebSocket disconnected (QR Page)");
+      ws.onerror = (err) =>
+        console.error("❌ Hardware WebSocket error (QR Page):", err);
     } catch (err) {
-      console.error("❌ Failed to send to hardware:", err);
+      console.error("❌ Failed to send to hardware (QR Page):", err);
     }
   };
 
@@ -159,7 +213,7 @@ const PayPalCard: React.FC = () => {
         method_id: MethodID,
         reference_number: result.data.ref,
         picture: uploadedFile,
-        ev_cabinet_id: cabinet_id ?? undefined, // ✅ ให้เป็น number | undefined ตาม interface
+        ev_cabinet_id: cabinet_id ?? undefined, // ✅ number | undefined
       };
 
       const paymentResult = await CreatePayment(paymentData);

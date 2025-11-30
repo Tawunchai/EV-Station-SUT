@@ -9,4 +9,6 @@ type Hardware struct {
 	Name          string
 	HardwarePoint string
 	UrlWebsocket  string
+
+	EVCabinet []EVCabinet `gorm:"foreignKey:HardwareID"`
 }

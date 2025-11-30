@@ -107,6 +107,7 @@ func main() {
 		//payment
 		public.GET("/payments", payment.ListPayment)
 		public.GET("/payments/user/:user_id", payment.ListPaymentByUserID)
+		public.GET("/payments/:payment_id", payment.GetPaymentByPaymentID)
 		public.GET("/banks", payment.ListBank)
 		public.PATCH("/banks/:id", payment.UpdateBank)
 		public.POST("/create-payments", payment.CreatePayment)
@@ -261,6 +262,10 @@ func main() {
 		public.GET("/hardware/:deviceID", hardware.HandleHardware) // สำหรับอุปกรณ์จริง
 		public.GET("/hardware/frontend", hardware.HandleFrontend)  // สำหรับ React dashboard
 		public.POST("/hardware/request-energy", hardware.RequestEnergyUsage)
+        public.GET("/hardwares", hardware.ListHardwares)
+        public.POST("/create-hardware", hardware.CreateHardware)
+        public.PATCH("/update-hardware/:id", hardware.UpdateHardwareByID)
+        public.DELETE("/hardware/:id", hardware.DeleteHardwareByID)
 
 	}
 

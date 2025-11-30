@@ -25,4 +25,8 @@ type EVCabinet struct {
 
 	EmployeeID  *uint       
 	Employee    Employee     `gorm:"foreignKey:EmployeeID"`
+
+	
+	HardwareID uint
+	Hardware   Hardware `gorm:"foreignKey:HardwareID"`
 }

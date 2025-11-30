@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/Tawunchai/work-project/config"
 	"github.com/Tawunchai/work-project/entity"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func ListEVChargingPayment(c *gin.Context) {
@@ -158,6 +160,58 @@ func ListPaymentByUserID(c *gin.Context) {
 	}
 
 	// 7) ส่ง JSON ออกไป
+	c.JSON(http.StatusOK, gin.H{
+		"data": response,
+	})
+}
+
+// GET /payments/:payment_id
+func GetPaymentByPaymentID(c *gin.Context) {
+	// 1) รับ payment_id จาก path
+	paymentIDParam := c.Param("payment_id")
+	paymentIDUint64, err := strconv.ParseUint(paymentIDParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payment_id"})
+		return
+	}
+	paymentID := uint(paymentIDUint64)
+
+	db := config.DB()
+
+	// 2) ดึง Payment ตัวเดียวตาม ID พร้อม Preload ความสัมพันธ์ที่ต้องใช้
+	var payment entity.Payment
+	if err := db.
+		Preload("User").
+		Preload("Method").
+		Preload("ChargingSessions").
+		First(&payment, paymentID).Error; err != nil {
+
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "payment not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 3) ดึง EVChargingPayment ทั้งหมดที่ผูกกับ payment นี้
+	var evChargingPayments []entity.EVChargingPayment
+	if err := db.
+		Preload("EVcharging").
+		Where("payment_id = ?", payment.ID).
+		Find(&evChargingPayments).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 4) ประกอบเป็น PaymentWithEVCharging แล้วส่งออก
+	response := PaymentWithEVCharging{
+		Payment:            payment,
+		EVChargingPayments: evChargingPayments,
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"data": response,
 	})

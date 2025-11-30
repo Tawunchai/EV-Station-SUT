@@ -25,6 +25,7 @@ import { BrandInterface } from "../interface/IBrand";
 import { ChargingSessionInterface } from "../interface/IToken";
 import { EnergySourceInterface } from "../interface/IEnergySource";
 import { SolarInterface } from "../interface/ISolar";
+import { HardwareInterface } from "../interface/IHardware";
 
 //export const apiUrl = "http://10.0.14.228:8000";
 //export const apiUrlPicture = "http://10.0.14.228:8000/";
@@ -1377,6 +1378,32 @@ export const ListPaymentsByUserID = async (
     }
   } catch (error) {
     console.error("Error fetching payments by user ID:", error);
+    return null;
+  }
+};
+
+export const GetPaymentByPaymentID = async (
+  payment_id: number
+): Promise<PaymentsInterface | null> => {
+  try {
+    const response = await axios.get(
+      `${apiUrl}/payments/${payment_id}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data.data as PaymentsInterface;
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching payment by payment ID:", error);
     return null;
   }
 };
@@ -2772,6 +2799,120 @@ export const DeleteSolar = async (
       error.response?.data || error.message
     );
     return null;
+  }
+};
+
+/**
+ * ✅ GET /hardwares
+ * ดึงรายการ Hardware ทั้งหมด
+ */
+export const ListHardwares = async (): Promise<HardwareInterface[] | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/hardwares`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      // รองรับทั้งแบบ { data: [...] } และ [...] ตรง ๆ
+      const raw = (response.data as any)?.data ?? response.data;
+      if (Array.isArray(raw)) {
+        return raw as HardwareInterface[];
+      }
+      console.error("Invalid hardware list response format:", response.data);
+      return null;
+    } else {
+      console.error("Unexpected status (ListHardwares):", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching hardwares:", error);
+    return null;
+  }
+};
+
+/**
+ * ✅ POST /create-hardware
+ * สร้าง Hardware ใหม่
+ */
+export const CreateHardware = async (
+  payload: Omit<HardwareInterface, "ID" | "CreatedAt" | "UpdatedAt" | "DeletedAt">
+): Promise<HardwareInterface | null> => {
+  try {
+    const response = await axios.post(`${apiUrl}/create-hardware`, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 201 || response.status === 200) {
+      // backend อาจส่ง { data: hw } หรือ { message, data } หรือ object ตรง ๆ
+      const raw = (response.data as any)?.data ?? response.data;
+      return raw as HardwareInterface;
+    } else {
+      console.error("Unexpected status (CreateHardware):", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error creating hardware:", error);
+    return null;
+  }
+};
+
+/**
+ * ✅ PATCH /update-hardware/:id
+ * แก้ไข Hardware ตาม ID
+ */
+export const UpdateHardwareByID = async (
+  id: number,
+  payload: Partial<HardwareInterface>
+): Promise<HardwareInterface | null> => {
+  try {
+    const response = await axios.patch(`${apiUrl}/update-hardware/${id}`, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      const raw = (response.data as any)?.data ?? response.data;
+      return raw as HardwareInterface;
+    } else {
+      console.error("Unexpected status (UpdateHardwareByID):", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error updating hardware:", error);
+    return null;
+  }
+};
+
+/**
+ * ✅ DELETE /hardware/:id
+ * ลบ Hardware ตาม ID
+ */
+export const DeleteHardwareByID = async (id: number): Promise<boolean> => {
+  try {
+    const response = await axios.delete(`${apiUrl}/hardware/${id}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return true;
+    } else {
+      console.error("Unexpected status (DeleteHardwareByID):", response.status);
+      return false;
+    }
+  } catch (error: any) {
+    console.error("Error deleting hardware:", error?.response?.data || error);
+    return false;
   }
 };
 

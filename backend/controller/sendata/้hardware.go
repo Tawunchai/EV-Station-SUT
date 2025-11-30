@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -354,4 +355,148 @@ func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 
 	fmt.Printf("💰 Refund applied → user_id=%d, old_coin=%.2f, refund=%.2f, new_coin=%.2f\n",
 		user.ID, oldCoin, refundTotal, newCoin)
+}
+
+// =======================================================
+// ✅ GET /hardwares  → ListHardwares
+// =======================================================
+func ListHardwares(c *gin.Context) {
+	db := config.DB()
+
+	var hardwares []entity.Hardware
+	if err := db.Find(&hardwares).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถดึงข้อมูล Hardware ได้: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": hardwares,
+	})
+}
+
+// =======================================================
+// ✅ POST /create-hardware  → CreateHardware
+// =======================================================
+func CreateHardware(c *gin.Context) {
+	db := config.DB()
+
+	var hw entity.Hardware
+	if err := c.ShouldBindJSON(&hw); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ตรวจสอบชื่อซ้ำ (ไม่สนตัวพิมพ์)
+	if hw.Name != "" {
+		var existingByName entity.Hardware
+		if err := db.Where("LOWER(name) = ?", strings.ToLower(hw.Name)).First(&existingByName).Error; err == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ Hardware นี้มีอยู่แล้ว"})
+			return
+		}
+	}
+
+	// ตรวจสอบ HardwarePoint ซ้ำ (ไม่สนตัวพิมพ์)
+	if hw.HardwarePoint != "" {
+		var existingByPoint entity.Hardware
+		if err := db.Where("LOWER(hardware_point) = ?", strings.ToLower(hw.HardwarePoint)).First(&existingByPoint).Error; err == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "HardwarePoint นี้ถูกใช้แล้ว"})
+			return
+		}
+	}
+
+	if err := db.Create(&hw).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้าง Hardware ได้: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "สร้าง Hardware สำเร็จ",
+		"data":    hw,
+	})
+}
+
+// =======================================================
+// ✅ PATCH /update-hardware/:id  → UpdateHardwareByID
+// =======================================================
+func UpdateHardwareByID(c *gin.Context) {
+	id := c.Param("id")
+	db := config.DB()
+
+	var hw entity.Hardware
+	if err := db.First(&hw, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ Hardware ที่ต้องการแก้ไข"})
+		return
+	}
+
+	var input entity.Hardware
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ตรวจสอบชื่อซ้ำ (ยกเว้นตัวเอง)
+	if input.Name != "" {
+		var existingByName entity.Hardware
+		if err := db.Where("LOWER(name) = ? AND id != ?", strings.ToLower(input.Name), id).
+			First(&existingByName).Error; err == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ Hardware นี้มีอยู่แล้ว"})
+			return
+		}
+	}
+
+	// ตรวจสอบ HardwarePoint ซ้ำ (ยกเว้นตัวเอง)
+	if input.HardwarePoint != "" {
+		var existingByPoint entity.Hardware
+		if err := db.Where("LOWER(hardware_point) = ? AND id != ?", strings.ToLower(input.HardwarePoint), id).
+			First(&existingByPoint).Error; err == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "HardwarePoint นี้ถูกใช้แล้ว"})
+			return
+		}
+	}
+
+	// อัปเดตฟิลด์
+	hw.Name = input.Name
+	hw.HardwarePoint = input.HardwarePoint
+	hw.UrlWebsocket = input.UrlWebsocket
+
+	if err := db.Save(&hw).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถอัปเดต Hardware ได้: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "อัปเดต Hardware สำเร็จ",
+		"data":    hw,
+	})
+}
+
+// =======================================================
+// ✅ DELETE /hardware/:id  → DeleteHardwareByID
+// =======================================================
+func DeleteHardwareByID(c *gin.Context) {
+	id := c.Param("id")
+	db := config.DB()
+
+	var hw entity.Hardware
+	if err := db.Preload("EVCabinet").First(&hw, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ Hardware"})
+		return
+	}
+
+	// ป้องกันการลบ ถ้ามี EVCabinet ผูกอยู่ (กันระบบพัง)
+	if len(hw.EVCabinet) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "ไม่สามารถลบ Hardware นี้ได้ เนื่องจากมีตู้ชาร์จ (EVCabinet) ที่เชื่อมอยู่",
+		})
+		return
+	}
+
+	if err := db.Delete(&hw).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถลบ Hardware ได้: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "ลบ Hardware สำเร็จ",
+	})
 }
