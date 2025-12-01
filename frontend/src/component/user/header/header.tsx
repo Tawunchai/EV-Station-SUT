@@ -51,7 +51,7 @@ interface HeaderProps {
   scrollToNew?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({}) => {
+const Header: React.FC<HeaderProps> = ({ }) => {
   const navigate = useNavigate();
 
   const [menuOpened, setMenuOpened] = useState(false);
@@ -82,7 +82,7 @@ const Header: React.FC<HeaderProps> = ({}) => {
 
         const res = await getUserByID(uid);
         if (res) setUser(res);
-      } catch {}
+      } catch { }
     })();
   }, []);
 
@@ -318,7 +318,7 @@ const Header: React.FC<HeaderProps> = ({}) => {
                 className={btnEqual}
               >
                 <GiTwoCoins className="text-blue-600" />
-                My Coins: <b>{user.Coin}</b>
+                My Coins: <b>{Number(user.Coin).toFixed(2)}</b>
               </button>
             )}
 

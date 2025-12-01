@@ -22,6 +22,7 @@ import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const ZERO_TIME_STR = "0001-01-01T00:00:00Z";
+const STORAGE_KEY_PREFIX = "ev_charging_state_";
 
 const ChargingEV = () => {
   const navigate = useNavigate();
@@ -66,17 +67,31 @@ const ChargingEV = () => {
   const [hardwarePoint, setHardwarePoint] = useState<string | null>(null);
 
   // ⭐ StartEnergy / FinalEnergy จาก session (หน่วย Wh)
-  const [startEnergyWh, setStartEnergyWh] = useState<number | null>(null);
+  const [startEnergyWh, setStartEnergyWh] = useState<number | null>(null); //@ts-ignore
   const [finalEnergyWh, setFinalEnergyWh] = useState<number | null>(null);
 
   // ⭐ Energy ปัจจุบันจาก MeterValues (Wh)
   const [currentEnergyWh, setCurrentEnergyWh] = useState<number | null>(null);
 
+  // ⭐ พลังงานที่ “ซื้อทั้งหมด” (kWh) จาก EVChargingPayments
+  const [totalPurchasedKwh, setTotalPurchasedKwh] = useState<number | null>(
+    null
+  );
+
   // ⭐ แหล่งพลังงานใน session นี้ (["Solar", "Grid"])
   const [energySources, setEnergySources] = useState<string[]>([]);
 
-  // ⭐ เวลาเริ่มชาร์จของ session (มาจาก backend StartTime หรือจากตอนกด Start)
+  // ⭐ เวลาเริ่ม/จบชาร์จของ session (จาก backend)
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
+
+  // ⭐ Energy ที่ชาร์จไปแล้วแบบตัวเลข (kWh) → ไว้เซฟลง localStorage ได้ง่าย
+  const [chargedKwhVal, setChargedKwhVal] = useState<number>(0);
+
+  const storageKey =
+    typeof paymentID !== "undefined" && paymentID !== null
+      ? `${STORAGE_KEY_PREFIX}${paymentID}`
+      : null;
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
   useEffect(() => {
@@ -194,33 +209,61 @@ const ChargingEV = () => {
       setStartEnergyWh(startEnergy);
       console.log("⚡ StartEnergy (Wh) ของ session:", startEnergy);
 
-      // ⭐ จัดการ StartTime → เอาไว้คำนวณ Time ตอนกลับเข้าหน้า
+      // ⭐ จัดการ StartTime / EndTime → เอาไว้คำนวณ Time ตอนกลับเข้าหน้า
       const startTimeStr: string | undefined = targetSession?.StartTime;
+      const endTimeStr: string | undefined = targetSession?.EndTime;
+
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+
       if (startTimeStr && startTimeStr !== ZERO_TIME_STR) {
         const d = new Date(startTimeStr);
         if (!Number.isNaN(d.getTime())) {
-          setSessionStartTime(d);
-          setHasStarted(true);
-          setCharging(true);
-
-          // คำนวณเวลาที่ผ่านไปแล้วตั้งแต่เริ่มชาร์จจนถึงตอนนี้
-          const nowMs = Date.now();
-          const diffMs = nowMs - d.getTime();
-          const sec = Math.max(0, Math.floor(diffMs / 1000));
-          setTime(sec);
-          console.log("⏱️ Restore elapsed time from StartTime:", {
-            startTimeStr,
-            sec,
-          });
+          startDate = d;
         } else {
-          setSessionStartTime(null);
-          setHasStarted(false);
-          setCharging(false);
-          setTime(0);
+          console.log("⚠️ Invalid StartTime:", startTimeStr);
         }
+      }
+
+      if (endTimeStr && endTimeStr !== ZERO_TIME_STR) {
+        const e = new Date(endTimeStr);
+        if (!Number.isNaN(e.getTime())) {
+          endDate = e;
+        } else {
+          console.log("⚠️ Invalid EndTime:", endTimeStr);
+        }
+      }
+
+      setSessionStartTime(startDate);
+      setSessionEndTime(endDate);
+
+      if (startDate && endDate) {
+        // ✅ มีทั้ง StartTime และ EndTime → ใช้เวลารวม EndTime - StartTime แสดงใน Time
+        const diffMs = endDate.getTime() - startDate.getTime();
+        const sec = Math.max(0, Math.floor(diffMs / 1000));
+        setTime(sec);
+        setHasStarted(true);
+        setCharging(false);
+        console.log("⏱️ Restore elapsed time from StartTime & EndTime:", {
+          startTimeStr,
+          endTimeStr,
+          sec,
+        });
+      } else if (startDate && !endDate) {
+        // ✅ เริ่มชาร์จแล้ว แต่ยังไม่มี EndTime → ใช้เวลาจนถึงตอนนี้ (กรณีกลับเข้าหน้าระหว่างชาร์จ)
+        setHasStarted(true);
+        setCharging(true);
+
+        const nowMs = Date.now();
+        const diffMs = nowMs - startDate.getTime();
+        const sec = Math.max(0, Math.floor(diffMs / 1000));
+        setTime(sec);
+        console.log("⏱️ Restore elapsed time from StartTime:", {
+          startTimeStr,
+          sec,
+        });
       } else {
         // ยังไม่เริ่มชาร์จ
-        setSessionStartTime(null);
         setHasStarted(false);
         setCharging(false);
         setTime(0);
@@ -246,6 +289,10 @@ const ChargingEV = () => {
         (sum: number, val: any) => sum + (Number(val) || 0),
         0
       );
+
+      // ⭐ เก็บพลังงานที่ “ซื้อทั้งหมด” ไว้แยกต่างหาก (kWh)
+      setTotalPurchasedKwh(totalPowerKwh);
+
       const totalPowerWh = totalPowerKwh * 1000;
       const finalEnergy = startEnergy + totalPowerWh;
 
@@ -400,9 +447,29 @@ const ChargingEV = () => {
   }, []);
 
   // 👉 นับเวลาโดยอิงจาก sessionStartTime
+  //    ✅ ถ้ามี EndTime → ใช้ EndTime - StartTime (ไม่เดินต่อ)
+  //    ✅ ถ้า status = "SuspendedEV" → แช่เวลา ณ ตอนนั้น (หยุดเดิน)
   useEffect(() => {
     if (!sessionValid || !sessionStartTime) return;
 
+    // ถ้ามี EndTime แล้ว → ใช้เวลารวมตายตัว
+    if (sessionEndTime) {
+      const diffMs = sessionEndTime.getTime() - sessionStartTime.getTime();
+      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      setTime(sec);
+      return;
+    }
+
+    // ถ้าตู้อยู่ในสถานะ SuspendedEV → แช่เวลา ณ ตอนนี้ ไม่ต้องนับต่อ
+    if (ocppStatus === "SuspendedEV") {
+      const nowMs = Date.now();
+      const diffMs = nowMs - sessionStartTime.getTime();
+      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      setTime(sec);
+      return;
+    }
+
+    // ปกติ: ยังไม่มี EndTime และไม่ใช่ SuspendedEV → ให้นับเวลาตามปกติ
     const updateElapsed = () => {
       const nowMs = Date.now();
       const diffMs = nowMs - sessionStartTime.getTime();
@@ -417,23 +484,24 @@ const ChargingEV = () => {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [sessionValid, sessionStartTime]);
+  }, [sessionValid, sessionStartTime, sessionEndTime, ocppStatus]);
 
-  // ⭐ ใช้ StartEnergy, FinalEnergy, currentEnergyWh มาคำนวณ % แล้วเก็บไว้ที่ state energy
+  // ⭐ ใช้ StartEnergy, totalPurchasedKwh, currentEnergyWh มาคำนวณ % แล้วเก็บไว้ที่ state energy
+  //   ✅ สูตรที่ถูกต้อง: ((currentEnergyWh - startEnergyWh) / (totalPurchasedKwh * 1000)) * 100
   useEffect(() => {
     if (
       startEnergyWh == null ||
-      finalEnergyWh == null ||
+      totalPurchasedKwh == null ||
       currentEnergyWh == null
     ) {
       return;
     }
 
-    const totalDeltaWh = finalEnergyWh - startEnergyWh;
+    const totalDeltaWh = totalPurchasedKwh * 1000; // พลังงานที่ “ซื้อทั้งหมด” (Wh)
     if (totalDeltaWh <= 0) {
       console.log("⚠️ totalDeltaWh <= 0, ข้ามการคำนวณเปอร์เซ็นต์", {
         startEnergyWh,
-        finalEnergyWh,
+        totalPurchasedKwh,
       });
       return;
     }
@@ -441,29 +509,116 @@ const ChargingEV = () => {
     const currentDeltaWh = currentEnergyWh - startEnergyWh;
     const rawPercent = (currentDeltaWh / totalDeltaWh) * 100;
 
-    // ❗ จำกัดไม่เกิน 100%
+    // ❗ จำกัดไม่เกิน 0–100%
     const clampedPercent = Math.max(0, Math.min(100, rawPercent));
 
     // ⭐⭐ ปรับเป็น 2 ตำแหน่ง
-    setEnergy(parseFloat(clampedPercent.toFixed(2)));
+    const percent2 = parseFloat(clampedPercent.toFixed(2));
+    setEnergy(percent2);
 
-    console.log("📈 SoC UI percent จาก MeterValues:", {
+    console.log("📈 SoC UI percent จาก MeterValues (ChargingEV):", {
       startEnergyWh,
-      finalEnergyWh,
+      totalPurchasedKwh,
+      totalDeltaWh,
       currentEnergyWh,
       currentDeltaWh,
-      totalDeltaWh,
       rawPercent,
       clampedPercent,
     });
 
-    // ถ้าเกือบถึง FinalEnergy ให้ถือว่า COMPLETE
+    // ถ้าเกือบถึงพลังงานที่ซื้อทั้งหมดให้ถือว่า COMPLETE
     if (currentDeltaWh >= totalDeltaWh * 0.999) {
       setIsComplete(true);
       setCharging(false);
-      console.log("✅ ชาร์จครบตามแพ็กเกจ (ใกล้ FinalEnergy แล้ว)");
+      console.log("✅ ชาร์จครบตามแพ็กเกจ (ถึงพลังงานที่ซื้อทั้งหมดแล้ว)");
     }
-  }, [startEnergyWh, finalEnergyWh, currentEnergyWh]);
+  }, [startEnergyWh, totalPurchasedKwh, currentEnergyWh]);
+
+  // ⭐ คำนวณ Energy ที่เติมไปแล้ว (kWh) เป็นค่าตัวเลข แล้วเก็บใน chargedKwhVal
+  useEffect(() => {
+    // ❗❗ แก้จุดนี้: ถ้ายังไม่มี currentEnergyWh หรือ startEnergyWh → อย่า reset เป็น 0
+    if (startEnergyWh == null || currentEnergyWh == null) {
+      // ปล่อยค่าเดิมไว้ (อาจมาจาก localStorage / state ก่อนหน้า)
+      return;
+    }
+
+    const deltaWh = currentEnergyWh - startEnergyWh;
+    if (deltaWh <= 0) {
+      setChargedKwhVal(0);
+      return;
+    }
+
+    let effectiveDeltaWh = deltaWh;
+
+    if (totalPurchasedKwh != null) {
+      const maxDeltaWh = totalPurchasedKwh * 1000;
+      if (maxDeltaWh > 0 && effectiveDeltaWh > maxDeltaWh) {
+        effectiveDeltaWh = maxDeltaWh;
+      }
+    }
+
+    const kWh = effectiveDeltaWh / 1000;
+
+    console.log("⚡ Energy charged so far (kWh):", {
+      startEnergyWh,
+      currentEnergyWh,
+      deltaWh,
+      effectiveDeltaWh,
+      totalPurchasedKwh,
+      kWh,
+    });
+
+    setChargedKwhVal(kWh);
+  }, [startEnergyWh, currentEnergyWh, totalPurchasedKwh]);
+
+  // ⭐ ดึง state ล่าสุดจาก localStorage (ถ้ามี) เมื่อรู้ paymentID
+  useEffect(() => {
+    if (!storageKey) return;
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as {
+        energyPercent?: number;
+        chargedKwh?: number;
+        isComplete?: boolean;
+      };
+
+      if (typeof parsed.energyPercent === "number") {
+        setEnergy(parsed.energyPercent);
+      }
+      if (typeof parsed.chargedKwh === "number") {
+        setChargedKwhVal(parsed.chargedKwh);
+      }
+      if (typeof parsed.isComplete === "boolean") {
+        setIsComplete(parsed.isComplete);
+      }
+
+      console.log("🔁 Restore from localStorage:", parsed);
+    } catch (err) {
+      console.error("❌ Cannot parse charging state from localStorage:", err);
+    }
+  }, [storageKey]);
+
+  // ⭐ เซฟ state ปัจจุบันลง localStorage ทุกครั้งที่ energy / chargedKwhVal / isComplete เปลี่ยน
+  useEffect(() => {
+    if (!storageKey) return;
+    if (typeof window === "undefined") return;
+
+    try {
+      const payload = {
+        energyPercent: energy,
+        chargedKwh: chargedKwhVal,
+        isComplete,
+      };
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      console.log("💾 Save charging state to localStorage:", payload);
+    } catch (err) {
+      console.error("❌ Cannot save charging state to localStorage:", err);
+    }
+  }, [storageKey, energy, chargedKwhVal, isComplete]);
 
   // 👉 ฟอร์แมทเวลา
   const formatTime = (sec: number) => {
@@ -472,37 +627,6 @@ const ChargingEV = () => {
     const s = String(sec % 60).padStart(2, "0");
     return `${h}:${m}:${s}`;
   };
-
-  // 👉 Energy ที่เติมไปแล้ว (kWh)
-  const chargedKWh = useMemo(() => {
-    if (startEnergyWh == null || currentEnergyWh == null) return "0.00";
-
-    const deltaWh = currentEnergyWh - startEnergyWh;
-    if (deltaWh <= 0) return "0.00";
-
-    let effectiveDeltaWh = deltaWh;
-
-    if (finalEnergyWh != null) {
-      const maxDeltaWh = finalEnergyWh - startEnergyWh;
-      if (maxDeltaWh > 0 && effectiveDeltaWh > maxDeltaWh) {
-        effectiveDeltaWh = maxDeltaWh;
-      }
-    }
-
-    const kWh = effectiveDeltaWh / 1000;
-    const text = kWh.toFixed(2);
-
-    console.log("⚡ Energy charged so far (kWh):", {
-      startEnergyWh,
-      currentEnergyWh,
-      deltaWh,
-      effectiveDeltaWh,
-      finalEnergyWh,
-      kWh,
-    });
-
-    return text;
-  }, [startEnergyWh, currentEnergyWh, finalEnergyWh]);
 
   // 👉 สีแบตเตอรี่ ตาม % energy
   const batteryGradient = useMemo(() => {
@@ -547,6 +671,18 @@ const ChargingEV = () => {
     };
   }, [ocppStatus]);
 
+  // ✅ helper สำหรับลบ state ใน localStorage
+  const clearLocalStorageState = () => {
+    if (!storageKey) return;
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.removeItem(storageKey);
+      console.log("🧹 Clear charging state from localStorage:", storageKey);
+    } catch (err) {
+      console.error("❌ Cannot clear charging state from localStorage:", err);
+    }
+  };
+
   // ✅ helper สำหรับ redirect ไปหน้า /user หลังชาร์จจบ
   const goToSummary = () => {
     if (!paymentID) return;
@@ -561,7 +697,7 @@ const ChargingEV = () => {
 
   // ===========================================================
   // ⭐ ปุ่ม "ยกเลิก" → remoteStopCharging + UpdateSessionStatus + requestEnergyUsage
-  //     แล้วส่งกลับไป /user พร้อมแค่ paymentID (ดีเลย์ 2 วินาที)
+  //     แล้วส่งกลับไป /user พร้อมแค่ paymentID (ดีเลย์ 1 วินาที)
   // ===========================================================
   const confirmCancel = async () => {
     if (!paymentID) {
@@ -611,8 +747,10 @@ const ChargingEV = () => {
         setSessionStartTime(null);
         setCancelModalOpen(false);
 
-        // 🔁 ดีเลย์ 2 วินาที ก่อนกลับ /user
-        setTimeout(goToSummary, 2000);
+        clearLocalStorageState();
+
+        // 🔁 ดีเลย์ ก่อนกลับ /user
+        setTimeout(goToSummary, 1000);
       } else {
         message.error("ยกเลิกไม่สำเร็จในระบบ");
       }
@@ -646,6 +784,7 @@ const ChargingEV = () => {
 
       const now = new Date();
       setSessionStartTime(now);
+      setSessionEndTime(null);
       setHasStarted(true);
       setCharging(true);
       setIsComplete(false);
@@ -657,8 +796,9 @@ const ChargingEV = () => {
   };
 
   // ===========================================================
-  // ⭐ ปุ่ม "เสร็จสิ้น" → remoteStopCharging + update + รีวิว
-  //     แล้วส่งกลับไป /user พร้อมแค่ paymentID (ดีเลย์ 2 วินาที)
+  // ⭐ ปุ่ม "เสร็จสิ้น"
+  // - ปกติ: remoteStop + update + รีวิว (ไม่ยิง requestEnergyUsage)
+  // - ถ้า SuspendedEV และยังไม่ครบ 100%: ทำเหมือน Cancel + requestEnergyUsage
   // ===========================================================
   const handleComplete = async () => {
     if (!paymentID) {
@@ -677,6 +817,9 @@ const ChargingEV = () => {
       return;
     }
 
+    const isSuspendedEV = statusLabel === "SuspendedEV";
+    const isFull = isComplete; // ใช้ flag isComplete แทนเช็ค % ดิบ
+
     try {
       await remoteStopCharging({
         chargerId: chargerId,
@@ -691,14 +834,62 @@ const ChargingEV = () => {
 
       setCharging(false);
       setSessionStartTime(null);
+      setSessionEndTime(null);
 
+      // ⭐ เคสพิเศษ SuspendedEV และยังไม่ครบ 100% → ทำเหมือน Cancel + requestEnergyUsage
+      if (isSuspendedEV && !isFull) {
+        if (!hardwarePoint) {
+          message.error("ไม่พบ HardwarePoint ของตู้ชาร์จ");
+        } else {
+          try {
+            const deviceIdForEnergy = hardwarePoint;
+            await requestEnergyUsage(
+              deviceIdForEnergy,
+              paymentID,
+              energySources
+            );
+            console.log(
+              "✅ [SuspendedEV Finish] requestEnergyUsage sent for device:",
+              deviceIdForEnergy,
+              "paymentID:",
+              paymentID,
+              "energySources:",
+              energySources
+            );
+          } catch (energyErr) {
+            console.error(
+              "⚠️ [SuspendedEV Finish] requestEnergyUsage error:",
+              energyErr
+            );
+          }
+        }
+
+        message.success("การชาร์จเสร็จสิ้น");
+
+        setIsComplete(false);
+        setEnergy(0);
+        setTime(0);
+        setSessionStartTime(null);
+        setSessionEndTime(null);
+        setCancelModalOpen(false);
+
+        clearLocalStorageState();
+
+        // 🔁 ดีเลย์ ก่อนกลับ /user
+        setTimeout(goToSummary, 1000);
+        return;
+      }
+
+      // ⭐ เคสปกติ (ครบ 100% หรือสถานะอื่นที่ isComplete === true)
       const reviews = await GetReviewByUserID(userID);
+
+      clearLocalStorageState();
 
       if (reviews && reviews.length > 0) {
         message.success("ชาร์จไฟฟ้าเสร็จสิ้น");
 
-        // 👉 เคสเคยรีวิวแล้ว → ดีเลย์ 2 วิ ก่อนกลับ /user
-        setTimeout(goToSummary, 2000);
+        // 👉 เคสเคยรีวิวแล้ว → ดีเลย์ ก่อนกลับ /user
+        setTimeout(goToSummary, 1000);
       } else {
         // ยังไม่เคยรีวิว → เปิด modal รีวิว (ตัว onReviewCreated จะ navigate เอง)
         setShowReviewModal(true);
@@ -721,20 +912,27 @@ const ChargingEV = () => {
   if (!sessionValid) return null;
 
   // ❗ เงื่อนไขปุ่ม
+  // - ยังไม่กด Start → Cancel / Finish ต้องกดไม่ได้
   const startDisabled =
     hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
 
   const cancelDisabled =
+    !hasStarted ||
     isComplete ||
     !chargerId ||
     !(
       statusLabel === "Preparing" ||
       statusLabel === "Charging" ||
-      statusLabel === "SuspendedEV" ||
       statusLabel === "Finishing"
-    );
+    ); // ❌ ตัด SuspendedEV ออก → ห้าม Cancel
 
-  const completeDisabled = !isComplete || !chargerId;
+  const completeDisabled =
+    !chargerId ||
+    !hasStarted ||
+    // ถ้าไม่ complete และไม่ใช่ SuspendedEV → disable
+    (!isComplete && statusLabel !== "SuspendedEV") ||
+    // ถ้าเป็น SuspendedEV แต่ไม่มี hardwarePoint → ไม่ให้กด (เพราะต้องยิง requestEnergyUsage)
+    (statusLabel === "SuspendedEV" && !hardwarePoint);
 
   return (
     <>
@@ -841,7 +1039,7 @@ const ChargingEV = () => {
               <button
                 onClick={confirmCancel}
                 className="
-                  w-full py-3.5 rounded-xl font-semibold text-white
+                  w-full py-3.5 rounded-xl font-semibold text.white
                   bg-gradient-to-r from-blue-600 to-sky-500
                   shadow-[0_4px_15px_rgba(56,132,255,0.45)]
                   hover:shadow-[0_6px_20px_rgba(56,132,255,0.55)]
@@ -966,7 +1164,7 @@ const ChargingEV = () => {
                     Charging (kWh)
                   </div>
                   <div className="font-semibold text-gray-800">
-                    {chargedKWh}
+                    {chargedKwhVal.toFixed(2)}
                   </div>
                 </div>
 

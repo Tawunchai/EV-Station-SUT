@@ -235,6 +235,7 @@ func main() {
 		public.PUT("/charging-session/update-status/:payment_id", tokening.UpdateStatusByPaymentID)
 		public.GET("/charging-session/status/true", tokening.GetChargingSessionByStatus)
 		public.GET("/charging-session/status/:user_id", tokening.GetChargingSessionByStatusAndUserID)
+		
 
 		// ✅ ตรวจสอบ token
 		public.GET("/token/verify", tokening.VerifyChargingSession)
@@ -267,6 +268,8 @@ func main() {
         public.PATCH("/update-hardware/:id", hardware.UpdateHardwareByID)
         public.DELETE("/hardware/:id", hardware.DeleteHardwareByID)
 
+		//monitor
+		public.GET("/charging-session/monitor/:charge_point", cabinet.GetDataMonitorByChargePoint)
 	}
 
 	r.GET("/", func(c *gin.Context) {

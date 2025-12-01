@@ -278,3 +278,58 @@ func GetCabinetByID(c *gin.Context) {
 
 	c.JSON(http.StatusOK, cabinet)
 }
+
+
+// GET /charging-session/monitor/:charge_point
+func GetDataMonitorByChargePoint(c *gin.Context) {
+
+	chargePoint := c.Param("charge_point")
+	if chargePoint == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "charge_point is required"})
+		return
+	}
+
+	db := config.DB()
+
+	var sessions []entity.ChargingSession
+
+	// JOIN ตรงนี้สำคัญมาก ‼️ ใช้ชื่อ table = ev_cabinets ไม่ใช่ e_v_cabinets
+	err := db.
+		Model(&entity.ChargingSession{}).
+		// join payment ก่อน
+		Joins("LEFT JOIN payments ON payments.id = charging_sessions.payment_id").
+		// join cabinet แบบถูกต้อง (ชื่อ table = ev_cabinets)
+		Joins("LEFT JOIN ev_cabinets ON ev_cabinets.id = payments.ev_cabinet_id").
+		// เงื่อนไข: session จบแล้ว และ match charge point
+		Where("charging_sessions.status = ? AND ev_cabinets.charge_point = ?", true, chargePoint).
+		// Preload ความสัมพันธ์ทั้งหมด
+		Preload("Payment").
+		Preload("Payment.EVCabinet").
+		Preload("Payment.EVChargingPayments").
+		Preload("Payment.EVChargingPayments.EVcharging").
+		Preload("Payment.EVChargingPayments.EVcharging.EnergySource").
+		// order ให้ล่าสุดขึ้นก่อน
+		Order("charging_sessions.end_time DESC").
+		Find(&sessions).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if len(sessions) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":       "ไม่พบ ChargingSession ของตู้ชาร์จนี้ที่ status = false",
+			"chargePoint": chargePoint,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"chargePoint": chargePoint,
+		"count":       len(sessions),
+		"data":        sessions,
+	})
+}

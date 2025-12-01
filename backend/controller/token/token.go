@@ -127,7 +127,8 @@ func GetDataByUserID(c *gin.Context) {
 	})
 }
 
-// ✅ อัปเดต Status = false และบันทึก EndTime = เวลาปัจจุบัน โดยอ้างอิงจาก PaymentID
+// ✅ อัปเดต Status = false และตั้ง EndTime = ตอนนี้
+//    แต่ EndTime จะถูกอัปเดตเฉพาะ Session ที่ EndTime ยังว่างอยู่เท่านั้น
 func UpdateStatusByPaymentID(c *gin.Context) {
 
 	// 1) รับค่า payment_id จาก URL
@@ -152,29 +153,50 @@ func UpdateStatusByPaymentID(c *gin.Context) {
 		return
 	}
 
-	// 3) อัปเดต Status = false และ EndTime = time.Now()
 	now := time.Now()
+	updatedCount := 0
 
-	if err := db.Model(&entity.ChargingSession{}).
-		Where("payment_id = ?", uint(paymentID)).
-		Updates(map[string]interface{}{
-			"status":   false,
-			"end_time": now,
-		}).Error; err != nil {
+	// 3) loop ทีละ Session
+	for _, s := range sessions {
 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "อัปเดตสถานะหรือ EndTime ไม่สำเร็จ"})
-		return
+		// สร้าง map สำหรับอัปเดตของตัวนี้
+		updates := map[string]interface{}{
+			"status": false, // ✅ อัปเดต Status ทุกตัวให้ false เสมอ
+		}
+
+		// ✅ ถ้า EndTime ยัง "ว่าง" อยู่เท่านั้น ค่อยตั้งค่า
+		//    (กรณี field เป็น time.Time)
+		if s.EndTime.IsZero() {
+			updates["end_time"] = now
+		}
+
+		// ถ้า field EndTime เป็น *time.Time ให้ใช้แบบนี้แทน (comment ไว้เผื่อแก้ที่ struct)
+		// if s.EndTime == nil || s.EndTime.IsZero() {
+		//     updates["end_time"] = now
+		// }
+
+		if err := db.Model(&entity.ChargingSession{}).
+			Where("id = ?", s.ID).
+			Updates(updates).Error; err != nil {
+
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "อัปเดตสถานะหรือ EndTime ไม่สำเร็จ",
+				"id":    s.ID,
+			})
+			return
+		}
+
+		updatedCount++
 	}
 
 	// 4) ส่ง Response กลับ
 	c.JSON(http.StatusOK, gin.H{
-		"message":         "อัปเดตสถานะและ EndTime สำเร็จ",
+		"message":         "อัปเดตสถานะสำเร็จ และอัปเดต EndTime เฉพาะ Session ที่ยังไม่มีค่า",
 		"payment_id":      paymentID,
-		"updated_records": len(sessions),
+		"updated_records": updatedCount,
 		"end_time":        now,
 	})
 }
-
 
 // GET /charging-session/status/true
 func GetChargingSessionByStatus(c *gin.Context) {
