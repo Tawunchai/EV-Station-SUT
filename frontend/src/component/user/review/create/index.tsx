@@ -30,39 +30,39 @@ const ModalCreate: React.FC<ModalProps> = ({
 
   const onFinish = async (values: ReviewInterface) => {
     if (rating === undefined || rating < 1 || rating > 5) {
-      messageApi.warning("กรุณาให้คะแนนการชาร์จ");
+      messageApi.warning("Please rate your charging experience.");
       return;
     }
 
     const rawComment = (values as any).Comment as string | undefined;
     const trimmedComment = (rawComment ?? "").trim();
 
-    // ✅ อนุญาตให้ว่างได้ แต่ถ้ากรอกต้องไม่เกิน 500 ตัวอักษร
+    // ✅ Comment is optional, but if provided must not exceed 500 characters
     if (trimmedComment.length > 500) {
-      messageApi.warning("ข้อความรีวิวต้องไม่เกิน 500 ตัวอักษร");
+      messageApi.warning("Review text must not exceed 500 characters.");
       return;
     }
 
     const reviewData: any = { rating, user_id: UserID };
     if (trimmedComment.length > 0) {
-      reviewData.comment = trimmedComment; // ส่ง comment เฉพาะเมื่อมีข้อความจริง ๆ
+      reviewData.comment = trimmedComment; // Send comment only when there is actual text
     }
 
     setLoading(true);
     try {
       const res = await CreateReview(reviewData);
       if (res) {
-        messageApi.success("ส่งรีวิวสำเร็จ");
+        messageApi.success("Review submitted successfully.");
         setTimeout(() => {
           onClose();
           onReviewCreated(res.id);
           navigate("/user");
         }, 800);
       } else {
-        messageApi.error("การรีวิวไม่สำเร็จ");
+        messageApi.error("Failed to submit review.");
       }
     } catch {
-      messageApi.error("เกิดข้อผิดพลาดขณะส่งรีวิว");
+      messageApi.error("An error occurred while submitting the review.");
     } finally {
       setLoading(false);
     }
@@ -92,14 +92,16 @@ const ModalCreate: React.FC<ModalProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="sticky top-0 flex items-center justify-between gap-3 px-5 py-4
-                          bg-gradient-to-r from-blue-600 to-blue-500 text-white">
+          <div
+            className="sticky top-0 flex items-center justify-between gap-3 px-5 py-4
+                          bg-gradient-to-r from-blue-600 to-blue-500 text-white"
+          >
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/15">
                 <FaBolt className="text-white" />
               </span>
               <h2 className="text-[15px] font-semibold tracking-wide">
-                รีวิวการชาร์จ EV
+                EV Charging Review
               </h2>
             </div>
             <button
@@ -113,35 +115,41 @@ const ModalCreate: React.FC<ModalProps> = ({
 
           {/* Body */}
           <div className="px-5 py-5 text-[15px] leading-relaxed">
-            <Form form={form} layout="vertical" onFinish={onFinish} className="space-y-5">
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={onFinish}
+              className="space-y-5"
+            >
               <Form.Item
                 label={
                   <span className="flex items-center gap-2 font-medium text-blue-700 select-none">
-                    การให้คะแนน
+                    Rating
                   </span>
                 }
               >
                 <StarRating rating={rating ?? 0} onRatingChange={setRating} />
               </Form.Item>
 
-              {/* ✅ Comment ไม่บังคับ */}
+              {/* ✅ Comment is not required */}
               <Form.Item
                 name="Comment"
                 label={
                   <span className="flex items-center gap-2 font-medium text-blue-700 select-none">
-                    ความคิดเห็นของคุณ (ไม่บังคับ)
+                    Your feedback (optional)
                   </span>
                 }
-                // ไม่ใส่ rule "required" อีกต่อไป
                 rules={[
                   {
                     validator: (_, value) => {
                       if (!value) return Promise.resolve();
                       const trimmed = String(value).trim();
                       if (trimmed.length > 500) {
-                        return Promise.reject(new Error("ไม่เกิน 500 ตัวอักษร"));
+                        return Promise.reject(
+                          new Error("Must not exceed 500 characters.")
+                        );
                       }
-                      // ถ้าเป็นช่องว่างล้วน ให้ถือว่า 'ว่าง' และผ่านได้
+                      // If only whitespace, treat as "empty" and pass
                       return Promise.resolve();
                     },
                   },
@@ -150,31 +158,35 @@ const ModalCreate: React.FC<ModalProps> = ({
                 <Input.TextArea
                   rows={6}
                   maxLength={500}
-                  placeholder="(ไม่บังคับ) เล่าประสบการณ์การชาร์จ เช่น ความเร็ว/ความสะดวก/ความสะอาด ฯลฯ"
+                  placeholder="(Optional) Share your charging experience, e.g. speed, convenience, cleanliness, etc."
                   className="resize-none rounded-xl border border-blue-100 focus:border-blue-300 focus:shadow-sm transition"
                 />
               </Form.Item>
 
               {/* Actions */}
               <div className="flex justify-end gap-3 pt-2">
-                <Tooltip title="รีวิวทีหลัง">
+                <Tooltip title="Review later">
                   <button
                     type="button"
                     onClick={handleReviewLater}
                     className="rounded-xl border border-gray-200 bg-white px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
-                    รีวิวทีหลัง
+                    Review later
                   </button>
                 </Tooltip>
 
-                <Tooltip title={loading ? "กำลังส่งรีวิว..." : "ส่งรีวิว"}>
+                <Tooltip
+                  title={loading ? "Submitting review..." : "Submit review"}
+                >
                   <button
                     type="submit"
                     disabled={loading}
                     className={`inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white transition
-                      ${loading
-                        ? "bg-blue-300 cursor-not-allowed"
-                        : "bg-gradient-to-r from-blue-600 to-blue-500 hover:opacity-95"}`}
+                      ${
+                        loading
+                          ? "bg-blue-300 cursor-not-allowed"
+                          : "bg-gradient-to-r from-blue-600 to-blue-500 hover:opacity-95"
+                      }`}
                   >
                     {loading ? (
                       <svg
@@ -183,13 +195,24 @@ const ModalCreate: React.FC<ModalProps> = ({
                         fill="none"
                         viewBox="0 0 24 24"
                       >
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v8H4z"
+                        />
                       </svg>
                     ) : (
                       <FaStar />
                     )}
-                    {loading ? "กำลังส่ง..." : "ส่งรีวิว"}
+                    {loading ? "Submitting..." : "Submit review"}
                   </button>
                 </Tooltip>
               </div>

@@ -114,7 +114,7 @@ func getTransactionID(chargerID string) (int, bool) {
 // ลบ session หลัง StopTransaction
 func clearTransactionID(chargerID string) {
 	txMu.Lock()
-	delete(transactionIDs, chargerID)
+	delete(transactionIDs, chargerID) // ✅ ถูกต้อง
 	txMu.Unlock()
 }
 
@@ -433,6 +433,14 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			fmt.Printf("✅ StatusNotification stored: %+v\n", newSt)
 		}
 
+		// 🌟 เพิ่ม logic: ถ้าตู้ส่งสถานะ SuspendedEV → อัปเดต EndTime ของ ChargingSession ตาม ChargePoint นี้
+		if statusStr == "SuspendedEV" {
+			dbConn := config.DB()
+			if err := updateEndTimeOnSuspendedEVByChargePoint(dbConn, chargerID); err != nil {
+				fmt.Println("❌ updateEndTimeOnSuspendedEVByChargePoint error:", err)
+			}
+		}
+
 	// ---------------------------------------------------------------
 	// StartTransaction
 	// ---------------------------------------------------------------
@@ -590,7 +598,7 @@ func handleCallErrorFromCharger(chargerID string, frame []interface{}, messageID
 		fmt.Printf("❌ CALLERROR for %s from %s: action=%s code=%s desc=%s details=%v\n",
 			messageID, chargerID, pending.Action, errorCode, errorDescription, details)
 	} else {
-			fmt.Printf("❌ CALLERROR (unknown messageId=%s) from %s code=%s desc=%s details=%v\n",
+		fmt.Printf("❌ CALLERROR (unknown messageId=%s) from %s code=%s desc=%s details=%v\n",
 			messageID, chargerID, errorCode, errorDescription, details)
 	}
 }
@@ -944,3 +952,52 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 	return nil
 }
 
+// ============================================================================
+// 🧩 Logic: เมื่อสถานะเป็น SuspendedEV → Update EndTime โดยใช้ ChargePoint
+// ============================================================================
+func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) error {
+	if db == nil {
+		return fmt.Errorf("db is nil")
+	}
+	if chargePoint == "" {
+		return fmt.Errorf("chargePoint is required")
+	}
+
+	// 1) หา EVCabinet จาก ChargePoint (เช่น CP_1)
+	var cab entity.EVCabinet
+	if err := db.Where("charge_point = ?", chargePoint).First(&cab).Error; err != nil {
+		return fmt.Errorf("find EVCabinet by charge_point failed: %w", err)
+	}
+
+	// 2) หา Payment ล่าสุดของ EVCabinet นี้
+	var pay entity.Payment
+	if err := db.
+		Where("ev_cabinet_id = ?", cab.ID).
+		Order("created_at DESC").
+		First(&pay).Error; err != nil {
+		return fmt.Errorf("find latest Payment by EVCabinetID failed: %w", err)
+	}
+
+	// 3) หา ChargingSession ที่ผูกกับ Payment นี้, ยัง active และ EndTime ยังเป็น zero
+	var session entity.ChargingSession
+	if err := db.
+		Where("payment_id = ? AND status = ? AND end_time = ?", pay.ID, true, time.Time{}).
+		Order("created_at DESC").
+		First(&session).Error; err != nil {
+		return fmt.Errorf("find active ChargingSession by PaymentID failed: %w", err)
+	}
+
+	// 4) อัปเดต EndTime = now
+	session.EndTime = time.Now()
+
+	if err := db.Save(&session).Error; err != nil {
+		return fmt.Errorf("update EndTime for ChargingSessionID=%d failed: %w", session.ID, err)
+	}
+
+	fmt.Printf(
+		"✅ Update EndTime on SuspendedEV: sessionID=%d paymentID=%d cabinetID=%d chargePoint=%s EndTime=%s\n",
+		session.ID, pay.ID, cab.ID, chargePoint, session.EndTime.Format(time.RFC3339),
+	)
+
+	return nil
+}

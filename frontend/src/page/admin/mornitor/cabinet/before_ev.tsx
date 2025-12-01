@@ -84,15 +84,28 @@ const BeforeEV: React.FC = () => {
     });
   };
 
+  // ✅ ปุ่มไปหน้า TEST OCPP
+  const handleGoTestOcpp = () => {
+    navigate("/admin/test-cabinet");
+  };
+
   return (
     <div className="min-h-screen w-full bg-white mt-14 sm:mt-0">
-      {/* Header แบบแถบเล็กสไตล์ Customers */}
       {/* Header แบบแถบเล็กสไตล์ Customers (ขยายให้กว้างขึ้น) */}
       <div className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm">
-        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center">
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <h1 className="text-sm sm:text-base font-semibold tracking-wide">
             Monitor Cabinet EV
           </h1>
+
+          {/* ปุ่ม TEST OCPP ชิดขวา */}
+          <button
+            type="button"
+            onClick={handleGoTestOcpp}
+            className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-white text-blue-700 text-sm font-semibold shadow-sm hover:bg-white/90 active:scale-[0.99] transition"
+          >
+            TEST OCPP
+          </button>
         </div>
       </div>
 

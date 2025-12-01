@@ -2916,6 +2916,31 @@ export const DeleteHardwareByID = async (id: number): Promise<boolean> => {
   }
 };
 
+export const GetChargingSessionMonitor = async (
+  chargePoint: string
+): Promise<any[] | null> => {
+  try {
+    const response = await axios.get(
+      `${apiUrl}/charging-session/monitor/${chargePoint}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data.data; // ส่ง array sessions กลับไป
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error GetChargingSessionMonitor:", error);
+    return null;
+  }
+};
 
 // ocpp
 
