@@ -87,7 +87,7 @@ const GettingStarted: React.FC = () => {
   if (!hasData) {
     return (
       <div className="flex h-[60vh] items-center justify-center text-gray-500">
-        ยังไม่มีข้อมูลคู่มือการใช้งาน
+        There is no user manual information yet
       </div>
     );
   }
@@ -170,7 +170,7 @@ const GettingStarted: React.FC = () => {
                 })
               }
             >
-              NEXT
+              Next
             </Button>
           </div>
         </div>

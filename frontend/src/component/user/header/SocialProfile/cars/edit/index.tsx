@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { Checkbox, Input, message } from "antd";
+import { Modal, Checkbox, Input, message } from "antd";
 import { CarsInterface } from "../../../../../../interface/ICar";
 import {
   UpdateCarByID,
@@ -14,6 +14,10 @@ import {
   FaBolt,
   FaTimes,
 } from "react-icons/fa";
+
+/* ===========================
+   Props
+   =========================== */
 
 interface EditCarModalProps {
   open: boolean;
@@ -72,9 +76,10 @@ const EVSelect: React.FC<EVSelectProps> = ({
         disabled={disabled}
         onClick={() => !disabled && setOpen((prev) => !prev)}
         className={`w-full flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm md:text-base bg-white transition
-          ${disabled
-            ? "border-slate-200 text-slate-400 cursor-not-allowed bg-slate-50"
-            : "border-slate-300 text-slate-900 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          ${
+            disabled
+              ? "border-slate-200 text-slate-400 cursor-not-allowed bg-slate-50"
+              : "border-slate-300 text-slate-900 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
           }`}
       >
         <span
@@ -82,12 +87,13 @@ const EVSelect: React.FC<EVSelectProps> = ({
             value ? "text-slate-900" : "text-slate-400 select-none"
           }
         >
-          {value ? selectedLabel : placeholder || "เลือก"}
+          {value ? selectedLabel : placeholder || "Select"}
         </span>
         <svg
           viewBox="0 0 24 24"
-          className={`h-4 w-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""
-            }`}
+          className={`h-4 w-4 text-slate-400 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
@@ -100,7 +106,7 @@ const EVSelect: React.FC<EVSelectProps> = ({
         <div className="absolute z-20 mt-1 w-full rounded-xl bg-white shadow-lg ring-1 ring-slate-200 max-h-60 overflow-y-auto">
           {options.length === 0 && (
             <div className="px-3 py-2 text-sm text-slate-400">
-              ไม่มีตัวเลือก
+              No options
             </div>
           )}
           {options.map((opt) => (
@@ -111,14 +117,15 @@ const EVSelect: React.FC<EVSelectProps> = ({
                 onChange(opt.value);
                 setOpen(false);
               }}
-              className={`w-full px-3 py-2 text-left text-sm md:text-base hover:bg-slate-50 ${opt.value === value ? "bg-blue-50 text-blue-700" : ""
-                }`}
+              className={`w-full px-3 py-2 text-left text-sm md:text-base hover:bg-slate-50 ${
+                opt.value === value ? "bg-blue-50 text-blue-700" : ""
+              }`}
             >
               {opt.label}
             </button>
           ))}
 
-          {/* ปุ่มล้างค่า (ถ้าต้องการให้เคลียร์ได้) */}
+          {/* ปุ่มล้างค่า */}
           {value && (
             <button
               type="button"
@@ -128,7 +135,7 @@ const EVSelect: React.FC<EVSelectProps> = ({
               }}
               className="w-full px-3 py-2 text-left text-xs text-red-500 border-t border-slate-100 hover:bg-red-50"
             >
-              ล้างค่า
+              Clear
             </button>
           )}
         </div>
@@ -163,27 +170,84 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
   const [modals, setModals] = useState<ModalInterface[]>([]);
 
   const baseProvinces = [
-    'กระบี่', 'กรุงเทพมหานคร', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร',
-    'ขอนแก่น',
-    'จันทบุรี',
-    'ฉะเชิงเทรา',
-    'ชลบุรี', 'ชัยนาท', 'ชัยภูมิ', 'ชุมพร', 'เชียงราย', 'เชียงใหม่',
-    'ตรัง', 'ตราด', 'ตาก',
-    'นครนายก', 'นครปฐม', 'นครพนม', 'นครราชสีมา', 'นครศรีธรรมราช', 'นครสวรรค์', 'นนทบุรี', 'นราธิวาส', 'น่าน',
-    'บึงกาฬ', 'บุรีรัมย์',
-    'ปทุมธานี', 'ประจวบคีรีขันธ์', 'ปราจีนบุรี', 'ปัตตานี',
-    'พระนครศรีอยุธยา', 'พะเยา', 'พังงา', 'พัทลุง', 'พิจิตร', 'พิษณุโลก', 'เพชรบุรี', 'เพชรบูรณ์', 'แพร่',
-    'ภูเก็ต',
-    'มหาสารคาม', 'มุกดาหาร', 'แม่ฮ่องสอน',
-    'ยโสธร', 'ยะลา',
-    'ร้อยเอ็ด', 'ระนอง', 'ระยอง', 'ราชบุรี',
-    'ลพบุรี', 'ลำปาง', 'ลำพูน', 'เลย',
-    'ศรีสะเกษ',
-    'สกลนคร', 'สงขลา', 'สตูล', 'สมุทรปราการ', 'สมุทรสงคราม', 'สมุทรสาคร', 'สระแก้ว', 'สระบุรี', 'สิงห์บุรี', 'สุโขทัย', 'สุพรรณบุรี', 'สุราษฎร์ธานี', 'สุรินทร์',
-    'หนองคาย', 'หนองบัวลำภู',
-    'อ่างทอง', 'อำนาจเจริญ', 'อุดรธานี', 'อุตรดิตถ์', 'อุทัยธานี', 'อุบลราชธานี'
+    "กระบี่",
+    "กรุงเทพมหานคร",
+    "กาญจนบุรี",
+    "กาฬสินธุ์",
+    "กำแพงเพชร",
+    "ขอนแก่น",
+    "จันทบุรี",
+    "ฉะเชิงเทรา",
+    "ชลบุรี",
+    "ชัยนาท",
+    "ชัยภูมิ",
+    "ชุมพร",
+    "เชียงราย",
+    "เชียงใหม่",
+    "ตรัง",
+    "ตราด",
+    "ตาก",
+    "นครนายก",
+    "นครปฐม",
+    "นครพนม",
+    "นครราชสีมา",
+    "นครศรีธรรมราช",
+    "นครสวรรค์",
+    "นนทบุรี",
+    "นราธิวาส",
+    "น่าน",
+    "บึงกาฬ",
+    "บุรีรัมย์",
+    "ปทุมธานี",
+    "ประจวบคีรีขันธ์",
+    "ปราจีนบุรี",
+    "ปัตตานี",
+    "พระนครศรีอยุธยา",
+    "พะเยา",
+    "พังงา",
+    "พัทลุง",
+    "พิจิตร",
+    "พิษณุโลก",
+    "เพชรบุรี",
+    "เพชรบูรณ์",
+    "แพร่",
+    "ภูเก็ต",
+    "มหาสารคาม",
+    "มุกดาหาร",
+    "แม่ฮ่องสอน",
+    "ยโสธร",
+    "ยะลา",
+    "ร้อยเอ็ด",
+    "ระนอง",
+    "ระยอง",
+    "ราชบุรี",
+    "ลพบุรี",
+    "ลำปาง",
+    "ลำพูน",
+    "เลย",
+    "ศรีสะเกษ",
+    "สกลนคร",
+    "สงขลา",
+    "สตูล",
+    "สมุทรปราการ",
+    "สมุทรสงคราม",
+    "สมุทรสาคร",
+    "สระแก้ว",
+    "สระบุรี",
+    "สิงห์บุรี",
+    "สุโขทัย",
+    "สุพรรณบุรี",
+    "สุราษฎร์ธานี",
+    "สุรินทร์",
+    "หนองคาย",
+    "หนองบัวลำภู",
+    "อ่างทอง",
+    "อำนาจเจริญ",
+    "อุดรธานี",
+    "อุตรดิตถ์",
+    "อุทัยธานี",
+    "อุบลราชธานี",
   ];
-
 
   // โหลดรถทั้งหมด + Catalog ยี่ห้อ/รุ่น ตอน modal เปิด
   useEffect(() => {
@@ -272,7 +336,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
       return;
     }
     if (!plateRegex.test(v)) {
-      setPlateError("รูปแบบทะเบียนไม่ถูกต้อง (เช่น กข 1234 หรือ AB 1234)");
+      setPlateError("The registration form is invalid e.g. กข 1234 ");
       return;
     }
     const norm = normalizePlate(v);
@@ -282,7 +346,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
       return other === norm;
     });
     if (isDup) {
-      setPlateError("ทะเบียนนี้มีอยู่ในระบบแล้ว");
+      setPlateError("Already registered");
     } else {
       setPlateError(null);
     }
@@ -304,7 +368,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
     // ตรวจซ้ำอีกครั้งกัน state lag
     validatePlate(plate);
     if (plateError) {
-      messageApi.error("กรุณาแก้ไขทะเบียนให้ถูกต้องก่อนบันทึก");
+      messageApi.error("Please correct the license plate before saving");
       return;
     }
 
@@ -319,73 +383,85 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
       };
       const res = await UpdateCarByID(car.ID, payload);
       if (res) {
-        messageApi.success("อัปเดตรถสำเร็จ");
+        messageApi.success("Car updated successfully");
         onUpdated({ ...car, ...payload });
         setTimeout(() => {
           onClose();
         }, 2000);
       } else {
-        messageApi.error("ไม่สามารถอัปเดตข้อมูลได้");
+        messageApi.error("Unable to update data");
       }
     } catch (err) {
       console.error(err);
-      messageApi.error("เกิดข้อผิดพลาดในการอัปเดตรถ");
+      messageApi.error("Car update error");
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start md:items-center justify-center ev-scope"
-      role="dialog"
-      aria-modal="true"
-      style={{ paddingTop: "env(safe-area-inset-top)" }}
-    >
+    <>
       {contextHolder}
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Dialog */}
-      <div className="relative w-full max-w-[520px] mx-4 mt-24 md:mt-0 mb-8 md:mb-0">
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col max-h-[85vh]">
-          {/* Header */}
-          <div className="px-5 pt-3 pb-4 md:pt-4 md:pb-4 bg-blue-600 text-white">
-            <div className="mx-auto w-10 h-1.5 md:hidden rounded-full bg-white/60 mb-3" />
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FaBolt className="opacity-90" />
-                <h2 className="text-base md:text-lg font-semibold">
-                  แก้ไขข้อมูลพาหนะ
-                </h2>
+      <Modal
+        open={open}
+        footer={null}
+        onCancel={onClose}
+        centered
+        width={560}
+        closable={false} // ใช้ปุ่ม X แบบ custom
+        bodyStyle={{ padding: 0, background: "transparent" }}
+        // @ts-ignore - ถ้าใช้ antd v4 สามารถแก้ผ่าน CSS แทนได้
+        styles={{
+          content: {
+            background: "transparent",
+            boxShadow: "none",
+            padding: 0,
+          },
+        }}
+        destroyOnClose
+      >
+        {/* การ์ดหลักแบบเดียวกับ BillModal (ปรับให้เข้ากับฟอร์มรถ) */}
+        <div className="w-full max-w-xl mx-auto rounded-[26px] bg-white shadow-xl overflow-hidden">
+          {/* HEADER GRADIENT */}
+          <div className="bg-gradient-to-r from-blue-600 to-sky-500 px-5 sm:px-6 py-4 flex items-center justify-between text-white">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15">
+                <FaBolt className="h-5 w-5" />
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 -m-2 rounded-lg hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-                aria-label="ปิดหน้าต่าง"
-              >
-                <FaTimes />
-              </button>
+              <div className="min-w-0">
+                <div className="text-sm sm:text-base font-semibold truncate">
+                  Edit vehicle information
+                </div>
+                <div className="text-[11px] text-blue-100 truncate">
+                  Update your EV details
+                </div>
+              </div>
             </div>
+
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+            >
+              <FaTimes className="h-4 w-4" />
+            </button>
           </div>
 
-          {/* Body */}
-          <div className="px-5 py-5 bg-blue-50/40 overflow-y-auto">
-            <div className="grid grid-cols-1 gap-4">
+          {/* BODY */}
+          <div className="px-5 sm:px-6 pt-5 pb-5 bg-blue-50/40">
+            <div className="text-[11px] font-semibold tracking-[0.18em] text-gray-500 mb-3">
+              VEHICLE PROFILE
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 max-h-[55vh] overflow-y-auto pr-1">
               {/* BRAND */}
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaCarSide className="text-blue-500" /> ยี่ห้อรถ
+                  <FaCarSide className="text-blue-500" /> Brand
                 </span>
                 <EVSelect
                   value={brand || undefined}
-                  placeholder="เลือกยี่ห้อ"
+                  placeholder="Select brand"
                   options={brandOptions.map((b) => ({
                     label: b,
                     value: b,
@@ -401,11 +477,13 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
               {/* MODEL */}
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaTags className="text-blue-500" /> รุ่นรถ
+                  <FaTags className="text-blue-500" /> Model
                 </span>
                 <EVSelect
                   value={model || undefined}
-                  placeholder={brand ? "เลือกรุ่น" : "กรุณาเลือกยี่ห้อก่อน"}
+                  placeholder={
+                    brand ? "Select model" : "Please select a brand first"
+                  }
                   options={modelOptions.map((m) => ({
                     label: m,
                     value: m,
@@ -418,30 +496,33 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
               {/* LICENSE PLATE */}
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaTags className="text-blue-500" /> ทะเบียนรถ
+                  <FaTags className="text-blue-500" /> Vehicle registration
                 </span>
                 <Input
-                  className={`mt-1 rounded-xl border p-2.5 outline-none ${plateError
-                    ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                    : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    }`}
-                  placeholder="เช่น กข 1234 หรือ AB 1234"
+                  className={`mt-1 rounded-xl border p-2.5 outline-none ${
+                    plateError
+                      ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  }`}
+                  placeholder="For example, กข 1234"
                   value={plate}
                   onChange={(e) => setPlate(e.target.value)}
                 />
                 {plateError && (
-                  <p className="text-xs text-red-500 mt-1">{plateError}</p>
+                  <p className="text-xs text-red-500 mt-1">
+                    {plateError}
+                  </p>
                 )}
               </label>
 
               {/* PROVINCE */}
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaCity className="text-blue-500" /> จังหวัด
+                  <FaCity className="text-blue-500" /> Province
                 </span>
                 <EVSelect
                   value={province || undefined}
-                  placeholder="เลือกจังหวัด"
+                  placeholder="Select a province"
                   options={provinces.map((p) => ({
                     label: p,
                     value: p,
@@ -458,37 +539,35 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
                   onChange={(e) => setIsSpecialReg(e.target.checked)}
                 />
                 <span className="text-sm text-gray-700">
-                  เป็นทะเบียนพิเศษ
+                  It is a special registration.
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="px-5 py-4 bg-white border-t border-blue-100 flex gap-2 justify-end">
+          {/* FOOTER */}
+          <div className="px-5 sm:px-6 py-4 bg-white border-t border-blue-100 flex gap-2 justify-end">
             <button
               onClick={onClose}
               className="px-4 h-10 rounded-xl border border-blue-200 bg-white text-blue-700 text-sm font-semibold hover:bg-blue-50 active:scale-[0.99] focus:outline-none focus:ring-4 focus:ring-blue-100 transition"
             >
-              ยกเลิก
+              Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={!canSubmit || submitting}
-              className={`px-4 h-10 rounded-xl text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-4 focus:ring-blue-200 active:scale-[0.99] ${canSubmit && !submitting
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-blue-300 text-white"
-                }`}
+              className={`px-4 h-10 rounded-xl text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-4 focus:ring-blue-200 active:scale-[0.99] ${
+                canSubmit && !submitting
+                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                  : "bg-blue-300 text-white"
+              }`}
             >
-              {submitting ? "กำลังบันทึก..." : "บันทึก"}
+              {submitting ? "Saving..." : "Save"}
             </button>
           </div>
-
-          {/* Safe Area (iOS) */}
-          <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
         </div>
-      </div>
-    </div>
+      </Modal>
+    </>
   );
 };
 

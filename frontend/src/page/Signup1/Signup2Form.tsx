@@ -63,15 +63,15 @@ const Signup2Form: React.FC = () => {
   // ========================= ส่ง OTP ก่อนสมัคร =========================
   const onFinish = async (values: any) => {
     if (fileList.length === 0) {
-      messageApi.error("กรุณาอัปโหลดรูปภาพก่อนสมัคร");
+      messageApi.error("Please upload a photo before applying");
       return;
     }
 
     // ✅ ตรวจสอบซ้ำก่อนส่ง OTP
     const duplicateErrors: any = {};
-    if (isDuplicate("Username", values.username)) duplicateErrors.username = "ชื่อผู้ใช้นี้ถูกใช้แล้ว";
-    if (isDuplicate("Email", values.email)) duplicateErrors.email = "อีเมลนี้ถูกใช้แล้ว";
-    if (isDuplicate("PhoneNumber", values.phone)) duplicateErrors.phone = "เบอร์โทรนี้ถูกใช้แล้ว";
+    if (isDuplicate("Username", values.username)) duplicateErrors.username = "Username already used.";
+    if (isDuplicate("Email", values.email)) duplicateErrors.email = "Email already used.";
+    if (isDuplicate("PhoneNumber", values.phone)) duplicateErrors.phone = "Phone already used.";
 
     if (Object.keys(duplicateErrors).length > 0) {
       form.setFields(
@@ -88,9 +88,9 @@ const Signup2Form: React.FC = () => {
       await SendOTP(values.email);
       setPendingValues(values);
       setOtpModalOpen(true);
-      messageApi.info("รหัส OTP ถูกส่งไปยังอีเมลของคุณแล้ว");
+      messageApi.info("OTP has been sent to your email");
     } catch (err) {
-      messageApi.error("ส่ง OTP ไม่สำเร็จ โปรดลองอีกครั้ง");
+      messageApi.error("Failed to send OTP. Please try again");
     } finally {
       setLoading(false);
     }
@@ -116,13 +116,13 @@ const Signup2Form: React.FC = () => {
     try {
       const res = await CreateUser(formData);
       if (res) {
-        messageApi.success("สมัครสมาชิกสำเร็จ!");
+        messageApi.success("Registration successful");
         navigate("/auth/login-2");
       } else {
-        messageApi.error("สมัครไม่สำเร็จ");
+        messageApi.error("Registration failed");
       }
     } catch {
-      messageApi.error("เกิดข้อผิดพลาดในการสมัคร");
+      messageApi.error("Registration error");
     } finally {
       setLoading(false);
       setOtpModalOpen(false);
@@ -214,7 +214,7 @@ const Signup2Form: React.FC = () => {
                           validator: () =>
                             fileList.length > 0
                               ? Promise.resolve()
-                              : Promise.reject(new Error("กรุณาอัปโหลดรูป")),
+                              : Promise.reject(new Error("Please upload an image")),
                         },
                       ]}
                     >
@@ -226,7 +226,7 @@ const Signup2Form: React.FC = () => {
                           beforeUpload={(file) => {
                             const isImage = file.type.startsWith("image/");
                             if (!isImage) {
-                              messageApi.error("กรุณาอัปโหลดไฟล์รูปภาพ");
+                              messageApi.error("Please upload an image");
                               return Upload.LIST_IGNORE;
                             }
                             setFileList([file]);
@@ -249,7 +249,7 @@ const Signup2Form: React.FC = () => {
                     <Form.Item
                       name="gender"
                       label={<span className="text-sm text-gray-700">Gender</span>}
-                      rules={[{ required: true, message: "กรุณาเลือกเพศ" }]}
+                      rules={[{ required: true, message: "Please select gender" }]}
                       className="mb-5 md:mt-[39px]"
                     >
                       <Select placeholder="Select Gender" size="middle" className="!rounded-xl">
@@ -262,7 +262,7 @@ const Signup2Form: React.FC = () => {
                     </Form.Item>
 
                     <div className="text-[11px] text-gray-500 leading-tight">
-                      แนะนำ: ใช้รูปหน้าตรง เห็นใบหน้าชัดเจน
+                      Tip: Use a clear, front-facing photo
                     </div>
                   </div>
 
@@ -273,7 +273,7 @@ const Signup2Form: React.FC = () => {
                       <Form.Item
                         name="username"
                         label={<span className="text-sm text-gray-700">Username</span>}
-                        rules={[{ required: true, message: "กรุณากรอกชื่อผู้ใช้" }]}
+                        rules={[{ required: true, message: "Please enter your username." }]}
                         className="md:col-span-6"
                       >
                         <Input placeholder="Username" size="middle" className="rounded-xl" />
@@ -284,8 +284,8 @@ const Signup2Form: React.FC = () => {
                         name="email"
                         label={<span className="text-sm text-gray-700">Email</span>}
                         rules={[
-                          { required: true, message: "กรุณากรอกอีเมล" },
-                          { type: "email", message: "กรุณาใส่อีเมลที่ถูกต้อง" },
+                          { required: true, message: "Please enter your email address." },
+                          { type: "email", message: "Please enter a valid email address." },
                         ]}
                         className="md:col-span-6"
                       >
@@ -296,7 +296,7 @@ const Signup2Form: React.FC = () => {
                       <Form.Item
                         name="password"
                         label={<span className="text-sm text-gray-700">Password</span>}
-                        rules={[{ required: true, message: "กรุณากรอกรหัสผ่าน" }]}
+                        rules={[{ required: true, message: "Please enter your password." }]}
                         className="md:col-span-6"
                       >
                         <Input.Password placeholder="Password" size="middle" className="rounded-xl" />
@@ -307,8 +307,8 @@ const Signup2Form: React.FC = () => {
                         name="phone"
                         label={<span className="text-sm text-gray-700">Phone</span>}
                         rules={[
-                          { required: true, message: "กรุณากรอกเบอร์โทรศัพท์" },
-                          { pattern: /^0\d{9}$/, message: "เบอร์โทรต้องเป็นเลข 10 ตัว" },
+                          { required: true, message: "Please enter your phone number." },
+                          { pattern: /^0\d{9}$/, message: "Phone number must be 10 digits." },
                         ]}
                         className="md:col-span-6"
                       >
@@ -319,7 +319,7 @@ const Signup2Form: React.FC = () => {
                       <Form.Item
                         name="firstname"
                         label={<span className="text-sm text-gray-700">First Name</span>}
-                        rules={[{ required: true, message: "กรุณากรอกชื่อ" }]}
+                        rules={[{ required: true, message: "Please enter your name" }]}
                         className="md:col-span-6"
                       >
                         <Input placeholder="First Name" size="middle" className="rounded-xl" />
@@ -329,7 +329,7 @@ const Signup2Form: React.FC = () => {
                       <Form.Item
                         name="lastname"
                         label={<span className="text-sm text-gray-700">Last Name</span>}
-                        rules={[{ required: true, message: "กรุณากรอกนามสกุล" }]}
+                        rules={[{ required: true, message: "Please enter your last name" }]}
                         className="md:col-span-6"
                       >
                         <Input placeholder="Last Name" size="middle" className="rounded-xl" />
@@ -346,14 +346,14 @@ const Signup2Form: React.FC = () => {
                         disabled={loading}
                         className="!h-11 !rounded-xl !bg-blue-600 hover:!bg-blue-700 font-medium"
                       >
-                        {loading ? "กำลังสมัคร..." : "Sign up"}
+                        {loading ? "Applying..." : "Sign up"}
                       </Button>
                     </Form.Item>
 
                     <div className="mt-1 text-sm text-center text-gray-600">
-                      มีบัญชีอยู่แล้ว?{" "}
+                      Already have an account??{" "}
                       <Link to="/auth/login-2" className="text-blue-600 hover:underline">
-                        เข้าสู่ระบบ
+                        Log in
                       </Link>
                     </div>
 

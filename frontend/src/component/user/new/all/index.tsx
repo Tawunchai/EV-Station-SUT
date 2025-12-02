@@ -74,7 +74,7 @@ const NewsListMobile: React.FC = () => {
           {/* ปุ่มย้อนกลับ */}
           <button
             onClick={() => navigate(-1)}
-            aria-label="ย้อนกลับ"
+            aria-label="Back"
             className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
           >
             <svg
@@ -117,7 +117,7 @@ const NewsListMobile: React.FC = () => {
           </ul>
         ) : items.length === 0 ? (
           <div className="py-16 text-center text-gray-500">
-            ไม่พบข่าวสารและกิจกรรม
+            No news found
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">

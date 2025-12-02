@@ -193,11 +193,11 @@ const Customers: React.FC = () => {
     setConfirmLoading(true);
     const ok = await DeleteUser(selectedUserRef.current.UserID);
     if (ok) {
-      message.success("ลบข้อมูลสำเร็จ");
+      message.success("delete successful");
       await fetchUsers();
       await fetchAllUsers();
     } else {
-      message.error("เกิดข้อผิดพลาดในการลบ");
+      message.error("An error occurred while deleting");
     }
     cancelDelete();
   };
@@ -342,12 +342,12 @@ const Customers: React.FC = () => {
     const { Raw, CustomerName, ...payload } = updated;
     const ok = await UpdateUser(id, payload);
     if (ok) {
-      message.success("อัปเดตข้อมูลสำเร็จ");
+      message.success("Update successful");
       setEditUser(null);
       fetchUsers();
       fetchAllUsers();
     } else {
-      message.error("อัปเดตข้อมูลไม่สำเร็จ");
+      message.error("Update failed");
     }
   };
 

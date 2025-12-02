@@ -49,13 +49,13 @@ const History: React.FC = () => {
 
         const uid = current?.id;
         if (!uid) {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           return;
         }
         setUserID(uid);
       } catch (error) {
         console.error("Error loading user:", error);
-        message.error("ไม่สามารถโหลดข้อมูลผู้ใช้ได้");
+        message.error("Unable to load user data");
       }
     };
     loadUser();
@@ -96,7 +96,7 @@ const History: React.FC = () => {
         }
       } catch (err) {
         console.error("Error fetching bookings:", err);
-        message.error("โหลดประวัติการจองล้มเหลว");
+        message.error("Failed to load booking history");
       } finally {
         setLoadingBookings(false);
       }
@@ -145,7 +145,7 @@ const History: React.FC = () => {
         }
       } catch (err) {
         console.error("Error fetching payments:", err);
-        message.error("โหลดประวัติการชาร์จล้มเหลว");
+        message.error("Loading charging history failed");
       } finally {
         setLoadingPayments(false);
       }
@@ -167,7 +167,7 @@ const History: React.FC = () => {
             : "bg-gray-100 text-red-500 border border-red-200"
         }`}
       >
-        {active ? "จองแล้ว" : "หมดอายุการจอง"}
+        {active ? "Already reserved" : "Reservation expired"}
       </div>
     );
   };
@@ -228,7 +228,7 @@ const History: React.FC = () => {
           </div>
         ) : bookings.length === 0 ? (
           <div className="flex justify-center items-center py-6">
-            <Empty description="ยังไม่มีประวัติการจองในช่วง 7 วันที่ผ่านมา" />
+            <Empty description="No booking history in the past 7 days." />
           </div>
         ) : (
           <div
@@ -271,7 +271,7 @@ const History: React.FC = () => {
                     />
                     <div>
                       <span className="inline-block bg-blue-600 text-white text-[13px] font-semibold px-3 py-[3px] rounded-md shadow-md drop-shadow-[0_2px_2px_rgba(0,0,0,0.4)]">
-                        {b.EVCabinet?.Name || "ไม่ทราบชื่อตู้"}
+                        {b.EVCabinet?.Name || "Unknown cabinet name"}
                       </span>
                       <p className="text-[13px] text-blue-100 font-medium mt-1 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
                         {dayjs(b.StartDate).locale("th").format("DD MMM YYYY")}
@@ -281,12 +281,12 @@ const History: React.FC = () => {
 
                   <div className="flex justify-between text-[13px] mt-3 text-blue-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
                     <div>
-                      <span className="font-semibold text-blue-200">เริ่ม:</span>{" "}
+                      <span className="font-semibold text-blue-200">Start :</span>{" "}
                       {dayjs(b.StartDate).format("HH:mm")}
                     </div>
                     <div>
                       <span className="font-semibold text-blue-200">
-                        สิ้นสุด:
+                        End :
                       </span>{" "}
                       {dayjs(b.EndDate).format("HH:mm")}
                     </div>

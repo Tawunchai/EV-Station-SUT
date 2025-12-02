@@ -94,7 +94,7 @@ const BottomSheet: React.FC<{
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="ค้นหา"
+              placeholder="search"
               className="w-full outline-none"
             />
           </div>
@@ -164,7 +164,7 @@ const AddCarPage: React.FC = () => {
 
       const uid = current?.id;
       if (!uid) {
-        message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+        message.error("User information not found. Please log in again.");
         return;
       }
 
@@ -230,15 +230,15 @@ const AddCarPage: React.FC = () => {
       const name = m.Brand?.BrandName?.trim();
       if (name) set.add(name);
     });
-    return [...set, "อื่นๆ"];
+    return [...set, "other"];
   }, [modals]);
 
   const modelOptions = useMemo(() => {
-    if (!brand || brand === "อื่นๆ") return ["อื่นๆ"];
+    if (!brand || brand === "other") return ["other"];
     const list = modals
       .filter((m) => m.Brand?.BrandName === brand)
       .map((m) => m.ModalName);
-    return [...new Set(list), "อื่นๆ"];
+    return [...new Set(list), "other"];
   }, [brand, modals]);
 
   // ================== Validation ทะเบียน ==================
@@ -254,13 +254,13 @@ const AddCarPage: React.FC = () => {
       return;
     }
     if (!plateRegex.test(v)) {
-      setPlateError("รูปแบบทะเบียนไม่ถูกต้อง (เช่น กข 1234 หรือ AB 1234)");
+      setPlateError("The registration form is invalid (e.g. กข 1234 or AB 1234).");
       return;
     }
     const norm = normalizePlate(v);
     const duplicated = allCars.some((c) => normalizePlate(String(c.LicensePlate ?? "")) === norm);
     if (duplicated) {
-      setPlateError("ทะเบียนนี้มีอยู่ในระบบแล้ว");
+      setPlateError("This registration is already in the system.");
     } else {
       setPlateError(null);
     }
@@ -270,24 +270,24 @@ const AddCarPage: React.FC = () => {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userID) {
-      messageApi.error("ไม่พบข้อมูลผู้ใช้");
+      messageApi.error("User information not found");
       return;
     }
 
     if (!brand || !model || !plate || !province) {
-      messageApi.warning("กรุณากรอกข้อมูลให้ครบ");
+      messageApi.warning("Please fill in all information.");
       return;
     }
 
     // ตรวจอีกรอบก่อนส่ง
     checkPlate(plate);
     if (plateError) {
-      messageApi.error("กรุณาแก้ไขข้อมูลทะเบียนก่อนบันทึก");
+      messageApi.error("Please edit your registration information before saving.");
       return;
     }
 
-    const finalBrand = brand === "อื่นๆ" ? otherBrand : brand;
-    const finalModel = model === "อื่นๆ" ? otherModel : model;
+    const finalBrand = brand === "other" ? otherBrand : brand;
+    const finalModel = model === "other" ? otherModel : model;
 
     setSubmitting(true);
     try {
@@ -301,13 +301,13 @@ const AddCarPage: React.FC = () => {
 
       const res = await CreateCar(payload);
       if (res) {
-        messageApi.success("เพิ่มข้อมูลรถสำเร็จ");
+        messageApi.success("Vehicle added successfully");
         setTimeout(() => navigate("/"), 1500);
       } else {
-        messageApi.error("บันทึกไม่สำเร็จ");
+        messageApi.error("Recording failed");
       }
     } catch {
-      messageApi.error("เกิดข้อผิดพลาด");
+      messageApi.error("An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -332,7 +332,7 @@ const AddCarPage: React.FC = () => {
                 >
                   {loadingMods ? (
                     <div className="flex items-center gap-2 text-slate-500">
-                      <Spin size="small" /> กำลังโหลด...
+                      <Spin size="small" /> Loading...
                     </div>
                   ) : (
                     <>
@@ -345,7 +345,7 @@ const AddCarPage: React.FC = () => {
                     </>
                   )}
                 </button>
-                {brand === "อื่นๆ" && (
+                {brand === "other" && (
                   <input
                     className="mt-3 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
                     placeholder="Specify brand"
@@ -372,7 +372,7 @@ const AddCarPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                {brand === "อื่นๆ" && (
+                {brand === "other" && (
                   <input
                     className="rounded-xl border border-slate-300 p-3 bg-white outline-none"
                     placeholder="Specify brand"
@@ -402,7 +402,7 @@ const AddCarPage: React.FC = () => {
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </button>
-                {(brand === "อื่นๆ" || model === "อื่นๆ") && (
+                {(brand === "other" || model === "other") && (
                   <input
                     className="mt-3 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
                     placeholder="Specify model"
@@ -426,7 +426,7 @@ const AddCarPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                {(brand === "อื่นๆ" || model === "อื่นๆ") && (
+                {(brand === "other" || model === "other") && (
                   <input
                     className="rounded-xl border border-slate-300 p-3 bg-white outline-none"
                     placeholder="Specify model"
@@ -451,7 +451,7 @@ const AddCarPage: React.FC = () => {
               className={`mt-2 w-full rounded-xl border p-3 bg-white outline-none ${
                 plateError ? "border-red-400" : "border-slate-300"
               }`}
-              placeholder="เช่น กข 1234 หรือ AB 1234"
+              placeholder="For example, กข 1234"
               value={plate}
               onChange={(e) => {
                 const v = e.target.value;
@@ -472,7 +472,7 @@ const AddCarPage: React.FC = () => {
                 className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-left bg-white flex items-center justify-between"
               >
                 <span className={province ? "text-slate-900" : "text-slate-400"}>
-                  {province || "เลือกจังหวัด"}
+                  {province || "Select a province"}
                 </span>
                 <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="m6 9 6 6 6-6" />

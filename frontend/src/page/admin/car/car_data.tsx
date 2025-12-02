@@ -95,10 +95,10 @@ const CarData: React.FC = () => {
     if (!selectedBrand) return;
     const ok = await DeleteBrandByID(selectedBrand.id);
     if (ok) {
-      message.success("ลบยี่ห้อสำเร็จ");
+      message.success("Successfully removed brand");
       fetchModals();
     } else {
-      message.warning("เกิดข้อผิดพลาดในการลบยี่ห้อ");
+      message.warning("An error occurred while deleting the brand");
     }
     setOpenConfirmModal(false);
     setSelectedBrand(null);

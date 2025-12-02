@@ -97,7 +97,7 @@ const BillModal: React.FC<BillModalProps> = ({ open, bill, onClose }) => {
               EV Charging Receipt
             </div>
             <div className="text-[11px] text-blue-100 truncate">
-              ใบเสร็จการชำระเงินสำหรับบริการชาร์จรถยนต์ไฟฟ้า
+              EV charging payment receipt
             </div>
           </div>
 
@@ -128,7 +128,7 @@ const BillModal: React.FC<BillModalProps> = ({ open, bill, onClose }) => {
 
         {!bill || !payment ? (
           <div className="p-6 text-center text-sm text-gray-500">
-            ไม่พบข้อมูล Bill
+            Bill information not found
           </div>
         ) : (
           <>
@@ -147,7 +147,7 @@ const BillModal: React.FC<BillModalProps> = ({ open, bill, onClose }) => {
                     ENERGY USAGE
                   </div>
                   <div className="mt-1 text-sm sm:text-base font-semibold text-gray-900">
-                    รายละเอียดพลังงานไฟฟ้าที่ซื้อ
+                    Energy purchase details
                   </div>
                 </div>
                 <div className="text-right">
@@ -324,7 +324,7 @@ const BillModal: React.FC<BillModalProps> = ({ open, bill, onClose }) => {
               </div>
 
               <div className="pt-3 text-[11px] text-center text-gray-400">
-                ขอบคุณที่ใช้บริการ EV Station ของเรา
+                Thank you for using our EV Station.
               </div>
             </div>
           </>

@@ -58,7 +58,7 @@ const Cars: React.FC<CarsProps> = ({ userID }) => {
         if (res) setCars(res);
       } catch (error) {
         console.error("Error fetching cars:", error);
-        message.error("ไม่สามารถโหลดข้อมูลรถได้");
+        message.error("Unable to load vehicle data");
       } finally {
         setLoading(false);
       }

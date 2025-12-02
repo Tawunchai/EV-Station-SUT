@@ -946,6 +946,22 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 			s.ID, chargePoint, startEnergy, s.StartTime.Format(time.RFC3339),
 		)
 
+		// ⭐⭐⭐ ตรงนี้คือส่วนเพิ่มใหม่: ส่ง event ไปหา frontend
+		startEnergyMsg := map[string]interface{}{
+			"type":         "start_energy_updated",
+			"chargePoint":  chargePoint,
+			"session_id":   s.ID,
+			"start_energy": s.StartEnergy,
+			"start_time":   s.StartTime.Format(time.RFC3339),
+		}
+
+		// ✅ อันใหม่ (แปลงเป็น JSON แล้วค่อยส่ง)
+		if b, err := json.Marshal(startEnergyMsg); err != nil {
+			fmt.Println("❌ marshal startEnergyMsg failed:", err)
+		} else {
+			broadcastToFrontend(b)
+		}
+
 		return nil
 	}
 
@@ -954,6 +970,7 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 
 // ============================================================================
 // 🧩 Logic: เมื่อสถานะเป็น SuspendedEV → Update EndTime โดยใช้ ChargePoint
+//    เวอร์ชันใหม่: อัปเดต EndTime ทุกครั้ง (มีค่าเดิมก็เขียนทับ)
 // ============================================================================
 func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) error {
 	if db == nil {
@@ -978,16 +995,17 @@ func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) er
 		return fmt.Errorf("find latest Payment by EVCabinetID failed: %w", err)
 	}
 
-	// 3) หา ChargingSession ที่ผูกกับ Payment นี้, ยัง active และ EndTime ยังเป็น zero
+	// 3) หา ChargingSession ที่ผูกกับ Payment นี้ และยัง active (status = true)
+	//    ❗ เอา Order("created_at DESC") เพื่อให้ได้ session ล่าสุด
 	var session entity.ChargingSession
 	if err := db.
-		Where("payment_id = ? AND status = ? AND end_time = ?", pay.ID, true, time.Time{}).
+		Where("payment_id = ? AND status = ?", pay.ID, true).
 		Order("created_at DESC").
 		First(&session).Error; err != nil {
 		return fmt.Errorf("find active ChargingSession by PaymentID failed: %w", err)
 	}
 
-	// 4) อัปเดต EndTime = now
+	// 4) อัปเดต EndTime = now (ไม่ว่าจะมีค่ามาก่อนหรือไม่ก็ตาม)
 	session.EndTime = time.Now()
 
 	if err := db.Save(&session).Error; err != nil {
@@ -1001,3 +1019,4 @@ func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) er
 
 	return nil
 }
+

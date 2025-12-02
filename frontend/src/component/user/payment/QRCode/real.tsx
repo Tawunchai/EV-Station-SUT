@@ -13,6 +13,7 @@ import {
   connectHardwareSocket,
   sendHardwareCommand,
   GetCabinetByID, // ⭐ ใช้ดึง HardwarePoint จากตู้
+  GetDataPaymentByRef, // ⭐ ใช้เช็คว่าสลิปซ้ำไหม
 } from "../../../../services";
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 import { FileImageOutlined } from "@ant-design/icons";
@@ -41,6 +42,10 @@ const PayPalCard: React.FC = () => {
   // ⭐ HardwarePoint จาก Hardware ที่ผูกกับตู้ (เช่น "hardware_888")
   const [hardwarePoint, setHardwarePoint] = useState<string | null>(null);
 
+  // ✅ ข้อมูล Bank สำหรับตรวจสอบสลิป
+  const [bankingCode, setBankingCode] = useState<string>("");
+  const [managerName, setManagerName] = useState<string>("");
+
   // โหลด User จาก JWT
   useEffect(() => {
     const fetchUser = async () => {
@@ -51,12 +56,12 @@ const PayPalCard: React.FC = () => {
         if (current?.id) {
           setUserID(current.id);
         } else {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           navigate("/login");
         }
       } catch (err) {
-        console.error("โหลดข้อมูลผู้ใช้ล้มเหลว:", err);
-        message.error("เกิดข้อผิดพลาดในการโหลดผู้ใช้");
+        console.error("Failed to load user data :", err);
+        message.error("An error occurred while loading users");
         navigate("/login");
       }
     };
@@ -96,19 +101,24 @@ const PayPalCard: React.FC = () => {
     loadCabinetHardware();
   }, [cabinet_id]);
 
-  // โหลด PromptPay ของธนาคาร
+  // โหลด PromptPay + Bank info
   useEffect(() => {
     const fetchBankData = async () => {
       try {
         const banks = await ListBank();
         if (banks && banks.length > 0) {
-          const bankPhone = banks[0].PromptPay || "";
+          const bank = banks[0];
+          const bankPhone = bank.PromptPay || "";
           setPhoneNumber(bankPhone);
+
+          // ✅ เก็บข้อมูลไว้ใช้เช็คสลิป
+          setBankingCode(bank.Banking || "");
+          setManagerName(bank.Manager || "");
         } else {
-          message.error("ไม่พบข้อมูลธนาคารสำหรับ PromptPay");
+          message.error("Bank information not found for PromptPay");
         }
       } catch {
-        message.error("โหลดข้อมูลธนาคารล้มเหลว");
+        message.error("Bank data loading failed");
       }
     };
     fetchBankData();
@@ -183,29 +193,80 @@ const PayPalCard: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // ส่งหลักฐาน + Create Payment
+  // ส่งหลักฐาน + Create Payment (พร้อมเช็คสลิปเหมือนหน้า Coin)
   const handleSubmit = async () => {
     if (!uploadedFile) {
-      message.warning("กรุณาอัปโหลดสลิปก่อนส่ง");
+      message.warning("Please upload the slip before sending");
       return;
     }
     if (!userID) {
-      message.error("ไม่พบข้อมูลผู้ใช้");
+      message.error("User information not found");
       return;
     }
 
     setLoading(true);
     try {
+      // 🔹 อัปโหลดสลิปไป OIIO
       const result = await uploadSlipOK(uploadedFile);
-      if (!result) {
-        message.error("ส่งหลักฐานล้มเหลว");
+      console.log("🔹 uploadSlipOK result (QR Page):", result);
+
+      if (!result || !result.data) {
+        message.warning("Unable to read data from slip");
         setLoading(false);
         return;
       }
 
-      message.success("ส่งหลักฐานการชำระเงินเรียบร้อยแล้ว");
+      const slipData = result.data;
+      const receiverBank = slipData.receiver_bank;
+      const receiverName = slipData.receiver_name?.trim()?.toUpperCase();
+      const slipAmount = Number(slipData.amount);
+      const refNumber = slipData.ref;
 
-      // ⭐⭐⭐ เพิ่ม cabinet_id เข้า PaymentData (แบบ type ถูกต้อง)
+      const bankCode = bankingCode?.trim()?.toUpperCase();
+      const manager = managerName?.trim()?.toUpperCase();
+
+      console.log("🧩 ตรวจข้อมูลสลิป (QR Page):", {
+        receiverBank,
+        receiverName,
+        slipAmount,
+        bankCode,
+        manager,
+        amountNumber,
+        refNumber,
+      });
+
+      // ✅ เช็คธนาคารผู้รับ
+      if (receiverBank !== bankCode) {
+        message.warning("Recipient bank mismatch");
+        setLoading(false);
+        return;
+      }
+
+      // ✅ เช็คชื่อผู้รับ
+      if (receiverName !== manager) {
+        message.warning("Recipient mismatch");
+        setLoading(false);
+        return;
+      }
+
+      // ✅ เช็คจำนวนเงินตาม QR (ต้องเท่ากับ totalAmount ที่หน้า Payment ส่งมา)
+      if (slipAmount !== amountNumber) {
+        message.warning("Amounts do not match");
+        setLoading(false);
+        return;
+      }
+
+      // ✅ เช็คสลิปซ้ำจาก Ref Number
+      const existing = await GetDataPaymentByRef(refNumber);
+      if (existing && (existing as any).found) {
+        message.warning("Slip already used");
+        setLoading(false);
+        return;
+      }
+
+      message.success("Payment slip verified");
+
+      // ⭐⭐⭐ เตรียมข้อมูล Payment (ใช้วันที่จากสลิป ถ้ามี)
       const paymentData = {
         date: new Date().toISOString().split("T")[0],
         amount: Number(totalAmount),
@@ -216,7 +277,11 @@ const PayPalCard: React.FC = () => {
         ev_cabinet_id: cabinet_id ?? undefined, // ✅ number | undefined
       };
 
+      console.log(paymentData)
+
       const paymentResult = await CreatePayment(paymentData);
+
+      console.log(paymentResult)
 
       if (paymentResult && paymentResult.ID) {
         // ผูก EV Charging Payment
@@ -233,8 +298,9 @@ const PayPalCard: React.FC = () => {
           }
         }
 
-        // สร้าง Token
+        // สร้าง Token สำหรับตู้ชาร์จ
         const token = await CreateChargingToken(userID, paymentResult.ID);
+        console.log(token)
         if (!token) {
           setLoading(false);
           return;
@@ -276,12 +342,12 @@ const PayPalCard: React.FC = () => {
           setLoading(false);
         }, 800);
       } else {
-        message.error("สร้าง Payment ล้มเหลว");
+        message.error("Payment creation failed");
         setLoading(false);
       }
     } catch (error) {
       console.error(error);
-      message.error("เกิดข้อผิดพลาดในการส่งหลักฐาน");
+      message.error("An error occurred while submitting evidence");
       setLoading(false);
     }
   };
@@ -308,7 +374,7 @@ const PayPalCard: React.FC = () => {
         <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
           <button
             onClick={() => window.history.back()}
-            aria-label="ย้อนกลับ"
+            aria-label="Back"
             className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
           >
             <svg
@@ -398,7 +464,7 @@ const PayPalCard: React.FC = () => {
                   onClick={handleRemoveFile}
                   className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow transition"
                   aria-label="Remove uploaded file"
-                  title="ลบสลิปที่อัปโหลด"
+                  title="Delete uploaded slip"
                   type="button"
                 >
                   <FaTimes size={14} />
@@ -446,9 +512,9 @@ const PayPalCard: React.FC = () => {
 
           <button
             onClick={handleSubmit}
-            disabled={!uploadedFile}
+            disabled={!uploadedFile || loading}
             className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white transition ${
-              uploadedFile
+              uploadedFile && !loading
                 ? "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 active:from-blue-800 active:to-blue-700"
                 : "bg-blue-300 cursor-not-allowed"
             }`}

@@ -39,7 +39,7 @@ const HeaderBar: React.FC<{ title?: string; onBack?: () => void }> = ({
       <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
         <button
           onClick={goBack}
-          aria-label="ย้อนกลับ"
+          aria-label="Back"
           className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
         >
           <svg
@@ -122,7 +122,7 @@ const EVMapNotebook: React.FC = () => {
 
       const uid = current?.id;
       if (!uid) {
-        message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+        message.error("User information not found. Please log in again");
         return;
       }
       setUserID(uid);
@@ -159,7 +159,7 @@ const EVMapNotebook: React.FC = () => {
      ========================= */
   const handleBookingClick = async (cabinet: EVCabinetInterface) => {
     if (!userID) {
-      message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+      message.error("User information not found. Please log in again");
       return;
     }
 
@@ -183,7 +183,7 @@ const EVMapNotebook: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center h-screen text-gray-500">
         <BoltIcon className="h-6 w-6 text-blue-500 mb-2" />
-        <p>ไม่พบข้อมูลสถานีชาร์จไฟฟ้า</p>
+        <p>No information found on electric charging stations.</p>
       </div>
     );
   }
@@ -256,8 +256,8 @@ const EVMapNotebook: React.FC = () => {
                   </p>
                   <p className="text-[11px] text-gray-400 flex items-center gap-1 w-[200px] ml-0.5">
                     {cabinet.Employee
-                      ? `รายละเอียด ${cabinet.Description || ""}`
-                      : "ไม่มีรายละเอียด"}
+                      ? `details ${cabinet.Description || ""}`
+                      : "No details"}
                   </p>
 
                   <button
@@ -278,23 +278,31 @@ const EVMapNotebook: React.FC = () => {
         ⚡ EV Smart Charging App © {new Date().getFullYear()}
       </div>
 
-      {/* MODAL */}
       <Modal
         open={showCarModal}
-        onCancel={() => setShowCarModal(false)}
         footer={null}
+        onCancel={() => setShowCarModal(false)}
         centered
       >
-        <div className="text-center">
+        <div className="flex flex-col items-center text-center mt-2 mb-1">
           <div className="text-4xl mb-3">🚗</div>
-          <h3 className="text-lg font-semibold text-blue-700">ไม่พบข้อมูลรถของคุณ</h3>
-          <p className="text-gray-600 mb-5">Before making a reservation, please add your vehicle information to the system.</p>
+
+          <h3 className="text-lg font-semibold text-blue-700 mb-1">
+            No car information found
+          </h3>
+
+          <p className="text-gray-600 mb-5">
+            Before making a payment, please add your car information.
+          </p>
 
           <div className="flex justify-center gap-3">
-            <Button onClick={() => setShowCarModal(false)}>ยกเลิก</Button>
-
-            <Button type="primary" onClick={() => navigate("/user/add-cars")}>
-              ไปเพิ่มข้อมูลรถ
+            <Button onClick={() => setShowCarModal(false)}>Cancel</Button>
+            <Button
+              type="primary"
+              onClick={() => navigate("/user/add-cars")}
+              className="bg-blue-600"
+            >
+              Go to add car
             </Button>
           </div>
         </div>

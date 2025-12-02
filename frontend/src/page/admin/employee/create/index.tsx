@@ -45,9 +45,12 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
     salary?: string;
   }>({});
 
-  // ตรวจมือถือเพื่อกำหนด maxHeight ที่เหมาะสม
+  // Detect mobile for maxHeight
   const isMobile = useMemo(
-    () => (typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false),
+    () =>
+      typeof window !== "undefined"
+        ? window.matchMedia("(max-width: 768px)").matches
+        : false,
     []
   );
 
@@ -55,28 +58,35 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
     if (userRoles?.length && !form.userRoleID) {
       setForm((p) => ({ ...p, userRoleID: userRoles[0].ID }));
     }
-  }, [userRoles]);
+  }, [userRoles, form.userRoleID]);
 
-  // ✅ ตรวจสอบซ้ำแบบ realtime (username / email)
+  // ✅ Realtime duplicate checks (username / email)
   useEffect(() => {
     const newErrors: typeof errors = { ...errors };
 
-    // Username ซ้ำ
+    // Username duplicate
     if (form.username) {
       const dupUsername = allUsersData.some(
-        (u) => u.Username.trim().toLowerCase() === form.username.trim().toLowerCase()
+        (u) =>
+          u.Username.trim().toLowerCase() ===
+          form.username.trim().toLowerCase()
       );
-      newErrors.username = dupUsername ? "Username นี้มีอยู่ในระบบแล้ว" : undefined;
+      newErrors.username = dupUsername
+        ? "This username is already taken."
+        : undefined;
     } else {
       newErrors.username = undefined;
     }
 
-    // Email ซ้ำ
+    // Email duplicate
     if (form.email) {
       const dupEmail = allUsersData.some(
-        (u) => u.Email.trim().toLowerCase() === form.email.trim().toLowerCase()
+        (u) =>
+          u.Email.trim().toLowerCase() === form.email.trim().toLowerCase()
       );
-      newErrors.email = dupEmail ? "Email นี้มีอยู่ในระบบแล้ว" : newErrors.email;
+      newErrors.email = dupEmail
+        ? "This email is already registered."
+        : newErrors.email;
     }
 
     setErrors(newErrors);
@@ -86,16 +96,25 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
   const validate = () => {
     const newErrors: typeof errors = {};
 
-    if (!form.username.trim()) newErrors.username = "กรุณากรอก Username";
-    if (!form.password) newErrors.password = "กรุณากรอก Password";
-    if (!form.firstName.trim()) newErrors.firstName = "กรุณากรอกชื่อ";
-    if (!form.lastName.trim()) newErrors.lastName = "กรุณากรอกนามสกุล";
+    if (!form.username.trim())
+      newErrors.username = "Please enter a username.";
+    if (!form.password) newErrors.password = "Please enter a password.";
+    if (!form.firstName.trim())
+      newErrors.firstName = "Please enter a first name.";
+    if (!form.lastName.trim())
+      newErrors.lastName = "Please enter a last name.";
 
-    if (!form.email.trim()) newErrors.email = "กรุณากรอก Email";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = "รูปแบบอีเมลไม่ถูกต้อง";
+    if (!form.email.trim()) {
+      newErrors.email = "Please enter an email.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      newErrors.email = "Invalid email format.";
+    }
 
-    if (!form.salary) newErrors.salary = "กรุณากรอกเงินเดือน";
-    else if (isNaN(Number(form.salary))) newErrors.salary = "Salary ต้องเป็นตัวเลข";
+    if (!form.salary) {
+      newErrors.salary = "Please enter a salary.";
+    } else if (isNaN(Number(form.salary))) {
+      newErrors.salary = "Salary must be a number.";
+    }
 
     setErrors((prev) => ({ ...prev, ...newErrors }));
     return Object.values(newErrors).every((v) => v === undefined);
@@ -103,7 +122,7 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
 
   const handleSubmit = () => {
     if (!validate()) return;
-    // ถ้ามี error แบบ realtime (dup) ให้หยุดไว้ก่อน
+    // Stop if realtime duplicate errors exist
     if (errors.username || errors.email) return;
 
     const payload: CreateEmployeeInput = {
@@ -146,29 +165,42 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
       aria-modal="true"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
       {/* Dialog */}
       <div className="relative w-full max-w-[640px] mx-4 md:mx-auto mb-8 md:mb-0">
-        {/* กล่อง modal: header (fixed) + body (scroll) + footer (fixed) */}
+        {/* Modal card: header + scrollable body + footer */}
         <div
           className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col"
           style={{ maxHeight: isMobile ? "78vh" : "85vh" }}
         >
           {/* Header */}
           <div
-            className="px-5 pt-3 pb-4 bg-blue-600 text-white flex justify-between items-center"
+            className="px-5 pt-3 pb-4 bg-gradient-to-r from-blue-600 to-sky-500 text-white flex justify-between items-center"
             style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}
           >
-            <div className="flex items-center gap-2">
-              <FaUserPlus className="opacity-90" />
-              <h2 className="text-base md:text-lg font-semibold">สร้างพนักงานใหม่</h2>
+            <div className="flex items-center gap-3">
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/20">
+                <FaUserPlus className="opacity-90" />
+              </div>
+              <div>
+                <h2 className="text-base md:text-lg font-semibold">
+                  Create employee
+                </h2>
+                <p className="text-[11px] text-blue-100">
+                  Fill in employee account information.
+                </p>
+              </div>
             </div>
             <button
               onClick={onClose}
               className="p-2 -m-2 rounded-lg hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              aria-label="ปิดหน้าต่าง"
-              title="ปิด"
+              aria-label="Close dialog"
+              title="Close"
             >
               <FaTimes />
             </button>
@@ -177,7 +209,11 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
           {/* Body (scroll area) */}
           <div
             className="px-5 py-5 bg-blue-50/40"
-            style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", maxHeight: "100%" }}
+            style={{
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              maxHeight: "100%",
+            }}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Username */}
@@ -195,10 +231,16 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
                     className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent"
                     placeholder="Username"
                     value={form.username}
-                    onChange={(e) => handleChange("username", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("username", e.target.value)
+                    }
                   />
                 </div>
-                {errors.username && <span className="text-xs text-red-500">{errors.username}</span>}
+                {errors.username && (
+                  <span className="text-xs text-red-500">
+                    {errors.username}
+                  </span>
+                )}
               </label>
 
               {/* Password */}
@@ -217,10 +259,16 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
                     className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent"
                     placeholder="Password"
                     value={form.password}
-                    onChange={(e) => handleChange("password", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("password", e.target.value)
+                    }
                   />
                 </div>
-                {errors.password && <span className="text-xs text-red-500">{errors.password}</span>}
+                {errors.password && (
+                  <span className="text-xs text-red-500">
+                    {errors.password}
+                  </span>
+                )}
               </label>
 
               {/* First Name */}
@@ -230,11 +278,17 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
                   className={`w-full px-3 py-2.5 rounded-xl bg-white border ${
                     errors.firstName ? "border-red-400" : "border-slate-200"
                   } focus:outline-none focus:ring-2 focus:ring-blue-500/50`}
-                  placeholder="First Name"
+                  placeholder="First name"
                   value={form.firstName}
-                  onChange={(e) => handleChange("firstName", e.target.value)}
+                  onChange={(e) =>
+                    handleChange("firstName", e.target.value)
+                  }
                 />
-                {errors.firstName && <span className="text-xs text-red-500">{errors.firstName}</span>}
+                {errors.firstName && (
+                  <span className="text-xs text-red-500">
+                    {errors.firstName}
+                  </span>
+                )}
               </label>
 
               {/* Last Name */}
@@ -244,11 +298,17 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
                   className={`w-full px-3 py-2.5 rounded-xl bg-white border ${
                     errors.lastName ? "border-red-400" : "border-slate-200"
                   } focus:outline-none focus:ring-2 focus:ring-blue-500/50`}
-                  placeholder="Last Name"
+                  placeholder="Last name"
                   value={form.lastName}
-                  onChange={(e) => handleChange("lastName", e.target.value)}
+                  onChange={(e) =>
+                    handleChange("lastName", e.target.value)
+                  }
                 />
-                {errors.lastName && <span className="text-xs text-red-500">{errors.lastName}</span>}
+                {errors.lastName && (
+                  <span className="text-xs text-red-500">
+                    {errors.lastName}
+                  </span>
+                )}
               </label>
 
               {/* Email */}
@@ -267,10 +327,16 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
                     className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent"
                     placeholder="Email"
                     value={form.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("email", e.target.value)
+                    }
                   />
                 </div>
-                {errors.email && <span className="text-xs text-red-500">{errors.email}</span>}
+                {errors.email && (
+                  <span className="text-xs text-red-500">
+                    {errors.email}
+                  </span>
+                )}
               </label>
 
               {/* Salary */}
@@ -290,22 +356,33 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
                     className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent"
                     placeholder="0"
                     value={form.salary}
-                    onChange={(e) => handleChange("salary", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("salary", e.target.value)
+                    }
                   />
                 </div>
-                {errors.salary && <span className="text-xs text-red-500">{errors.salary}</span>}
+                {errors.salary && (
+                  <span className="text-xs text-red-500">
+                    {errors.salary}
+                  </span>
+                )}
               </label>
 
               {/* Role */}
               {userRoles?.length > 0 && (
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="text-xs text-slate-700">บทบาท (Role)</span>
+                  <span className="text-xs text-slate-700">Role</span>
                   <Select
                     className="ev-select w-full"
                     popupClassName="ev-select-dropdown"
-                    placeholder="เลือกบทบาท"
+                    placeholder="Select role"
                     value={form.userRoleID}
-                    onChange={(val) => setForm((p) => ({ ...p, userRoleID: val as number }))}
+                    onChange={(val) =>
+                      setForm((p) => ({
+                        ...p,
+                        userRoleID: val as number,
+                      }))
+                    }
                     options={userRoles.map((r) => ({
                       label: r.RoleName,
                       value: r.ID,
@@ -322,22 +399,24 @@ const CreateAdminModal: React.FC<CreateEmployeeModalProps> = ({
           <div className="px-5 py-4 bg-white border-t border-blue-100 flex gap-2 justify-end">
             <button
               onClick={onClose}
-              className="px-4 h-10 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200"
+              className="px-4 h-10 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors active:scale-[0.99]"
             >
-              ยกเลิก
+              Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className={`px-4 h-10 rounded-xl text-white shadow-sm ${
-                canSubmit ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300 cursor-not-allowed"
+              className={`px-4 h-10 rounded-xl text-white text-sm font-semibold shadow-sm transition-colors active:scale-[0.99] ${
+                canSubmit
+                  ? "bg-blue-600 hover:bg-blue-700"
+                  : "bg-blue-300 cursor-not-allowed"
               }`}
             >
-              สร้าง
+              Create
             </button>
           </div>
 
-          {/* safe-area ล่างสำหรับมือถือ */}
+          {/* Safe-area bottom for mobile */}
           <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
         </div>
       </div>

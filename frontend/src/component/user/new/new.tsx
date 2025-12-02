@@ -90,7 +90,7 @@ const New = () => {
           {/* Empty */}
           {!loading && newsList.length === 0 && (
             <div className="py-12 text-center text-sm text-gray-500">
-              ยังไม่มีข่าวสารในขณะนี้
+              There is no news at this time
             </div>
           )}
 
@@ -164,8 +164,8 @@ const New = () => {
               {newsList.length > PAGE_SIZE && (
                 <div className="mt-8 flex flex-col items-center gap-3">
                   <div className="text-xs text-gray-500">
-                    แสดง {Math.min((page - 1) * PAGE_SIZE + 1, newsList.length)}–
-                    {Math.min(page * PAGE_SIZE, newsList.length)} จาก {newsList.length} รายการ
+                    Show {Math.min((page - 1) * PAGE_SIZE + 1, newsList.length)}–
+                    {Math.min(page * PAGE_SIZE, newsList.length)} from {newsList.length} entries
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -179,7 +179,7 @@ const New = () => {
                           : "border-blue-200 text-blue-700 hover:bg-blue-50"
                       }`}
                     >
-                      ก่อนหน้า
+                      Previous
                     </button>
 
                     {/* page numbers */}
@@ -214,7 +214,7 @@ const New = () => {
                           : "border-blue-200 text-blue-700 hover:bg-blue-50"
                       }`}
                     >
-                      ถัดไป
+                      Next
                     </button>
                   </div>
                 </div>

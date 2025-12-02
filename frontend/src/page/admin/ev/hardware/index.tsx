@@ -1,13 +1,24 @@
+// src/pages/admin/ev/HardwareModal.tsx
+
 import React, { useEffect, useMemo, useState } from "react";
-import { Button, Input, message, Space, Table, Tag, Tooltip, Typography } from "antd";
+import {
+  Button,
+  Input,
+  message,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
-  CloseOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
+import { FaMicrochip, FaTimes } from "react-icons/fa";
 
 import {
   ListHardwares,
@@ -52,7 +63,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
       setHardwares(data ?? []);
     } catch (err) {
       console.error(err);
-      message.error("ไม่สามารถโหลดข้อมูล Hardware ได้");
+      message.error("Unable to load hardware data.");
     } finally {
       setLoading(false);
     }
@@ -78,15 +89,15 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
 
   const validate = () => {
     if (!name.trim()) {
-      message.error("กรุณากรอกชื่อ Hardware");
+      message.error("Please enter hardware name.");
       return false;
     }
     if (!hardwarePoint.trim()) {
-      message.error("กรุณากรอก HardwarePoint");
+      message.error("Please enter hardware point.");
       return false;
     }
     if (!urlWebsocket.trim()) {
-      message.error("กรุณากรอก WebSocket URL");
+      message.error("Please enter WebSocket URL.");
       return false;
     }
     return true;
@@ -104,11 +115,11 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
         };
         const updated = await UpdateHardwareByID(editing.ID, payload);
         if (updated) {
-          message.success("แก้ไข Hardware สำเร็จ");
+          message.success("Hardware updated successfully.");
           await loadHardwares();
           resetForm();
         } else {
-          message.error("ไม่สามารถแก้ไข Hardware ได้");
+          message.error("Failed to update hardware.");
         }
       } else {
         const payload = {
@@ -118,16 +129,16 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
         };
         const created = await CreateHardware(payload);
         if (created) {
-          message.success("สร้าง Hardware สำเร็จ");
+          message.success("Hardware created successfully.");
           await loadHardwares();
           resetForm();
         } else {
-          message.error("ไม่สามารถสร้าง Hardware ได้");
+          message.error("Failed to create hardware.");
         }
       }
     } catch (err) {
       console.error(err);
-      message.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      message.error("An error occurred while saving data.");
     } finally {
       setSubmitting(false);
     }
@@ -146,17 +157,17 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
     try {
       const ok = await DeleteHardwareByID(id);
       if (ok) {
-        message.success("ลบ Hardware สำเร็จ");
+        message.success("Hardware deleted successfully.");
         await loadHardwares();
         if (editing?.ID === id) {
           resetForm();
         }
       } else {
-        message.error("ไม่สามารถลบ Hardware ได้");
+        message.error("Failed to delete hardware.");
       }
     } catch (err) {
       console.error(err);
-      message.error("เกิดข้อผิดพลาดในการลบ Hardware");
+      message.error("An error occurred while deleting hardware.");
     } finally {
       setDeletingId(null);
     }
@@ -173,7 +184,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
       ),
     },
     {
-      title: "HardwarePoint",
+      title: "Hardware point",
       dataIndex: "HardwarePoint",
       key: "hardwarePoint",
       width: 160,
@@ -192,7 +203,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
         <Tooltip title={v}>
           <Paragraph
             className="!mb-0 text-xs text-slate-600"
-            copyable={{ tooltips: ["คัดลอก", "คัดลอกแล้ว"] }}
+            copyable={{ tooltips: ["Copy", "Copied"] }}
             ellipsis={{ rows: 2 }}
           >
             {v}
@@ -228,14 +239,17 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
 
   if (!open) return null;
 
-  // ตรวจ mobile แบบง่าย ๆ
-  const isMobile =
-    typeof window !== "undefined" &&
-    window.matchMedia("(max-width: 768px)").matches;
+  const isMobile = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? window.matchMedia("(max-width: 768px)").matches
+        : false,
+    []
+  );
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-center justify-center ev-scope"
       role="dialog"
       aria-modal="true"
     >
@@ -243,6 +257,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={submitting ? undefined : onClose}
+        aria-hidden="true"
       />
 
       {/* Modal Container */}
@@ -253,26 +268,30 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
         >
           {/* Header */}
           <div
-            className="px-6 pt-4 pb-4 bg-blue-600 text-white flex justify-between items-center"
-            // paddingTop ลดลงนิดหน่อยแต่ยังรองรับ notch
+            className="px-6 pt-4 pb-4 bg-gradient-to-r from-blue-600 to-sky-500 text-white flex justify-between items-center"
             style={{ paddingTop: "calc(env(safe-area-inset-top) + 6px)" }}
           >
-            <div>
-              <h2 className="text-base md:text-lg font-semibold">
-                Hardware Management
-              </h2>
-              <p className="text-xs md:text-[13px] text-blue-100 mt-1">
-                จัดการอุปกรณ์ Hardware ที่เชื่อมต่อกับระบบ EV / Sensor ทั้งหมดได้จากที่นี่
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/20">
+                <FaMicrochip className="opacity-90" />
+              </div>
+              <div>
+                <h2 className="text-base md:text-lg font-semibold">
+                  Hardware Management
+                </h2>
+                <p className="text-xs md:text-[13px] text-blue-100 mt-1">
+                  Manage all hardware endpoints used by EV cabinets and sensors.
+                </p>
+              </div>
             </div>
             <button
               onClick={onClose}
               disabled={submitting}
-              title="ปิด"
-              aria-label="ปิด"
-              className="p-2 rounded-xl hover:bg-white/10 disabled:opacity-50 leading-none inline-flex items-center justify-center"
+              title="Close"
+              aria-label="Close"
+              className="p-2 -m-2 rounded-xl hover:bg-white/10 disabled:opacity-50 leading-none inline-flex items-center justify-center"
             >
-              <CloseOutlined style={{ fontSize: 18 }} />
+              <FaTimes />
             </button>
           </div>
 
@@ -290,7 +309,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
                 allowClear
                 size="large"
                 prefix={<SearchOutlined />}
-                placeholder="ค้นหา: Name / HardwarePoint / WebSocket URL"
+                placeholder="Search: Name / Hardware point / WebSocket URL"
                 className="max-w-xl bg-white rounded-2xl shadow-sm"
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
@@ -298,7 +317,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
               <div className="flex items-center gap-2 justify-end">
                 {editing && (
                   <span className="text-xs text-slate-500 mr-2 hidden md:inline">
-                    แก้ไข:{" "}
+                    Editing:{" "}
                     <span className="font-semibold text-blue-700">
                       {editing.Name}
                     </span>
@@ -309,7 +328,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
                   onClick={resetForm}
                   className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50 rounded-xl"
                 >
-                  New Hardware
+                  New hardware
                 </Button>
               </div>
             </div>
@@ -320,10 +339,10 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
               <div className="md:col-span-3 bg-white rounded-2xl shadow-sm border border-blue-100 p-4 flex flex-col min-h-[260px]">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-semibold text-slate-800">
-                    Hardware List
+                    Hardware list
                   </h3>
                   <span className="text-[11px] text-slate-400">
-                    ทั้งหมด {hardwares.length} รายการ
+                    Total {hardwares.length} items
                   </span>
                 </div>
                 <Table<HardwareInterface>
@@ -346,25 +365,28 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
               <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-blue-100 p-4 flex flex-col gap-3">
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-sm font-semibold text-slate-800">
-                    {editing ? "Edit Hardware" : "Create Hardware"}
+                    {editing ? "Edit hardware" : "Create hardware"}
                   </h3>
                   {editing && (
-                    <Tag color="blue" className="text-[11px] px-2 py-1 rounded-lg">
+                    <Tag
+                      color="blue"
+                      className="text-[11px] px-2 py-1 rounded-lg"
+                    >
                       Editing ID: {editing.ID}
                     </Tag>
                   )}
                 </div>
 
                 <p className="text-[11px] text-slate-400 mb-1">
-                  กำหนดชื่อ Hardware, จุดระบุอุปกรณ์ (HardwarePoint) และ WebSocket URL
-                  ที่ใช้เชื่อมต่อกับ backend
+                  Define a readable name, a unique hardware point, and the
+                  WebSocket URL used to connect this hardware to the backend.
                 </p>
 
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-slate-600">Name</span>
                   <input
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
-                    placeholder="เช่น Solar Hardware #1"
+                    placeholder="e.g. Solar Hardware #1"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -372,14 +394,16 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
 
                 <label className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-600">HardwarePoint</span>
+                    <span className="text-xs text-slate-600">
+                      Hardware point
+                    </span>
                     <span className="text-[10px] text-slate-400">
-                      ใช้เป็น key จากอุปกรณ์ เช่น <b>hardware_001</b>
+                      Used as a key from device, e.g. <b>hardware_001</b>
                     </span>
                   </div>
                   <input
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
-                    placeholder="เช่น hardware_001"
+                    placeholder="e.g. hardware_001"
                     value={hardwarePoint}
                     onChange={(e) => setHardwarePoint(e.target.value)}
                   />
@@ -387,15 +411,17 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
 
                 <label className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-600">WebSocket URL</span>
+                    <span className="text-xs text-slate-600">
+                      WebSocket URL
+                    </span>
                     <span className="text-[10px] text-slate-400">
-                      ตัวอย่าง: <b>wss://api.myserver.com/hardware/</b>
+                      Example: <b>wss://api.myserver.com/hardware/</b>
                     </span>
                   </div>
                   <textarea
                     rows={3}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs md:text-sm resize-none"
-                    placeholder="เช่น wss://example.com/hardware/"
+                    placeholder="e.g. wss://example.com/hardware/"
                     value={urlWebsocket}
                     onChange={(e) => setUrlWebsocket(e.target.value)}
                   />
@@ -407,7 +433,7 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
                     disabled={submitting}
                     className="border-blue-200 text-blue-700 bg-white hover:bg-blue-50 rounded-xl"
                   >
-                    เคลียร์
+                    Clear
                   </Button>
                   <Button
                     type="primary"
@@ -415,20 +441,21 @@ const HardwareModal: React.FC<HardwareModalProps> = ({ open, onClose }) => {
                     loading={submitting}
                     className="bg-blue-600 rounded-xl"
                   >
-                    {editing ? "บันทึกการแก้ไข" : "สร้าง Hardware"}
+                    {editing ? "Save changes" : "Create hardware"}
                   </Button>
                 </div>
               </div>
             </div>
 
             <p className="text-[11px] text-slate-400 text-center mt-1">
-              จัดการ Hardware ได้อย่างสะดวก • โทนฟ้าสบายตา • รองรับทั้งหน้าจอเล็กและใหญ่
+              Centralize all hardware connections for your EV and sensor
+              network in one place.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Scoped styles สำหรับ table ภายใน modal นี้ */}
+      {/* Scoped styles for table & select inside this modal */}
       <style>{`
         .hardware-table .ant-table-thead > tr > th {
           background: #f9fbff !important;

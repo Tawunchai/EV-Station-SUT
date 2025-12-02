@@ -33,23 +33,27 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
   const [userRoleID, setUserRoleID] = useState<number | undefined>(undefined);
   const [password, setPassword] = useState<string>("");
   const [editPassword, setEditPassword] = useState<boolean>(false);
-  const [showPassword, setShowPassword] = useState<boolean>(false); // ✅ toggle ดู/ซ่อนรหัส
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
   useEffect(() => {
-    if (employee) {
+    if (employee && open) {
       const s =
         typeof employee.Salary === "number"
           ? String(employee.Salary)
           : employee.Salary ?? "";
       setSalary(s);
-      setUserRoleID(employee?.UserRole?.ID ?? employee?.UserRoleID ?? undefined);
+      setUserRoleID(
+        employee?.UserRole?.ID ?? employee?.UserRoleID ?? undefined
+      );
       setPassword("");
       setEditPassword(false);
       setShowPassword(false);
     }
-  }, [employee]);
+  }, [employee, open]);
 
   const handleSubmit = async () => {
+    if (!employee) return;
+
     const payload: Partial<Pick<EmployeeInterface, "Salary">> & {
       userRoleID?: number;
       password?: string;
@@ -58,7 +62,7 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
     if (salary !== "") {
       const num = Number(salary);
       if (!Number.isFinite(num)) {
-        message.error("กรุณากรอก Salary เป็นตัวเลข");
+        message.error("Please enter Salary as a valid number.");
         return;
       }
       payload.Salary = num;
@@ -68,18 +72,17 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
       payload.userRoleID = userRoleID;
     }
 
-    // ✅ เพิ่ม password ถ้าอยู่ในโหมดแก้ไข
     if (editPassword && password.trim() !== "") {
       payload.password = password.trim();
     }
 
     const ok = await UpdateAdminByID(employee.EmployeeID, payload);
     if (ok) {
-      message.success("อัปเดตข้อมูลสำเร็จ");
+      message.success("Employee information updated successfully.");
       onSaved();
       onClose();
     } else {
-      message.error("ไม่สามารถอัปเดตข้อมูลได้");
+      message.error("Failed to update employee information.");
     }
   };
 
@@ -99,22 +102,29 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
       />
 
       {/* Modal */}
-      <div className="relative w-full md:max-w-[520px] mx-auto">
-        <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100">
+      <div className="relative w-full max-w-[520px] md:mx-auto md:mb-0">
+        <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col">
           {/* Header */}
-          <div className="px-5 pt-3 pb-4 md:pt-4 md:pb-4 bg-blue-600 text-white">
+          <div className="px-5 pt-3 pb-4 md:pt-4 md:pb-4 bg-gradient-to-r from-blue-600 to-sky-500 text-white">
             <div className="mx-auto w-10 h-1.5 md:hidden rounded-full bg-white/60 mb-3" />
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FaEdit className="opacity-90" />
-                <h2 className="text-base md:text-lg font-semibold">
-                  แก้ไขข้อมูลพนักงาน
-                </h2>
+              <div className="flex items-center gap-3">
+                <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/20">
+                  <FaEdit className="opacity-90" />
+                </div>
+                <div>
+                  <h2 className="text-base md:text-lg font-semibold">
+                    Edit employee
+                  </h2>
+                  <p className="text-[11px] text-blue-100">
+                    Adjust salary, role, and password.
+                  </p>
+                </div>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 -m-2 rounded-lg hover:bg-white/10"
-                aria-label="ปิดหน้าต่าง"
+                className="p-2 -m-2 rounded-lg hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                aria-label="Close dialog"
               >
                 <FaTimes />
               </button>
@@ -145,19 +155,20 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
 
               {/* Role */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-700">บทบาท (Role)</span>
+                <span className="text-xs text-slate-700 flex items-center gap-2">
+                  <FaUserTag className="text-blue-500" /> Role
+                </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-blue-500">
-                    <FaUserTag />
-                  </span>
                   <Select
                     className="ev-select w-full"
                     popupClassName="ev-select-dropdown"
-                    placeholder="เลือกบทบาท"
+                    placeholder="Select role"
                     size="large"
                     allowClear
                     value={userRoleID}
-                    onChange={(val) => setUserRoleID(val as number | undefined)}
+                    onChange={(val) =>
+                      setUserRoleID(val as number | undefined)
+                    }
                     options={userRoles.map((r) => ({
                       label: r.RoleName,
                       value: r.ID,
@@ -168,17 +179,22 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
 
               {/* Password Section */}
               <div className="flex flex-col gap-1 mt-2">
-                <span className="text-xs text-slate-700">รหัสผ่าน (Password)</span>
+                <span className="text-xs text-slate-700 flex items-center gap-2">
+                  {editPassword ? (
+                    <FaUnlockAlt className="text-blue-500" />
+                  ) : (
+                    <FaLock className="text-blue-500" />
+                  )}
+                  Password
+                </span>
                 <div className="flex items-center gap-2 w-full">
-                  <span className="text-blue-500">
-                    {editPassword ? <FaUnlockAlt /> : <FaLock />}
-                  </span>
-
                   <div className="relative flex-1">
                     <input
                       type={showPassword ? "text" : "password"}
                       placeholder={
-                        editPassword ? "กรอกรหัสผ่านใหม่" : "รหัสผ่านถูกซ่อน"
+                        editPassword
+                          ? "Enter a new password"
+                          : "Password is hidden"
                       }
                       className={`w-full px-3 py-2.5 pr-10 rounded-xl border bg-white border-slate-200 outline-none transition-all ${
                         editPassword
@@ -190,11 +206,13 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
                       disabled={!editPassword}
                     />
 
-                    {/* ✅ ดวงตา toggle */}
+                    {/* Password visibility toggle */}
                     {editPassword && (
                       <button
                         type="button"
-                        onClick={() => setShowPassword(!showPassword)}
+                        onClick={() =>
+                          setShowPassword((prev) => !prev)
+                        }
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 hover:text-blue-700 transition"
                       >
                         {showPassword ? <FaEyeSlash /> : <FaEye />}
@@ -215,7 +233,7 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
-                    {editPassword ? "ยกเลิก" : "แก้ไข"}
+                    {editPassword ? "Cancel" : "Edit"}
                   </button>
                 </div>
               </div>
@@ -226,20 +244,21 @@ const EditAdminModal: React.FC<EditAdminModalProps> = ({
           <div className="px-5 py-4 bg-white border-t border-slate-100 flex gap-2 justify-end">
             <button
               onClick={onClose}
-              className="px-4 h-10 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              className="px-4 h-10 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors active:scale-[0.99]"
             >
-              ยกเลิก
+              Cancel
             </button>
             <button
               onClick={handleSubmit}
-              className="px-4 h-10 rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
+              className="px-4 h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm transition-colors active:scale-[0.99]"
             >
-              บันทึก
+              Save
             </button>
           </div>
         </div>
       </div>
 
+      {/* Safe area for mobile */}
       <div className="h-[env(safe-area-inset-bottom)]" />
 
       {/* Scoped CSS */}

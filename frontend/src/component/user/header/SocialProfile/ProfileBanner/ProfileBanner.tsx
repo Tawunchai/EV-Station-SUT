@@ -19,7 +19,7 @@ const ProfileBanner: React.FC = () => {
 
       const userID = current?.id;
       if (!userID) {
-        console.warn("⚠️ ไม่พบ userID ในข้อมูลผู้ใช้");
+        console.warn("No user ID found in user data");
         return;
       }
 
@@ -48,7 +48,7 @@ const ProfileBanner: React.FC = () => {
   if (!userData)
     return (
       <div className="text-center text-gray-500 py-12">
-        ไม่พบข้อมูลผู้ใช้
+        User information not found
       </div>
     );
 

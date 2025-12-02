@@ -37,7 +37,7 @@ const FooterFormal: React.FC = () => {
         <div className="flex flex-col items-start space-y-2">
           {loading ? (
             <p className="text-sm text-gray-400 animate-pulse">
-              กำลังโหลดข้อมูล...
+              Loading data...
             </p>
           ) : (
             <p className="text-sm text-gray-600 max-w-xs leading-relaxed whitespace-pre-line">

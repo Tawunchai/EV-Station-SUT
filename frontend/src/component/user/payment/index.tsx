@@ -117,7 +117,7 @@ const Index: React.FC = () => {
 
         const userID = current?.id;
         if (!userID) {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           navigate("/login");
           return;
         }
@@ -139,7 +139,7 @@ const Index: React.FC = () => {
         }
       } catch (err) {
         console.error("Error loading payment data:", err);
-        message.error("โหลดข้อมูลล้มเหลว");
+        message.error("Data loading failed");
       } finally {
         setIsLoadingMethod(false);
       }
@@ -226,7 +226,7 @@ const Index: React.FC = () => {
     // =============== QR Payment ===============
     if (paymentMethod === "qr") {
       if (!selectedMethod?.ID)
-        return message.error("ไม่พบ Method สำหรับ QR");
+        return message.error("No Method found for QR");
 
       navigate("/user/payment-by-qrcode", {
         state: {
@@ -241,10 +241,10 @@ const Index: React.FC = () => {
     }
 
     // =============== Coin Payment ===============
-    if (!coinMethod?.ID) return message.error("ไม่พบ Method สำหรับ Coin");
+    if (!coinMethod?.ID) return message.error("No Method found for Coin");
 
     if ((user.Coin || 0) < totalAmount) {
-      return message.error("จำนวน Coin ของคุณไม่เพียงพอ กรุณาเติม Coin ก่อน");
+      return message.error("Insufficient Coins");
     }
 
     try {
@@ -256,10 +256,10 @@ const Index: React.FC = () => {
 
       if (!result) {
         setIsProcessing(false);
-        return message.error("การหัก Coin ล้มเหลว");
+        return message.error("Coin deduction failed");
       }
 
-      message.success("ชำระเงินด้วย Coin สำเร็จแล้ว");
+      message.success("Coin payment successful");
 
       // ⭐ สร้างข้อมูล Payment (แก้ ev_cabinet_id ให้เป็น number | undefined)
       const paymentData = {
@@ -276,7 +276,7 @@ const Index: React.FC = () => {
 
       if (!paymentResult || !paymentResult.ID) {
         setIsProcessing(false);
-        return message.error("สร้าง Payment ล้มเหลว");
+        return message.error("Payment creation failed");
       }
 
       // ผูก EVChargingPayment
@@ -334,7 +334,7 @@ const Index: React.FC = () => {
       setIsProcessing(false);
     } catch (err) {
       console.error(err);
-      message.error("เกิดข้อผิดพลาดระหว่างชำระเงิน");
+      message.error("An error occurred during payment");
       setIsProcessing(false);
     }
   };

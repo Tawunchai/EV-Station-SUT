@@ -315,9 +315,8 @@ const Index: React.FC = () => {
               min={minAmount}
               value={money}
               onChange={(e) => handleMoneyChange(Number(e.target.value) || 0)}
-              className={`h-9 w-full rounded-lg border ${
-                errorMsg ? "border-red-400" : "border-blue-200/40"
-              } bg-white/70 text-gray-700`}
+              className={`h-9 w-full rounded-lg border ${errorMsg ? "border-red-400" : "border-blue-200/40"
+                } bg-white/70 text-gray-700`}
             />
             <span className="absolute right-3 top-1.5 text-[#0A84FF]">฿</span>
           </div>
@@ -360,10 +359,9 @@ const Index: React.FC = () => {
                     }}
                     disabled={isCharging}
                     className={`w-full text-left rounded-2xl border px-3 py-2 transition 
-                      ${
-                        isCharging
-                          ? "border-orange-300 bg-orange-50 ring-1 ring-orange-200"
-                          : isActive
+                      ${isCharging
+                        ? "border-orange-300 bg-orange-50 ring-1 ring-orange-200"
+                        : isActive
                           ? "border-blue-300 bg-blue-50 ring-1 ring-blue-100"
                           : "border-gray-200 bg-white hover:bg-gray-50"
                       }`}
@@ -383,10 +381,9 @@ const Index: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <span
                             className={`h-2 w-2 rounded-full 
-                              ${
-                                isCharging
-                                  ? "bg-orange-500"
-                                  : isActive
+                              ${isCharging
+                                ? "bg-orange-500"
+                                : isActive
                                   ? "bg-blue-600"
                                   : "bg-gray-300"
                               }`}
@@ -525,11 +522,10 @@ const Index: React.FC = () => {
           <button
             onClick={handleNext}
             disabled={evChargers.length === 0 || money < minAmount}
-            className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${
-              evChargers.length === 0 || money < minAmount
+            className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${evChargers.length === 0 || money < minAmount
                 ? "bg-blue-300"
                 : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
-            }`}
+              }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />
             <span className="text-sm font-semibold">
@@ -539,32 +535,36 @@ const Index: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal */}
       <Modal
-        open={showCarModal}
-        footer={null}
-        onCancel={() => setShowCarModal(false)}
-        centered
-      >
-        <div className="text-4xl mb-3">🚗</div>
-        <h3 className="text-lg font-semibold text-blue-700 mb-2">
-          ไม่พบข้อมูลรถของคุณ
-        </h3>
-        <p className="text-gray-600 mb-5">
-          ก่อนทำการชำระเงิน กรุณาเพิ่มข้อมูลรถของคุณ
-        </p>
+  open={showCarModal}
+  footer={null}
+  onCancel={() => setShowCarModal(false)}
+  centered
+>
+  <div className="flex flex-col items-center text-center mt-2 mb-1">
+    <div className="text-4xl mb-3">🚗</div>
 
-        <div className="flex justify-center gap-3">
-          <Button onClick={() => setShowCarModal(false)}>ยกเลิก</Button>
-          <Button
-            type="primary"
-            onClick={() => navigate("/user/add-cars")}
-            className="bg-blue-600"
-          >
-            ไปเพิ่มข้อมูลรถ
-          </Button>
-        </div>
-      </Modal>
+    <h3 className="text-lg font-semibold text-blue-700 mb-1">
+      No car information found
+    </h3>
+
+    <p className="text-gray-600 mb-5">
+      Before making a payment, please add your car information.
+    </p>
+
+    <div className="flex justify-center gap-3">
+      <Button onClick={() => setShowCarModal(false)}>Cancel</Button>
+      <Button
+        type="primary"
+        onClick={() => navigate("/user/add-cars")}
+        className="bg-blue-600"
+      >
+        Go to add car
+      </Button>
+    </div>
+  </div>
+</Modal>
+
     </div>
   );
 };

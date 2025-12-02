@@ -186,7 +186,7 @@ func main() {
 		public.POST("/create-report", report.CreateReport)
 		public.PUT("/update-reports/:id", report.UpdateReport)
 		public.DELETE("/delete-report/:id", report.DeleteReportByID)
-		public.GET("/report/:id", report.GetReportByID)
+		public.GET("/report/:id", report.GetReportByUserID)
 
 		//calendar
 		public.GET("/calendars", calendar.ListCalendar)

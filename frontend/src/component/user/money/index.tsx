@@ -51,7 +51,7 @@ const AddMoneyCoin: React.FC = () => {
 
         const uid = current?.id;
         if (!uid) {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           navigate("/login");
           return;
         }
@@ -61,7 +61,7 @@ const AddMoneyCoin: React.FC = () => {
         if (user) setUserCoin(user.Coin ?? 0);
       } catch (error) {
         console.error("Error loading user:", error);
-        message.error("โหลดข้อมูลผู้ใช้ล้มเหลว");
+        message.error("Failed to load user data");
       }
     };
     loadUser();
@@ -82,7 +82,7 @@ const AddMoneyCoin: React.FC = () => {
           setManagerName(bank.Manager);
         }
       } catch {
-        message.error("ไม่สามารถโหลดข้อมูลธนาคารได้");
+        message.error("Unable to load bank information");
       }
     };
     fetchBank();
@@ -111,12 +111,12 @@ const AddMoneyCoin: React.FC = () => {
   // ✅ ส่งหลักฐานการชำระเงิน
   const handleSubmit = async () => {
     if (!userID) {
-      message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+      message.error("User information not found. Please log in again");
       return;
     }
 
     if (!uploadedFile || coinAmount <= 0) {
-      message.warning("กรุณาใส่จำนวนเงินและอัปโหลดสลิปก่อน");
+      message.warning("Please enter the amount and upload the slip first");
       return;
     }
 
@@ -128,7 +128,7 @@ const AddMoneyCoin: React.FC = () => {
       console.log("🔹 uploadSlipOK result:", result);
 
       if (!result || !result.data?.ref) {
-        message.warning("ไม่สามารถอ่านข้อมูลจากสลิปได้");
+        message.warning("Unable to read data from slip");
         setLoading(false);
         return;
       }
@@ -154,19 +154,19 @@ const AddMoneyCoin: React.FC = () => {
       });
 
       if (receiverBank !== bankCode) {
-        message.warning(`รหัสธนาคารผู้รับ (${receiverBank}) ไม่ตรงกับระบบ (${bankCode})`);
+        message.warning(`Wrong recipient bank`);
         setLoading(false);
         return;
       }
 
       if (receiverName !== manager) {
-        message.warning(`ชื่อผู้รับในสลิป (${receiverName}) ไม่ตรงกับผู้จัดการบัญชี (${manager})`);
+        message.warning(`Recipient mismatch`);
         setLoading(false);
         return;
       }
 
       if (slipAmount !== coinAmount) {
-        message.warning(`จำนวนเงินในสลิป (${slipAmount} บาท) ไม่ตรงกับที่กรอก (${coinAmount} บาท)`);
+        message.warning(`Amounts do not match`);
         setLoading(false);
         return;
       }
@@ -174,7 +174,7 @@ const AddMoneyCoin: React.FC = () => {
       // ✅ ตรวจสอบสลิปซ้ำ
       const existing = await GetDataPaymentByRef(refNumber);
       if (existing && existing.found) {
-        message.warning("สลิปนี้ถูกใช้ไปแล้ว กรุณาอัปโหลดสลิปใหม่");
+        message.warning("Slip already used");
         setLoading(false);
         return;
       }
@@ -190,7 +190,7 @@ const AddMoneyCoin: React.FC = () => {
 
       const paymentResult = await CreatePaymentCoin(paymentCoin);
       if (!paymentResult) {
-        message.error("บันทึกธุรกรรมล้มเหลว");
+        message.error("Transaction recording failed");
         setLoading(false);
         return;
       }
@@ -203,12 +203,12 @@ const AddMoneyCoin: React.FC = () => {
       });
 
       if (!updateResult) {
-        message.error("อัปเดต Coin ล้มเหลว");
+        message.error("Coin update failed");
         setLoading(false);
         return;
       }
 
-      message.success(`เติม Coin สำเร็จ (รวม ${newTotalCoin.toFixed(2)} Coin)`);
+      message.success(`Coin top-up successful (total: ${newTotalCoin.toFixed(2)} Coins)`);
 
       setTimeout(() => {
         setUserCoin(newTotalCoin);
@@ -221,7 +221,7 @@ const AddMoneyCoin: React.FC = () => {
       }, 1000);
     } catch (error) {
       console.error("Error submit:", error);
-      message.error("เกิดข้อผิดพลาดในการส่งหลักฐาน");
+      message.error("An error occurred while submitting evidence");
       setLoading(false);
     }
   };

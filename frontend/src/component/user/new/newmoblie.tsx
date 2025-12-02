@@ -37,7 +37,7 @@ const NewsCarousel = () => {
         px-4 py-5
         mb-8
       "
-      aria-label="ข่าวสารและกิจกรรม"
+      aria-label="News and events"
     >
       {/* Header */}
       <div className="mx-auto max-w-screen-lg flex items-center justify-between">
@@ -136,7 +136,7 @@ const NewsCarousel = () => {
                   <div className="p-3">
                     <p className="text-[12px] leading-5 text-gray-600 line-clamp-2">
                       {item.Description ||
-                        "อัปเดตกิจกรรมและข่าวสารเกี่ยวกับการชาร์จไฟฟ้า EV"}
+                        "Update activities and news about EV charging"}
                     </p>
                   </div>
                 </article>
