@@ -260,18 +260,18 @@ const Employees: React.FC = () => {
       currentEmployeeID &&
       selectedEmployeeRef.current.EmployeeID === currentEmployeeID
     ) {
-      message.warning("ไม่สามารถลบตัวเองได้");
+      message.warning("Cannot delete itself");
       cancelDelete();
       return;
     }
     setConfirmLoading(true);
     const ok = await DeleteAdmin(selectedEmployeeRef.current.EmployeeID);
     if (ok) {
-      message.success("ลบข้อมูลพนักงานสำเร็จ");
+      message.success("Employee deleted successfully");
       await fetchAdmins();
       await fetchAllUsers();
     } else {
-      message.error("เกิดข้อผิดพลาดในการลบ");
+      message.error("An error occurred while deleting.");
     }
     cancelDelete();
   };
@@ -324,12 +324,12 @@ const Employees: React.FC = () => {
   const handleCreated = async (payload: any): Promise<void> => {
     const ok = await createEmployeeByAdmin(payload);
     if (ok) {
-      message.success("สร้างพนักงานใหม่สำเร็จ");
-      setCreateOpen(false);
+      message.success("Successfully created employees");
+      setCreateOpen(false)
       fetchAdmins();
       fetchAllUsers();
     } else {
-      message.error("สร้างพนักงานใหม่ไม่สำเร็จ");
+      message.error("Failed to create a new employee");
     }
   };
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { Checkbox, Input, message } from "antd";
-import { FaCarSide, FaCity, FaTags, FaBolt, FaTimes } from "react-icons/fa";
+import { Checkbox, Input, message, Modal } from "antd";
+import { FaCarSide, FaCity, FaTags, FaBolt } from "react-icons/fa";
+import { X } from "react-feather";
 import { UpdateCarByID, ListCars, ListModals } from "../../../../services";
 import type { CarsInterface } from "../../../../interface/ICar";
 import type { ModalInterface } from "../../../../interface/ICarCatalog";
@@ -385,14 +386,14 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
       if (ok) {
         await message.open({
           type: "success",
-          content: "อัปเดตข้อมูลรถสำเร็จ",
+          content: "Vehicle updated successfully",
           duration: 1.2,
         });
 
         onUpdated({ ...car, ...payload });
         onClose();
       } else {
-        message.error("เกิดข้อผิดพลาดในการอัปเดต");
+        message.error("An error occurred while updating");
       }
     } catch (err) {
       console.error(err);
@@ -405,169 +406,188 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start md:items-center justify-center ev-scope"
-      role="dialog"
-      aria-modal="true"
-      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    <Modal
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      centered
+      destroyOnClose
+      closable={false}
+      width={520}
+      className="ev-scope max-w-full md:max-w-[520px]"
+      bodyStyle={{ padding: 0, background: "transparent" }}
+      styles={{
+        content: {
+          background: "transparent",
+          boxShadow: "none",
+          padding: 0,
+        },
+      }}
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Dialog */}
-      <div className="relative w-full max-w-[520px] mx-4 mt-24 md:mt-0 mb-8 md:mb-0">
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col max-h-[85vh]">
-          {/* Header */}
-          <div className="px-5 pt-3 pb-4 md:pt-4 md:pb-4 bg-blue-600 text-white">
-            <div className="mx-auto w-10 h-1.5 md:hidden rounded-full bg-white/60 mb-3" />
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FaBolt className="opacity-90" />
+      <div className="w-full max-w-[520px] mx-auto rounded-[24px] bg-white shadow-xl ring-1 ring-blue-100 overflow-hidden flex flex-col max-h-[85vh] mt-12 md:mt-0">
+        {/* HEADER */}
+        <div className="relative bg-gradient-to-r from-blue-600 to-sky-500 px-5 pt-3 pb-4 md:pt-4 md:pb-4 text-white">
+          {/* drag bar mobile */}
+          <div className="mx-auto w-10 h-1.5 md:hidden rounded-full bg-white/60 mb-3" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/15">
+                <FaCarSide className="h-4 w-4" />
+              </div>
+              <div>
                 <h2 className="text-base md:text-lg font-semibold">
                   แก้ไขข้อมูลพาหนะ
                 </h2>
-              </div>
-              <button
-                onClick={onClose}
-                className="p-2 -m-2 rounded-lg hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-                aria-label="ปิดหน้าต่าง"
-              >
-                <FaTimes />
-              </button>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="px-5 py-5 bg-blue-50/40 overflow-y-auto">
-            <div className="grid grid-cols-1 gap-4">
-              {/* BRAND */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaCarSide className="text-blue-500" /> ยี่ห้อรถ
-                </span>
-                <EVSelect
-                  value={brand || undefined}
-                  placeholder="เลือกยี่ห้อ"
-                  options={brandOptions.map((b) => ({
-                    label: b,
-                    value: b,
-                  }))}
-                  disabled={brandOptions.length === 0}
-                  onChange={(val) => {
-                    setBrand(val || "");
-                    setModel("");
-                  }}
-                />
-              </label>
-
-              {/* MODEL */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaTags className="text-blue-500" /> รุ่นรถ
-                </span>
-                <EVSelect
-                  value={model || undefined}
-                  placeholder={
-                    brand ? "เลือกรุ่น" : "กรุณาเลือกยี่ห้อก่อน"
-                  }
-                  options={modelOptions.map((m) => ({
-                    label: m,
-                    value: m,
-                  }))}
-                  disabled={!brand || modelOptions.length === 0}
-                  onChange={(val) => setModel(val || "")}
-                />
-              </label>
-
-              {/* LICENSE PLATE */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaTags className="text-blue-500" /> ทะเบียนรถ
-                </span>
-                <Input
-                  className={`mt-1 rounded-xl border p-2.5 outline-none ${
-                    plateError
-                      ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                      : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  }`}
-                  placeholder="เช่น กข 1234 หรือ AB 1234"
-                  value={plate}
-                  onChange={(e) => setPlate(e.target.value)}
-                />
-                {plateError && (
-                  <p className="text-xs text-red-500 mt-1">
-                    {plateError}
-                  </p>
-                )}
-              </label>
-
-              {/* PROVINCE */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaCity className="text-blue-500" /> จังหวัด
-                </span>
-                <EVSelect
-                  value={province || undefined}
-                  placeholder="เลือกจังหวัด"
-                  options={provinces.map((p) => ({
-                    label: p,
-                    value: p,
-                  }))}
-                  disabled={provinces.length === 0}
-                  onChange={(val) => setProvince(val || "")}
-                />
-              </label>
-
-              {/* SPECIAL NUMBER */}
-              <div className="flex items-center gap-2 mt-2">
-                <Checkbox
-                  checked={isSpecialReg}
-                  onChange={(e) => setIsSpecialReg(e.target.checked)}
-                />
-                <span className="text-sm text-gray-700">
-                  ทะเบียนพิเศษ (Special Number)
-                </span>
-              </div>
-
-              {/* OWNER */}
-              <div className="pt-2">
-                <p className="text-xs text-slate-500 text-center">
-                  เจ้าของ: {ownerNames}
+                <p className="text-[11px] text-blue-100">
+                  ปรับปรุงยี่ห้อ รุ่น ทะเบียน และจังหวัดของรถคันนี้
                 </p>
               </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="px-5 py-4 bg-white border-t border-blue-100 flex gap-2 justify-end">
             <button
               onClick={onClose}
-              className="px-4 h-10 rounded-xl border border-blue-200 bg-white text-blue-700 text-sm font-semibold hover:bg-blue-50"
+              aria-label="ปิดหน้าต่าง"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/15 hover:bg-white/25 transition-colors"
             >
-              ยกเลิก
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!canSubmit || submitting}
-              className={`px-4 h-10 rounded-xl text-white text-sm font-semibold shadow-sm ${
-                canSubmit && !submitting
-                  ? "bg-blue-600 hover:bg-blue-700"
-                  : "bg-blue-300 cursor-not-allowed"
-              }`}
-            >
-              {submitting ? "กำลังบันทึก..." : "บันทึก"}
+              <X size={18} />
             </button>
           </div>
-
-          {/* Safe Area (iOS) */}
-          <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
         </div>
+
+        {/* BODY */}
+        <div className="px-5 md:px-6 py-5 bg-slate-50/70 overflow-y-auto flex-1">
+          <div className="mb-3">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+              <FaBolt className="text-amber-400" />
+              ข้อมูลรถของคุณ
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {/* BRAND */}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-600 flex items-center gap-2">
+                <FaCarSide className="text-blue-500" /> ยี่ห้อรถ
+              </span>
+              <EVSelect
+                value={brand || undefined}
+                placeholder="เลือกยี่ห้อ"
+                options={brandOptions.map((b) => ({
+                  label: b,
+                  value: b,
+                }))}
+                disabled={brandOptions.length === 0}
+                onChange={(val) => {
+                  setBrand(val || "");
+                  setModel("");
+                }}
+              />
+            </label>
+
+            {/* MODEL */}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-600 flex items-center gap-2">
+                <FaTags className="text-blue-500" /> รุ่นรถ
+              </span>
+              <EVSelect
+                value={model || undefined}
+                placeholder={brand ? "เลือกรุ่น" : "กรุณาเลือกยี่ห้อก่อน"}
+                options={modelOptions.map((m) => ({
+                  label: m,
+                  value: m,
+                }))}
+                disabled={!brand || modelOptions.length === 0}
+                onChange={(val) => setModel(val || "")}
+              />
+            </label>
+
+            {/* LICENSE PLATE */}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-600 flex items-center gap-2">
+                <FaTags className="text-blue-500" /> ทะเบียนรถ
+              </span>
+              <Input
+                className={`mt-1 rounded-xl border p-2.5 text-sm outline-none ${
+                  plateError
+                    ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                    : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                }`}
+                placeholder="เช่น กข 1234 หรือ AB 1234"
+                value={plate}
+                onChange={(e) => setPlate(e.target.value)}
+              />
+              {plateError && (
+                <p className="text-xs text-red-500 mt-1">
+                  {plateError}
+                </p>
+              )}
+            </label>
+
+            {/* PROVINCE */}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-slate-600 flex items-center gap-2">
+                <FaCity className="text-blue-500" /> จังหวัด
+              </span>
+              <EVSelect
+                value={province || undefined}
+                placeholder="เลือกจังหวัด"
+                options={provinces.map((p) => ({
+                  label: p,
+                  value: p,
+                }))}
+                disabled={provinces.length === 0}
+                onChange={(val) => setProvince(val || "")}
+              />
+            </label>
+
+            {/* SPECIAL NUMBER */}
+            <div className="flex items-center gap-2 mt-2 rounded-xl bg-white px-3 py-2 border border-slate-200">
+              <Checkbox
+                checked={isSpecialReg}
+                onChange={(e) => setIsSpecialReg(e.target.checked)}
+              />
+              <span className="text-sm text-gray-700">
+                ทะเบียนพิเศษ (Special Number)
+              </span>
+            </div>
+
+            {/* OWNER */}
+            <div className="pt-1">
+              <p className="text-[11px] text-slate-500 text-center">
+                เจ้าของ:{" "}
+                <span className="font-medium text-slate-700">
+                  {ownerNames}
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* FOOTER */}
+        <div className="px-5 md:px-6 py-4 bg-white border-t border-slate-200 flex gap-2 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 h-10 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition active:scale-[0.99]"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit || submitting}
+            className={`px-4 h-10 rounded-xl text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] ${
+              canSubmit && !submitting
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-blue-300 cursor-not-allowed"
+            }`}
+          >
+            {submitting ? "กำลังบันทึก..." : "บันทึก"}
+          </button>
+        </div>
+
+        {/* Safe Area (iOS) */}
+        <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
       </div>
-    </div>
+    </Modal>
   );
 };
 

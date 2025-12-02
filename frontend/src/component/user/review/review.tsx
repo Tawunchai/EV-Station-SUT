@@ -1,5 +1,4 @@
 // src/component/user/review/index.tsx
-
 import { useEffect, useMemo, useState } from "react";
 import Slider, { Settings } from "react-slick";
 import Profile from "../../../assets/profile/people1.png";
@@ -25,13 +24,13 @@ const Review: React.FC = () => {
 
         const uid = current?.id;
         if (!uid) {
-          console.warn("⚠️ ไม่พบข้อมูลผู้ใช้ใน cookie");
+          console.warn("User information not found in cookie");
           return;
         }
         setUserID(uid);
       } catch (error) {
         console.error("Error loading user:", error);
-        message.error("โหลดข้อมูลผู้ใช้ล้มเหลว");
+        message.error("Failed to load user data");
       }
     };
     loadUser();
@@ -110,7 +109,7 @@ const Review: React.FC = () => {
   if (isLoading) {
     return (
       <section className="flex h-40 items-center justify-center bg-white">
-        <p className="text-sm text-gray-500">กำลังโหลดรีวิว...</p>
+        <p className="text-sm text-gray-500">Loading reviews...</p>
       </section>
     );
   }
@@ -119,7 +118,7 @@ const Review: React.FC = () => {
   if (!hasReviews) {
     return (
       <section className="flex h-40 items-center justify-center bg-white">
-        <p className="text-sm text-gray-400">ยังไม่มีรีวิวจากผู้ใช้งาน</p>
+        <p className="text-sm text-gray-400">There are no user reviews yet</p>
       </section>
     );
   }

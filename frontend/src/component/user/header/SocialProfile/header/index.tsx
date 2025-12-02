@@ -16,7 +16,7 @@ const Header: React.FC<{ title?: string }> = ({ title = "EV" }) => {
       <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
         <button
           onClick={() => window.history.back()}
-          aria-label="ย้อนกลับ"
+          aria-label="Back"
           className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
         >
           <svg

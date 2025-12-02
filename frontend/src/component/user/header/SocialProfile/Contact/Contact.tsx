@@ -24,7 +24,7 @@ const Contact: React.FC = () => {
 
         const userID = current?.id;
         if (!userID) {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           return;
         }
 
@@ -86,11 +86,11 @@ const Contact: React.FC = () => {
               Web page
             </Text>
             <Link
-              href="https://example.com"
+              href="https://evstation-sut.it.com"
               target="_blank"
               className="text-sm md:text-base"
             >
-              example.com
+              evstation-sut.it.com
             </Link>
           </div>
         </div>

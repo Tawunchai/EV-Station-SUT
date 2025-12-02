@@ -85,7 +85,7 @@ const HistoryPay: React.FC = () => {
 
         const uid = current?.id;
         if (!uid) {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           navigate("/login");
           return;
         }
@@ -102,7 +102,7 @@ const HistoryPay: React.FC = () => {
         }
       } catch (err) {
         console.error("Error loading user:", err);
-        message.error("โหลดข้อมูลผู้ใช้ล้มเหลว");
+        message.error("Failed to load user data");
       }
     };
     fetchUser();
@@ -151,7 +151,7 @@ const HistoryPay: React.FC = () => {
   // ===== เปิด Bill Modal =====
   const handleOpenBill = (item: TransactionItem) => {
     if (!item.billData) {
-      message.warning("รายการนี้ไม่มี Bill ให้แสดง");
+      message.warning("This item has no bill to show");
       return;
     }
     setSelectedBill(item.billData);
@@ -241,7 +241,7 @@ const HistoryPay: React.FC = () => {
         setTotalAmount(sum);
       } catch (err) {
         console.error("Error fetching history:", err);
-        message.error("โหลดประวัติธุรกรรมล้มเหลว");
+        message.error("Failed to load transaction history");
       } finally {
         setLoading(false);
       }
@@ -259,7 +259,7 @@ const HistoryPay: React.FC = () => {
         <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
           <button
             onClick={() => navigate(-1)}
-            aria-label="ย้อนกลับ"
+            aria-label="Back"
             className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
           >
             <svg

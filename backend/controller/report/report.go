@@ -153,25 +153,39 @@ func DeleteReportByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Report deleted successfully"})
 }
 
-// ✅ GET /report/:id
-func GetReportByID(c *gin.Context) {
-	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid report ID"})
-		return
-	}
+// ✅ GET /report/user/:user_id
+func GetReportByUserID(c *gin.Context) {
 
-	db := config.DB()
-	var report entity.Report
+    // 1) รับ user_id จาก URL
+    userIDParam := c.Param("id")
+    userID, err := strconv.Atoi(userIDParam)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+        return
+    }
 
-	// preload User และ Employee เพื่อดึงข้อมูลความสัมพันธ์ด้วย
-	if err := db.Preload("User").Preload("Employee").First(&report, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Report not found"})
-		return
-	}
+    db := config.DB()
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": report,
-	})
+    // 2) ดึงข้อมูลทั้งหมดของ user นี้
+    var reports []entity.Report
+    if err := db.
+        Where("user_id = ?", userID).
+        Preload("User").
+        Preload("Employee").
+        Find(&reports).Error; err != nil {
+
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    // 3) ถ้าไม่เจอเลย
+    if len(reports) == 0 {
+        c.JSON(http.StatusNotFound, gin.H{"error": "No reports found for this user"})
+        return
+    }
+
+    // 4) ส่งข้อมูลกลับ
+    c.JSON(http.StatusOK, gin.H{
+        "data": reports,
+    })
 }

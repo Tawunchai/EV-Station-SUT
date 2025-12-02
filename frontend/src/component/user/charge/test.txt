@@ -384,15 +384,7 @@ const ChargingEV = () => {
         // ✅ StatusNotification
         if (messageType === 2 && action === "StatusNotification") {
           if (payload && typeof payload.status === "string") {
-            const newStatus = payload.status as string;
-            setOcppStatus(newStatus);
-
-            // ⭐ ถ้าเพิ่งเปลี่ยนเป็น SuspendedEV → โหลด Session จาก backend เพื่อเอา EndTime มาด้วย
-            if (newStatus === "SuspendedEV") {
-              setTimeout(() => {
-                checkSession();
-              }, 1000);
-            }
+            setOcppStatus(payload.status);
           }
         }
 
@@ -479,6 +471,14 @@ const ChargingEV = () => {
   }, []);
 
   // 👉 นับเวลาโดยอิงจาก sessionStartTime + สถานะ OCPP
+  // เงื่อนไข:
+  // - ถ้า Charging → นับจาก StartTime ถึงเวลาปัจจุบัน (ไม่สน EndTime)
+  // - ถ้า SuspendedEV:
+  //      - ถ้ามี EndTime → เวลา = EndTime - StartTime (คงที่)
+  //      - ถ้าไม่มี EndTime → ไม่เปลี่ยน time และไม่ตั้ง interval (หยุดไว้ที่ค่าเดิม)
+  // - ถ้า status อื่น:
+  //      - ถ้ามี EndTime → เวลา = EndTime - StartTime (คงที่)
+  //      - ถ้าไม่มี EndTime → นับจาก StartTime ถึงเวลาปัจจุบันเหมือนเดิม
   useEffect(() => {
     if (!sessionValid || !sessionStartTime) return;
 

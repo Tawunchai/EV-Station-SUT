@@ -12,6 +12,7 @@ import {
 import PaymentHistoryTable from "./payment/index";
 import PaymentCoinsTable from "./coin/index";
 import { GetProfile } from "../../../services/httpLogin";
+import { FaTimes } from "react-icons/fa";
 
 /* ===========================
    BANK CODE MAP
@@ -226,17 +227,19 @@ const Payment = () => {
 
       </main>
 
-      {/* Modal */}
+      {/* Edit Bank Modal */}
+      {/* Edit Bank Modal */}
       <Modal
         open={!!editBank}
         onCancel={() => setEditBank(null)}
         footer={null}
         centered
         destroyOnClose
-        width={420}
+        width={440}
+        closeIcon={null}
         styles={{
           content: {
-            borderRadius: 20,
+            borderRadius: 24,
             padding: 0,
             overflow: "hidden",
             background: "#ffffff",
@@ -244,94 +247,113 @@ const Payment = () => {
         }}
       >
         {editBank && userRole === "Admin" && (
-          <div className="px-5 py-6 text-gray-800">
-
-            <div className="flex items-center justify-center mb-4 border-b border-gray-100 pb-3">
-              <BanknotesIcon className="h-6 w-6 text-blue-600 mr-2" />
-              <h2 className="text-base sm:text-lg font-semibold text-blue-700">
-                แก้ไขข้อมูลธนาคาร
-              </h2>
+          <div className="ev-scope flex flex-col">
+            {/* Header */}
+            <div className="px-5 pt-3 pb-4 bg-gradient-to-r from-blue-600 to-sky-500 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BanknotesIcon className="h-6 w-6 text-white" />
+                <h2 className="text-base sm:text-lg font-semibold">
+                  Edit bank details
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditBank(null)}
+                className="p-2 -m-2 rounded-lg hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                aria-label="Close dialog"
+              >
+                <FaTimes className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="space-y-4">
-              <label className="block">
-                <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
-                  <BanknotesIcon className="h-5 w-5 mr-2 text-blue-500" />
-                  PromptPay
-                </span>
-                <Input
-                  value={editBank.PromptPay}
-                  onChange={(e) => handleBankChange("PromptPay", e.target.value)}
-                  className="rounded-lg h-10 border-gray-300"
-                />
-              </label>
+            {/* Body */}
+            <div className="px-5 py-5 bg-blue-50/40 text-gray-800">
+              <div className="space-y-4">
+                {/* PromptPay */}
+                <label className="block">
+                  <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
+                    <BanknotesIcon className="h-5 w-5 mr-2 text-blue-500" />
+                    PromptPay
+                  </span>
+                  <Input
+                    value={editBank.PromptPay}
+                    onChange={(e) => handleBankChange("PromptPay", e.target.value)}
+                    className="rounded-xl h-10 border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-300"
+                  />
+                </label>
 
-              <label className="block">
-                <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
-                  <UserIcon className="h-5 w-5 mr-2 text-blue-500" />
-                  Manager
-                </span>
-                <Input
-                  value={editBank.Manager}
-                  onChange={(e) => handleBankChange("Manager", e.target.value)}
-                  className="rounded-lg h-10 border-gray-300"
-                />
-              </label>
+                {/* Manager */}
+                <label className="block">
+                  <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
+                    <UserIcon className="h-5 w-5 mr-2 text-blue-500" />
+                    Account manager
+                  </span>
+                  <Input
+                    value={editBank.Manager}
+                    onChange={(e) => handleBankChange("Manager", e.target.value)}
+                    className="rounded-xl h-10 border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-300"
+                  />
+                </label>
 
-              <label className="block">
-                <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
-                  <CreditCardIcon className="h-5 w-5 mr-2 text-blue-500" />
-                  ธนาคาร
-                </span>
-                <select
-                  value={selectedBankCode}
-                  onChange={(e) => handleBankChange("Banking", e.target.value)}
-                  className="appearance-none w-full rounded-lg border border-gray-300 h-10 px-3 bg-white"
-                >
-                  <option value="">เลือกธนาคาร</option>
-                  {Object.entries(TH_BANK_CODE_MAP).map(([code, name]) => (
-                    <option key={code} value={code}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                {/* Bank */}
+                <label className="block">
+                  <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
+                    <CreditCardIcon className="h-5 w-5 mr-2 text-blue-500" />
+                    Bank
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={selectedBankCode}
+                      onChange={(e) => handleBankChange("Banking", e.target.value)}
+                      className="appearance-none w-full rounded-xl border border-slate-200 h-10 px-3 pr-8 bg-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-300"
+                    >
+                      <option value="">Select bank</option>
+                      {Object.entries(TH_BANK_CODE_MAP).map(([code, name]) => (
+                        <option key={code} value={code}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 text-xs">
+                      ▼
+                    </span>
+                  </div>
+                </label>
 
-              <label className="block">
-                <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
-                  <CreditCardIcon className="h-5 w-5 mr-2 text-blue-500" />
-                  Minimum (บาท)
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={editBank.Minimum}
-                  onChange={(e) => handleBankChange("Minimum", e.target.value)}
-                  className="rounded-lg h-10 border-gray-300"
-                />
-              </label>
+                {/* Minimum */}
+                <label className="block">
+                  <span className="text-sm text-gray-700 font-medium flex items-center mb-1">
+                    <CreditCardIcon className="h-5 w-5 mr-2 text-blue-500" />
+                    Minimum amount (THB)
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editBank.Minimum}
+                    onChange={(e) => handleBankChange("Minimum", e.target.value)}
+                    className="rounded-xl h-10 border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-300"
+                  />
+                </label>
+              </div>
             </div>
 
-            <div className="mt-6 flex gap-3">
+            {/* Footer */}
+            <div className="px-5 py-4 bg-white border-t border-slate-100 flex gap-2 justify-end">
               <Button
                 onClick={() => setEditBank(null)}
-                block
-                className="h-11 rounded-lg"
+                className="px-4 h-10 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200"
               >
-                ยกเลิก
+                Cancel
               </Button>
-
               <Button
                 type="primary"
                 loading={loading}
-                block
                 onClick={handleBankUpdate}
-                className="h-11 rounded-lg bg-blue-600 hover:bg-blue-700"
+                className="px-4 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
               >
-                บันทึก
+                Save
               </Button>
             </div>
-
           </div>
         )}
       </Modal>

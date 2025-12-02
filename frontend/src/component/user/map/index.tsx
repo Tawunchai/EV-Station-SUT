@@ -28,7 +28,7 @@ const formatNow = () => {
   return `${d.getHours().toString().padStart(2, "0")}:${d
     .getMinutes()
     .toString()
-    .padStart(2, "0")} น.`;
+    .padStart(2, "0")} n.`;
 };
 
 const StatusBadge: React.FC<{ s: string }> = ({ s }) => {

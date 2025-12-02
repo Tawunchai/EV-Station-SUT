@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+// src/pages/admin/ev/EditEVModal.tsx
+
+import React, { useEffect, useMemo, useState } from "react";
 import { Upload, message, Select } from "antd";
 import ImgCrop from "antd-img-crop";
 import { StatusInterface } from "../../../../../interface/IStatus";
@@ -9,7 +11,10 @@ import {
   apiUrlPicture,
   ListEnergySource,
 } from "../../../../../services";
-import { getCurrentUser, initUserProfile } from "../../../../../services/httpLogin";
+import {
+  getCurrentUser,
+  initUserProfile,
+} from "../../../../../services/httpLogin";
 import {
   FaTimes,
   FaEdit,
@@ -53,11 +58,14 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
   const [statusID, setStatusID] = useState<number | undefined>(undefined);
   const [typeID, setTypeID] = useState<number | undefined>(undefined);
 
-  // ⭐ Energy Source (Solar / Grid)
-  const [energySourceID, setEnergySourceID] = useState<number | undefined>(undefined);
-  const [energySourceList, setEnergySourceList] = useState<EnergySourceInterface[]>([]);
+  // ⭐ Energy source (Solar / Grid / Hybrid)
+  const [energySourceID, setEnergySourceID] = useState<number | undefined>(
+    undefined
+  );
+  const [energySourceList, setEnergySourceList] =
+    useState<EnergySourceInterface[]>([]);
 
-  // ⭐ multi-cabinet
+  // ⭐ Multi-cabinet selection
   const [selectedCabinets, setSelectedCabinets] = useState<number[]>([]);
 
   const [fileList, setFileList] = useState<any[]>([]);
@@ -65,7 +73,15 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
   const [employeeID, setEmployeeID] = useState<number | null>(null);
   const [cabinets, setCabinets] = useState<CabinetInterface[]>([]);
 
-  // โหลด employee
+  const isMobile = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? window.matchMedia("(max-width: 768px)").matches
+        : false,
+    []
+  );
+
+  // Load employee
   useEffect(() => {
     const fetchEmployee = async () => {
       try {
@@ -75,13 +91,13 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
           setEmployeeID(currentUser.employee_id);
         }
       } catch {
-        message.error("โหลดข้อมูลผู้ใช้ล้มเหลว");
+        message.error("Failed to load user profile.");
       }
     };
     fetchEmployee();
   }, []);
 
-  // โหลด Cabinets + EnergySource ตอนเปิด modal
+  // Load cabinets + energy sources when modal opens
   useEffect(() => {
     const fetchCab = async () => {
       try {
@@ -89,7 +105,7 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
         if (Array.isArray(res)) setCabinets(res);
         else setCabinets([]);
       } catch {
-        message.error("โหลดข้อมูล Cabinet ไม่สำเร็จ");
+        message.error("Unable to load cabinet data.");
       }
     };
 
@@ -102,7 +118,7 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
           setEnergySourceList([]);
         }
       } catch {
-        message.error("โหลดข้อมูล Energy Source ไม่สำเร็จ");
+        message.error("Unable to load energy source data.");
       }
     };
 
@@ -112,7 +128,7 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
     }
   }, [open]);
 
-  // โหลดข้อมูล EV ที่จะ edit
+  // Load EV data to edit
   useEffect(() => {
     if (!open || !evCharging) return;
 
@@ -127,7 +143,7 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
     setStatusID(evCharging.StatusID ?? undefined);
     setTypeID(evCharging.TypeID ?? undefined);
 
-    // ⭐ ตั้งค่า EnergySource จากข้อมูลเดิม
+    // ⭐ Set energy source from existing data
     if (evCharging.EnergySourceID) {
       setEnergySourceID(evCharging.EnergySourceID);
     } else if (evCharging.EnergySource?.ID) {
@@ -136,14 +152,14 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
       setEnergySourceID(undefined);
     }
 
-    // ⭐ multi cabinet → เซ็ตค่าเป็น array [1, 2, 3]
+    // ⭐ Multi-cabinet → [1, 2, 3]
     if (Array.isArray(evCharging.Cabinets)) {
       setSelectedCabinets(evCharging.Cabinets.map((c: any) => c.ID));
     } else {
       setSelectedCabinets([]);
     }
 
-    // โหลดรูป
+    // Load picture
     if (evCharging.Picture) {
       setFileList([
         {
@@ -159,13 +175,12 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
     }
   }, [open, evCharging]);
 
-  const isMobile =
-    typeof window !== "undefined" &&
-    window.matchMedia("(max-width: 768px)").matches;
-
   // Submit update
   const handleSubmit = async () => {
-    if (!evCharging?.ID) return message.error("ข้อมูล EV ไม่ถูกต้อง");
+    if (!evCharging?.ID) {
+      message.error("Invalid EV charging data.");
+      return;
+    }
 
     if (
       !name ||
@@ -173,10 +188,11 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
       !price ||
       !statusID ||
       !typeID ||
-      !energySourceID || // ⭐ บังคับให้เลือก Energy Source
+      !energySourceID ||
       selectedCabinets.length === 0
     ) {
-      return message.error("กรุณากรอกข้อมูลให้ครบถ้วน");
+      message.error("Please fill in all required fields.");
+      return;
     }
 
     const formData = new FormData();
@@ -186,15 +202,17 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
     formData.append("statusID", String(statusID));
     formData.append("typeID", String(typeID));
 
-    // ⭐ ส่ง Energy Source ID ไป backend
+    // ⭐ Send energy source ID
     formData.append("energySourceID", String(energySourceID));
 
-    // ⭐ ส่งหลาย cabinet เช่น "1,3,5"
+    // ⭐ Send multiple cabinets as "1,3,5"
     formData.append("cabinetIDs", selectedCabinets.join(","));
 
-    if (employeeID) formData.append("employeeID", String(employeeID));
+    if (employeeID) {
+      formData.append("employeeID", String(employeeID));
+    }
 
-    // ถ้ามีการอัปโหลดรูปใหม่
+    // If user uploaded a new picture
     if (fileList.length > 0 && fileList[0].originFileObj) {
       formData.append("picture", fileList[0].originFileObj);
     }
@@ -204,20 +222,20 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
       const result = await UpdateEVByID(evCharging.ID, formData);
 
       if (result) {
-        message.success("บันทึกการแก้ไขสำเร็จ");
+        message.success("EV charging package updated successfully.");
         onSaved();
         onClose();
       } else {
-        message.error("บันทึกไม่สำเร็จ");
+        message.error("Failed to update EV charging package.");
       }
     } catch (err) {
-      message.error("เกิดข้อผิดพลาด");
+      message.error("An error occurred while saving data.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // preview image
+  // Preview image
   const onPreview = async (file: any) => {
     let src = file.url;
     if (!src && file.originFileObj) {
@@ -228,33 +246,72 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
       });
     }
     const imgWindow = window.open(src as string);
-    imgWindow?.document.write(`<img src="${src}" style="max-width: 100%;" />`);
+    imgWindow?.document.write(
+      `<img src="${src}" style="max-width: 100%;" />`
+    );
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center ev-scope"
+      role="dialog"
+      aria-modal="true"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={submitting ? undefined : onClose}
+        aria-hidden="true"
+      />
 
-      <div className="relative w-full max-w-[600px] mx-4 mb-10">
+      {/* Modal container */}
+      <div className="relative w-full max-w-[640px] mx-4 md:mx-auto mb-8 md:mb-0">
         <div
-          className="bg-white rounded-2xl shadow-2xl ring-1 ring-blue-200 flex flex-col overflow-hidden"
-          style={{ maxHeight: isMobile ? "80vh" : "85vh" }}
+          className="bg-white rounded-2xl shadow-2xl ring-1 ring-blue-100 flex flex-col overflow-hidden"
+          style={{ maxHeight: isMobile ? "78vh" : "85vh" }}
         >
           {/* HEADER */}
-          <div className="px-5 py-4 bg-blue-600 text-white flex justify-between items-center">
+          <div
+            className="px-5 pt-3 pb-4 bg-gradient-to-r from-blue-600 to-sky-500 text-white flex justify-between items-center"
+            style={{
+              paddingTop: "calc(env(safe-area-inset-top) + 8px)",
+            }}
+          >
             <div className="flex items-center gap-2">
-              <FaEdit />
-              <h2 className="text-lg font-semibold">แก้ไข EV Charging</h2>
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/20">
+                <FaEdit className="opacity-90" />
+              </div>
+            <div>
+                <h2 className="text-base md:text-lg font-semibold">
+                  Edit EV charging package
+                </h2>
+                <p className="text-[11px] text-blue-100">
+                  Update pricing, status, energy source and linked cabinets.
+                </p>
+              </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg">
+            <button
+              onClick={onClose}
+              disabled={submitting}
+              className="p-2 -m-2 rounded-lg hover:bg-white/10 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              aria-label="Close dialog"
+              title="Close"
+            >
               <FaTimes />
             </button>
           </div>
 
           {/* BODY */}
-          <div className="px-5 py-5 bg-blue-50/40 space-y-4 overflow-y-auto">
+          <div
+            className="px-5 py-5 bg-blue-50/40 space-y-4"
+            style={{
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              maxHeight: "100%",
+            }}
+          >
             {/* Upload */}
             <div className="flex justify-center">
               <ImgCrop rotationSlider>
@@ -262,15 +319,23 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
                   accept="image/*"
                   listType="picture-card"
                   fileList={fileList}
-                  onChange={({ fileList }) => setFileList(fileList)}
+                  onChange={({ fileList: newList }) =>
+                    setFileList(newList)
+                  }
                   onPreview={onPreview}
-                  beforeUpload={() => false}
+                  beforeUpload={(file) => {
+                    if (!file.type?.startsWith("image/")) {
+                      message.error("Please upload image files only.");
+                      return Upload.LIST_IGNORE;
+                    }
+                    return false; // upload on submit
+                  }}
                   maxCount={1}
                 >
                   {fileList.length < 1 && (
-                    <div className="flex flex-col items-center text-blue-500">
-                      <FaImage size={24} />
-                      <span className="text-sm">Upload</span>
+                    <div className="flex flex-col items-center text-blue-500 text-sm">
+                      <FaImage className="mb-1" />
+                      Upload
                     </div>
                   )}
                 </Upload>
@@ -279,39 +344,43 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
 
             {/* FORM */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* NAME */}
+              {/* Name */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs flex items-center gap-2">
-                  <FaTag className="text-blue-500" /> ชื่อสถานี
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaTag className="text-blue-500" /> EV package name
                 </span>
                 <input
-                  className="px-3 py-2 rounded-xl border"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
+                  placeholder="e.g. DC Fast 60kW"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </label>
 
-              {/* PRICE */}
+              {/* Price */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs flex items-center gap-2">
-                  <FaMoneyBillWave className="text-blue-500" /> ราคา (บาท)
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaMoneyBillWave className="text-blue-500" /> Price
+                  (THB/kWh)
                 </span>
                 <input
                   type="number"
-                  className="px-3 py-2 rounded-xl border"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
+                  placeholder="e.g. 7.50"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                 />
               </label>
 
-              {/* STATUS */}
+              {/* Status */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs flex items-center gap-2">
-                  <FaListAlt className="text-blue-500" /> สถานะ
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaListAlt className="text-blue-500" /> Status
                 </span>
                 <Select
-                  className="w-full"
-                  placeholder="เลือกสถานะ"
+                  className="ev-select w-full"
+                  popupClassName="ev-select-dropdown"
+                  placeholder="Select status"
                   value={statusID}
                   onChange={(v) => setStatusID(v)}
                   options={statusList.map((s) => ({
@@ -319,17 +388,19 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
                     value: s.ID,
                   }))}
                   size="large"
+                  allowClear
                 />
               </label>
 
-              {/* TYPE */}
+              {/* Type */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs flex items-center gap-2">
-                  <FaInfoCircle className="text-blue-500" /> ประเภท
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaInfoCircle className="text-blue-500" /> Type
                 </span>
                 <Select
-                  className="w-full"
-                  placeholder="เลือกประเภท"
+                  className="ev-select w-full"
+                  popupClassName="ev-select-dropdown"
+                  placeholder="Select charging type"
                   value={typeID}
                   onChange={(v) => setTypeID(v)}
                   options={typeList.map((t) => ({
@@ -337,17 +408,19 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
                     value: t.ID,
                   }))}
                   size="large"
+                  allowClear
                 />
               </label>
 
-              {/* ENERGY SOURCE */}
+              {/* Energy source */}
               <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs flex items-center gap-2">
-                  <FaBolt className="text-blue-500" /> แหล่งพลังงาน (Energy Source)
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaBolt className="text-yellow-400" /> Energy source
                 </span>
                 <Select
-                  className="w-full"
-                  placeholder="เลือกแหล่งพลังงาน เช่น Solar / Grid"
+                  className="ev-select w-full"
+                  popupClassName="ev-select-dropdown"
+                  placeholder="Select energy source e.g. Solar / Grid / Hybrid"
                   value={energySourceID}
                   onChange={(v) => setEnergySourceID(v)}
                   options={energySourceList.map((es) => ({
@@ -357,37 +430,50 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
                   allowClear
                   size="large"
                 />
+                <span className="text-[11px] text-slate-400 mt-0.5">
+                  Used for analytics and energy reporting (solar-only,
+                  grid-only, or mixed).
+                </span>
               </label>
 
-              {/* MULTI CABINET */}
+              {/* Multi cabinet */}
               <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs flex items-center gap-2">
-                  <FaChargingStation className="text-blue-500" /> ตู้ชาร์จ (เลือกหลายตัว)
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaChargingStation className="text-blue-500" /> Linked
+                  cabinets (multi-select)
                 </span>
                 <Select
                   mode="multiple"
-                  className="w-full"
-                  placeholder="เลือก Cabinet"
+                  className="ev-select w-full"
+                  popupClassName="ev-select-dropdown"
+                  placeholder="Select one or more cabinets"
                   value={selectedCabinets}
                   onChange={(values) => setSelectedCabinets(values)}
                   options={cabinets.map((c) => ({
-                    label: `${c.Name} (${c.Location || "ไม่ระบุ"})`,
+                    label: `${c.Name} ${
+                      c.Location ? `(${c.Location})` : ""
+                    }`,
                     value: c.ID,
                   }))}
                   allowClear
                   showSearch
                   size="large"
                 />
+                <span className="text-[11px] text-slate-400 mt-0.5">
+                  Users will see this package available on the selected
+                  cabinets.
+                </span>
               </label>
 
-              {/* DESCRIPTION */}
+              {/* Description */}
               <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs flex items-center gap-2">
-                  <FaInfoCircle className="text-blue-500" /> รายละเอียด
+                <span className="text-xs flex items-center gap-2 text-slate-600">
+                  <FaInfoCircle className="text-blue-500" /> Description
                 </span>
                 <textarea
                   rows={3}
-                  className="px-3 py-2 rounded-xl border"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm resize-none"
+                  placeholder="Short description for users, e.g. max power, connector type, notes."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
@@ -396,24 +482,51 @@ const EditEVModal: React.FC<EditEVModalProps> = ({
           </div>
 
           {/* FOOTER */}
-          <div className="px-5 py-4 bg-white border-t flex justify-end gap-2">
+          <div className="px-5 py-4 bg-white border-t border-blue-100 flex justify-end gap-2">
             <button
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2 rounded-xl border border-blue-200"
+              className="px-4 h-10 rounded-xl border border-blue-200 bg-white text-blue-700 text-sm font-semibold hover:bg-blue-50 active:scale-[0.99] disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-blue-100 transition"
             >
-              ยกเลิก
+              Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="px-4 py-2 rounded-xl bg-blue-600 text-white"
+              className="px-4 h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-sm hover:bg-blue-700 active:scale-[0.99] disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-blue-200 transition"
             >
-              {submitting ? "กำลังบันทึก..." : "บันทึก"}
+              {submitting ? "Saving..." : "Save changes"}
             </button>
           </div>
+
+          {/* Safe area bottom for mobile */}
+          <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
         </div>
       </div>
+
+      {/* Scoped CSS for AntD Select inside this modal */}
+      <style>{`
+        .ev-scope .ev-select .ant-select-selector {
+          border-radius: 0.75rem !important;
+          border-color: #e2e8f0 !important;
+          height: 44px !important;
+          padding: 0 12px !important;
+          display: flex;
+          align-items: center;
+          background-color: #ffffff !important;
+        }
+        .ev-scope .ev-select:hover .ant-select-selector {
+          border-color: #cbd5e1 !important;
+        }
+        .ev-scope .ev-select.ant-select-focused .ant-select-selector {
+          border-color: #2563eb !important;
+          box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25) !important;
+        }
+        .ev-scope .ev-select-dropdown {
+          border-radius: 0.75rem !important;
+          overflow: hidden !important;
+        }
+      `}</style>
     </div>
   );
 };

@@ -275,10 +275,10 @@ const EV: React.FC = () => {
     setConfirmLoading(true);
     const ok = await DeleteEVcharging(selectedEVRef.current.ID);
     if (ok) {
-      message.success("ลบข้อมูลสำเร็จ");
+      message.success("Data deletion successful");
       await fetchEVData();
     } else {
-      message.error("เกิดข้อผิดพลาดในการลบ");
+      message.error("An error occurred while deleting.");
     }
     cancelDelete();
   };

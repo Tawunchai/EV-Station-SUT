@@ -45,7 +45,7 @@ const HeaderBar: React.FC<{ title?: string; onBack?: () => void }> = ({
       <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
         <button
           onClick={goBack}
-          aria-label="ย้อนกลับ"
+          aria-label="Back"
           className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
         >
           <svg
@@ -105,7 +105,7 @@ const BookingDate: React.FC = () => {
         const uid = current?.id;
 
         if (!uid) {
-          message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+          message.error("User information not found. Please log in again");
           navigate("/login");
           return;
         }
@@ -113,7 +113,7 @@ const BookingDate: React.FC = () => {
         setUserID(uid);
       } catch (err) {
         console.error("Error loading user:", err);
-        message.error("ไม่สามารถโหลดข้อมูลผู้ใช้ได้");
+        message.error("Unable to load user data");
       }
     };
     loadUser();
@@ -179,7 +179,7 @@ const BookingDate: React.FC = () => {
       setAlreadyBookedToday(userHasBooked);
     } catch (err) {
       console.error(err);
-      message.error("โหลดข้อมูลล้มเหลว");
+      message.error("Data loading failed");
     } finally {
       setLoading(false);
     }
@@ -195,12 +195,12 @@ const BookingDate: React.FC = () => {
      ========================= */
   const handleBooking = async () => {
     if (alreadyBookedToday) {
-      message.warning("คุณได้ทำการจองในวันนี้แล้ว ไม่สามารถจองซ้ำได้");
+      message.warning("You already have a reservation today");
       return;
     }
 
     if (!cabinet || !selectedDate || !selectedSlot || !userID) {
-      message.warning("กรุณาเลือกวันที่และช่วงเวลา");
+      message.warning("Please select a date and time");
       return;
     }
 
@@ -218,18 +218,18 @@ const BookingDate: React.FC = () => {
     try {
       const res = await CreateBooking(payload);
       if (res) {
-        message.success("จองสำเร็จ");
+        message.success("Reservation successful");
         navigate("/");
       }
     } catch (err: any) {
-      message.error(err.response?.data?.error || "เกิดข้อผิดพลาดในการจอง");
+      message.error(err.response?.data?.error || "There was an error while booking");
     }
   };
 
   if (!cabinet) {
     return (
       <div className="flex flex-col items-center justify-center h-screen text-gray-500">
-        <p>ไม่พบข้อมูลสถานีที่เลือก</p>
+        <p>No information found for the selected station.</p>
       </div>
     );
   }
@@ -277,7 +277,7 @@ const BookingDate: React.FC = () => {
             {alreadyBookedToday && (
               <Alert
                 className="mt-3"
-                message="คุณได้ทำการจองในวันนี้แล้ว"
+                message="You have already made a reservation today."
                 type="warning"
                 showIcon
               />
@@ -307,7 +307,7 @@ const BookingDate: React.FC = () => {
                       {dayjs(b.EndDate).format("HH:mm")}
                     </span>
                     <Tag color={b.UserID === userID ? "gold" : "blue"}>
-                      {b.User?.FirstName || "ไม่ระบุ"}
+                      {b.User?.FirstName || "Not specified"}
                     </Tag>
                   </div>
                 ))
@@ -346,7 +346,7 @@ const BookingDate: React.FC = () => {
                 ) : (
                   <Alert
                     className="mt-3"
-                    message="ไม่มีช่วงเวลาให้เลือก เนื่องจากถูกจองเต็มแล้ว"
+                    message="There is no time slot available as it is fully booked."
                     type="info"
                     showIcon
                   />

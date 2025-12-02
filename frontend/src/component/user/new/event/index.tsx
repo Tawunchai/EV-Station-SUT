@@ -53,7 +53,7 @@ const OneNews: React.FC = () => {
           {/* ปุ่มย้อนกลับ */}
           <button
             onClick={() => navigate(-1)}
-            aria-label="ย้อนกลับ"
+            aria-label="Back"
             className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
           >
             <svg
@@ -86,7 +86,7 @@ const OneNews: React.FC = () => {
       {/* Content */}
       <main className="mx-auto w-full max-w-screen-lg px-4 py-8 md:py-10">
         {!news ? (
-          <div className="py-20 text-center text-gray-500">ไม่พบข้อมูลข่าว</div>
+          <div className="py-20 text-center text-gray-500">No news found</div>
         ) : (
           <div className="flex flex-col md:flex-row md:gap-8 items-start">
             {/* รูปภาพหัวเรื่อง */}

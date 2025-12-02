@@ -24,16 +24,16 @@ const OTPModal: React.FC<OTPModalProps> = ({ open, email, onSuccess, onCancel })
 
   const handleVerify = async () => {
     const code = otp.join("");
-    if (code.length !== 6) return message.error("กรุณากรอก OTP ให้ครบ 6 หลัก");
+    if (code.length !== 6) return message.error("Please enter the OTP with 6 digits");
     setLoading(true);
     try {
       const res = await VerifyOTP(email, code);
       if (res?.message) {
-        message.success("ยืนยันสำเร็จ!");
+        message.success("Confirmed successfully");
         onSuccess();
       }
     } catch {
-      message.error("OTP ไม่ถูกต้องหรือหมดเวลา");
+      message.error("OTP is invalid or has expired");
     } finally {
       setLoading(false);
     }
@@ -42,10 +42,10 @@ const OTPModal: React.FC<OTPModalProps> = ({ open, email, onSuccess, onCancel })
   const handleResend = async () => {
     try {
       await SendOTP(email);
-      message.success("ส่ง OTP ใหม่แล้ว");
+      message.success("New OTP has been sent");
       setResendTimer(60);
     } catch {
-      message.error("ไม่สามารถส่ง OTP ใหม่ได้");
+      message.error("Unable to send new OTP");
     }
   };
 

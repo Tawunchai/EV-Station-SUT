@@ -25,7 +25,7 @@ const ForgotPasswordForm: React.FC = () => {
       // ✅ ตรวจสอบว่าอีเมลมีในระบบไหม
       const chk = await checkEmailExists(values.email);
       if (!chk?.exists) {
-        messageApi.warning("ไม่พบอีเมลที่ลงทะเบียนในระบบ");
+        messageApi.warning("Email not found");
         return;
       }
 
@@ -36,9 +36,9 @@ const ForgotPasswordForm: React.FC = () => {
       setPendingEmail(values.email);
       setOtpOpen(true);
 
-      messageApi.success("ส่งรหัส OTP ไปยังอีเมลของคุณเรียบร้อยแล้ว");
+      messageApi.success("OTP sent to your email");
     } catch (err) {
-      messageApi.error("เกิดข้อผิดพลาดในการส่งรหัส OTP กรุณาลองใหม่อีกครั้ง");
+      messageApi.error("Failed to send OTP. Please try again");
     } finally {
       setLoading(false);
     }
@@ -46,7 +46,7 @@ const ForgotPasswordForm: React.FC = () => {
 
   // ✅ เรียกเมื่อ OTP ตรวจสอบผ่าน
   const handleOtpSuccess = () => {
-    messageApi.success("ยืนยัน OTP สำเร็จ กำลังไปหน้ารีเซ็ตรหัสผ่าน...");
+    messageApi.success("OTP verified successfully");
     navigate(`/reset-password?email=${encodeURIComponent(pendingEmail)}`);
   };
 
@@ -114,10 +114,10 @@ const ForgotPasswordForm: React.FC = () => {
               {/* Title */}
               <div className="mb-4 text-center">
                 <Title level={3} className="!m-0 !text-blue-900 !font-semibold">
-                  ลืมรหัสผ่าน
+                  Forgot your password
                 </Title>
                 <p className="mt-1 text-sm text-blue-900/70">
-                  กรอกอีเมลที่ลงทะเบียนไว้ เราจะส่งรหัส OTP เพื่อยืนยันก่อนรีเซ็ตรหัสผ่าน
+                  Wait for your registered email, we will send you an OTP code for verification before resetting your password.
                 </p>
               </div>
 
@@ -127,8 +127,8 @@ const ForgotPasswordForm: React.FC = () => {
                   name="email"
                   label={<span className="text-sm text-gray-700 font-medium">อีเมล</span>}
                   rules={[
-                    { required: true, message: "กรุณากรอกอีเมล" },
-                    { type: "email", message: "กรุณากรอกอีเมลให้ถูกต้อง" },
+                    { required: true, message: "Please enter your email address." },
+                    { type: "email", message: "Please enter a valid email address." },
                   ]}
                 >
                   <Input
@@ -148,7 +148,7 @@ const ForgotPasswordForm: React.FC = () => {
                     disabled={loading}
                     className="!h-12 !rounded-2xl !bg-blue-600 hover:!bg-blue-700 font-medium"
                   >
-                    ส่งลิงก์รีเซ็ตรหัสผ่าน
+                    Send password reset link
                   </Button>
                 </Form.Item>
               </Form>
@@ -156,7 +156,7 @@ const ForgotPasswordForm: React.FC = () => {
               {/* Links */}
               <div className="flex items-center justify-between mt-4 text-sm">
                 <Link to="/auth/login-2" className="text-blue-600 hover:underline">
-                  กลับไปเข้าสู่ระบบ
+                  Return to login
                 </Link>
               </div>
 

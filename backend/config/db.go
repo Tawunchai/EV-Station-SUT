@@ -406,21 +406,21 @@ func seedContent(db *gorm.DB) {
 	uid1, uid2, uid3 := uint(1), uint(2), uint(3)
 	review1 := &entity.Review{
 		Rating:     5,
-		Comment:    "The zoo was incredibly well-maintained and the animals looked happy and healthy",
+		Comment:    "The charging station was spotless and the charging speed was excellent. The waiting area was comfortable and even had outlets for my phone. Super convenient!",
 		ReviewDate: time.Now(),
 		Status:     true,
 		UserID:     &uid1,
 	}
 	review2 := &entity.Review{
 		Rating:     4,
-		Comment:    "Wide variety of animals, some areas overcrowded",
+		Comment:    "Stable charging and clear pricing. The staff responded quickly to my questions. It would be perfect if there were a few more parking spots.",
 		ReviewDate: time.Now(),
 		Status:     true,
 		UserID:     &uid2,
 	}
 	review3 := &entity.Review{
 		Rating:     3,
-		Comment:    "Interesting animals, facilities could be cleaner",
+		Comment:    "The station works fine and the charging is okay, but the waiting area could be improved. Overall acceptable for a quick stop.",
 		ReviewDate: time.Now(),
 		Status:     true,
 		UserID:     &uid3,
@@ -432,7 +432,7 @@ func seedContent(db *gorm.DB) {
 	service := &entity.Service{
 		Email:      "support@evstation.example",
 		Phone:      "+66 2 123 4567",
-		Location:   "ชั้น 12 อาคาร EV Station Tower, ถนนสุขุมวิท, กรุงเทพฯ 10110",
+		Location:   "12th Floor, EV Station Tower Building, Sukhumvit Road, Bangkok 10110",
 		MapURL:     "https://maps.google.com/?q=EV+Station+Tower",
 		EmployeeID: &emp.ID,
 	}

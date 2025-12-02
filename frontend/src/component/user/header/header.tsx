@@ -221,12 +221,12 @@ const Header: React.FC<HeaderProps> = ({ }) => {
       const diff = (now.getTime() - last.getTime()) / (1000 * 86400);
 
       if (diff <= 7) {
-        messageApi.warning("คุณรายงานไปแล้วภายในสัปดาห์นี้");
+        messageApi.warning("You have already reported this week.");
       } else {
         setModalOpen(true);
       }
     } catch {
-      messageApi.error("ไม่สามารถตรวจสอบข้อมูลได้");
+      messageApi.error("Unable to verify information");
     }
   };
 
@@ -237,7 +237,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
     try {
       const ok = await Logout();
       if (ok) {
-        messageApi.success("ออกจากระบบแล้ว");
+        messageApi.success("Logged out");
 
         setTimeout(() => {
           clearCachedUser();
@@ -247,7 +247,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
         }, 800);
       }
     } catch {
-      messageApi.error("ผิดพลาดระหว่าง Logout");
+      messageApi.error("Error during logout");
     }
   };
 
@@ -318,7 +318,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                 className={btnEqual}
               >
                 <GiTwoCoins className="text-blue-600" />
-                My Coins: <b>{Number(user.Coin).toFixed(2)}</b>
+                My Coins : <b>{Number(user.Coin).toFixed(2)}</b>
               </button>
             )}
 
@@ -386,7 +386,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
               }}
               className="w-full rounded-xl px-4 py-3 text-left text-gray-800 hover:bg-gray-50"
             >
-              รายงานปัญหา (Report)
+              Submit a Report
             </button>
 
             {/* ปุ่ม My Coins */}
@@ -399,7 +399,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                 className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white"
               >
                 <GiTwoCoins className="text-lg" />
-                My Coins: <b>{user.Coin}</b>
+                My Coins : <b>{Number(user.Coin).toFixed(2)}</b>
               </button>
             )}
 

@@ -21,7 +21,7 @@ export const ProfileNavbar: React.FC<ProfileNavbarProps> = ({
     <>
       <div className="flex flex-col items-center md:flex-row md:justify-between">
         <Space>
-          <Tooltip title="แก้ไขข้อมูลผู้ใช้" placement="bottom">
+          <Tooltip title="Edit user information" placement="bottom">
             <Button
               size="small"
               type="link"

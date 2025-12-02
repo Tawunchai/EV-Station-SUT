@@ -151,10 +151,10 @@ const CarList: React.FC = () => {
     const ok = await DeleteCar(idToDelete);
 
     if (ok) {
-      message.success("ลบข้อมูลรถสำเร็จ");
+      message.success("Vehicle deleted successfully");
       setCars((prev) => prev.filter((c) => c.ID !== idToDelete));
     } else {
-      message.error("เกิดข้อผิดพลาดในการลบ");
+      message.error("An error occurred while deleting");
     }
     cancelDelete();
   };

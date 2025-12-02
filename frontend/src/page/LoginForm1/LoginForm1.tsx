@@ -22,7 +22,7 @@ const LoginForm1: React.FC = () => {
       const res = await AddLogin(loginData);
 
       if (res.status === 200) {
-        messageApi.success("เข้าสู่ระบบสำเร็จ");
+        messageApi.success("Login successful");
         console.log("✅ Message shown — waiting 1s before redirect...");
 
         setTimeout(async () => {
@@ -47,10 +47,10 @@ const LoginForm1: React.FC = () => {
           }
         }, 1500);
       } else {
-        messageApi.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+        messageApi.error("Username or password is incorrect.");
       }
     } catch (error: any) {
-      messageApi.warning("ข้อมูลเข้าสู่ระบบไม่ถูกต้อง");
+      messageApi.warning("Invalid login information");
     } finally {
       setLoading(false);
     }
@@ -133,7 +133,7 @@ const LoginForm1: React.FC = () => {
                 onFinish={(values) => {
                   const { username, password } = values as LoginInterface;
                   if (!username || !password) {
-                    messageApi.warning("กรุณากรอกข้อมูลให้ครบ");
+                    messageApi.warning("Please fill in all information.");
                     return;
                   }
                   handleLogin({ username: username.trim(), password });
@@ -147,7 +147,7 @@ const LoginForm1: React.FC = () => {
                       Username
                     </span>
                   }
-                  rules={[{ required: true, message: "กรุณากรอกชื่อผู้ใช้" }]}
+                  rules={[{ required: true, message: "Please enter your username." }]}
                 >
                   <Input
                     size="large"
@@ -163,7 +163,7 @@ const LoginForm1: React.FC = () => {
                       Password
                     </span>
                   }
-                  rules={[{ required: true, message: "กรุณากรอกรหัสผ่าน" }]}
+                  rules={[{ required: true, message: "Please enter your password." }]}
                 >
                   <Input.Password
                     size="large"
@@ -177,13 +177,13 @@ const LoginForm1: React.FC = () => {
                     to="/forgot-password"
                     className="text-blue-600 hover:underline"
                   >
-                    ลืมรหัสผ่าน?
+                    Forgot your password?
                   </Link>
                   <Link
                     to="/register"
                     className="text-blue-600 hover:underline"
                   >
-                    สมัครใช้งาน
+                    Register
                   </Link>
                 </div>
 
@@ -197,7 +197,7 @@ const LoginForm1: React.FC = () => {
                     disabled={loading}
                     className="!h-12 !rounded-2xl !bg-blue-600 hover:!bg-blue-700 font-medium"
                   >
-                    เข้าสู่ระบบ
+                    Log in
                   </Button>
                 </Form.Item>
               </Form>

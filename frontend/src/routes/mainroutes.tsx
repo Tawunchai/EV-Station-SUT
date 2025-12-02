@@ -17,7 +17,7 @@ const BookingDate = Loadable(lazy(() => import("../component/user/booking/book/i
 const Profile = Loadable(lazy(() => import("../component/user/header/SocialProfile/SocialProfile")));
 const EVInputUser = Loadable(lazy(() => import("../component/user/evs")));
 const PaymentUser = Loadable(lazy(() => import("../component/user/payment")));
-const PaymentQr = Loadable(lazy(() => import("../component/user/payment/QRCode/test")));
+const PaymentQr = Loadable(lazy(() => import("../component/user/payment/QRCode/real")));
 const ChargingEV = Loadable(lazy(() => import("../component/user/charge/index")));
 const MyCoins = Loadable(lazy(() => import("../component/user/historypay/pay")));
 const PayCoins = Loadable(lazy(() => import("../component/user/money/index")));
@@ -68,7 +68,7 @@ const UserRoutes = (): RouteObject[] => [
       { path: "my-coins", element: <MyCoins /> },
       { path: "add-coins", element: <PayCoins /> },
       { path: "intro-cars", element: <IntroCar /> },
-      { path: "add-cars", element: <AddCar /> },
+      { path: "add-cars", element: <AddCar /> }, // ok
       { path: "map", element: <Map /> },
       { path: "all-news", element: <AllNews /> },
       { path: "one-news", element: <News /> },

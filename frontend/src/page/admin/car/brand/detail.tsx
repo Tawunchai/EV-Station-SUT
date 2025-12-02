@@ -52,7 +52,7 @@ const BrandDetailModal: React.FC<BrandDetailModalProps> = ({
   // ✅ เพิ่มรุ่นใหม่
   const handleCreate = async () => {
     if (!newModel.trim()) {
-      message.warning("กรุณากรอกชื่อรุ่นก่อน");
+      message.warning("Please enter the model name first.");
       return;
     }
     setLoading(true);
@@ -62,13 +62,13 @@ const BrandDetailModal: React.FC<BrandDetailModalProps> = ({
         setLocalModels((prev) => [...prev, res]);
         setNewModel("");
         setIsAdding(false);
-        message.success("เพิ่มรุ่นรถสำเร็จ");
+        message.success("Successfully added Model");
         await onReload(); // ✅ reload ข้อมูลหลัก
       } else {
-        message.error("ไม่สามารถเพิ่มรุ่นได้");
+        message.error("Unable to add Model");
       }
     } catch {
-      message.error("เกิดข้อผิดพลาดในการเพิ่มรุ่น");
+      message.error("An error occurred while adding the Model");
     } finally {
       setLoading(false);
     }
@@ -92,13 +92,13 @@ const BrandDetailModal: React.FC<BrandDetailModalProps> = ({
         );
         setEditingID(null);
         setEditingName("");
-        message.success("อัปเดตรุ่นสำเร็จ");
+        message.success("Successfully updated Model");
         await onReload(); // ✅ reload ข้อมูลหลัก
       } else {
-        message.error("ไม่สามารถอัปเดตรุ่นได้");
+        message.error("Unable to update Model");
       }
     } catch {
-      message.error("เกิดข้อผิดพลาดในการอัปเดตรุ่น");
+      message.error("An error occurred while updating the Model");
     } finally {
       setLoading(false);
     }
@@ -111,13 +111,13 @@ const BrandDetailModal: React.FC<BrandDetailModalProps> = ({
       const ok = await DeleteModalByID(id);
       if (ok) {
         setLocalModels((prev) => prev.filter((m) => m.ID !== id));
-        message.success("ลบรุ่นสำเร็จ");
+        message.success("Successfully deleted the model");
         await onReload(); // ✅ reload ข้อมูลหลัก
       } else {
-        message.error("ไม่สามารถลบรุ่นได้");
+        message.error("Unable to delete model");
       }
     } catch {
-      message.error("เกิดข้อผิดพลาดในการลบรุ่น");
+      message.error("An error occurred while deleting the model");
     } finally {
       setLoading(false);
     }

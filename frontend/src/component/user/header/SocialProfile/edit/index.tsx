@@ -123,9 +123,12 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     });
 
     if (duplicate) {
-      if (field === "username") setUsernameError("ชื่อผู้ใช้นี้ถูกใช้แล้ว");
-      if (field === "email") setEmailError("อีเมลนี้ถูกใช้แล้ว");
-      if (field === "phone") setPhoneError("เบอร์โทรนี้ถูกใช้แล้ว");
+      if (field === "username")
+        setUsernameError("This username is already in use.");
+      if (field === "email")
+        setEmailError("This email is already in use.");
+      if (field === "phone")
+        setPhoneError("This phone number is already in use.");
     } else {
       if (field === "username") setUsernameError(null);
       if (field === "email") setEmailError(null);
@@ -133,13 +136,12 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     }
   };
 
-
   // =====================================
   // SUBMIT FORM
   // =====================================
   const onFinish = async (values: any) => {
     if (usernameError || emailError || phoneError) {
-      message.warning("กรุณาแก้ไขข้อมูลที่ซ้ำก่อนบันทึก");
+      message.warning("Please fix any duplicates before saving");
       return;
     }
 
@@ -163,7 +165,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     const userID = current?.id;
 
     if (!userID) {
-      message.error("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+      message.error("User not found. Please log in again");
       setLoading(false);
       return;
     }
@@ -172,11 +174,11 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     setLoading(false);
 
     if (res) {
-      message.success("อัปเดตข้อมูลสำเร็จ");
+      message.success("Updated Successfully");
       onSaveSuccess();
       onClose();
     } else {
-      message.error("อัปเดตข้อมูลไม่สำเร็จ");
+      message.error("Failed to update user");
     }
   };
 
@@ -197,211 +199,226 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
           ? { top: 24, paddingBottom: "env(safe-area-inset-bottom)" }
           : {}
       }
+      bodyStyle={{ padding: 0, background: "transparent" }}
+      // @ts-ignore
       styles={{
         content: {
-          borderRadius: 16,
+          background: "transparent",
+          boxShadow: "none",
           padding: 0,
-          overflow: "hidden",
           marginTop: isMobile ? 60 : undefined,
+          overflow: "visible",
         },
-        body: { padding: 0 },
       }}
     >
-      {/* HEADER */}
-      <div
-        className="relative flex items-center justify-center gap-2 text-white"
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(37,99,235,1) 0%, rgba(29,78,216,1) 100%)",
-          height: 56,
-        }}
-      >
-        <EditOutlined style={{ fontSize: 20 }} />
-        <span style={{ fontWeight: 700, fontSize: 16 }}>
-          แก้ไขโปรไฟล์ผู้ใช้
-        </span>
-
-        <button
-          onClick={onClose}
-          aria-label="close"
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-white hover:text-gray-200 transition rounded-full p-1 hover:bg-white/20"
+      {/* การ์ดหลักแบบเดียวกับ Bill / EditCar */}
+      <div className="w-full max-w-xl mx-auto rounded-[26px] bg-white shadow-xl overflow-hidden">
+        <Form
+          layout="vertical"
+          form={form}
+          onFinish={onFinish}
+          className="flex flex-col"
         >
-          <CloseOutlined style={{ fontSize: 18 }} />
-        </button>
-      </div>
+          {/* HEADER GRADIENT */}
+          <div className="relative flex items-center justify-between gap-2 text-white bg-gradient-to-r from-blue-600 to-sky-500 px-5 sm:px-6 py-4">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15">
+                <EditOutlined style={{ fontSize: 20 }} />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold text-sm sm:text-base">
+                  Edit user profile
+                </span>
+                <span className="text-[11px] text-blue-100">
+                  Update your account information
+                </span>
+              </div>
+            </div>
 
-      {/* FORM */}
-      <Form
-        layout="vertical"
-        form={form}
-        onFinish={onFinish}
-        className="px-5 md:px-7 pt-4 pb-6"
-        style={{
-          maxHeight: isMobile ? "70vh" : "75vh",
-          overflowY: "auto",
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        {/* UPLOAD */}
-        <div className="flex justify-center mb-6">
-          <ImgCrop rotationSlider>
-            <Upload
-              listType="picture-circle"
-              fileList={fileList}
-              onChange={onChangeUpload}
-              beforeUpload={(file) => {
-                if (!file.type.startsWith("image/")) {
-                  message.error("กรุณาอัปโหลดไฟล์รูปภาพเท่านั้น");
-                  return Upload.LIST_IGNORE;
-                }
-                setFileList([file]);
-                return false;
-              }}
-              maxCount={1}
-              showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
+            <button
+              onClick={onClose}
+              aria-label="close"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
             >
-              {fileList.length < 1 && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    color: "#2563eb",
+              <CloseOutlined style={{ fontSize: 16 }} />
+            </button>
+          </div>
+
+          {/* BODY (scroll ได้) */}
+          <div
+            className="px-5 md:px-7 pt-4 pb-6 bg-blue-50/40"
+            style={{
+              maxHeight: isMobile ? "60vh" : "65vh",
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {/* UPLOAD */}
+            <div className="flex justify-center mb-6">
+              <ImgCrop rotationSlider>
+                <Upload
+                  listType="picture-circle"
+                  fileList={fileList}
+                  onChange={onChangeUpload}
+                  beforeUpload={(file) => {
+                    if (!file.type.startsWith("image/")) {
+                      message.error("Please upload only image file");
+                      return Upload.LIST_IGNORE;
+                    }
+                    setFileList([file]);
+                    return false;
+                  }}
+                  maxCount={1}
+                  showUploadList={{
+                    showPreviewIcon: true,
+                    showRemoveIcon: true,
                   }}
                 >
-                  <PlusOutlined style={{ fontSize: 28 }} />
-                  <div style={{ marginTop: 6, fontSize: 12 }}>อัปโหลดรูป</div>
-                </div>
-              )}
-            </Upload>
-          </ImgCrop>
-        </div>
+                  {fileList.length < 1 && (
+                    <div className="flex flex-col items-center text-blue-600">
+                      <PlusOutlined style={{ fontSize: 28 }} />
+                      <div className="mt-1 text-xs">Upload a photo</div>
+                    </div>
+                  )}
+                </Upload>
+              </ImgCrop>
+            </div>
 
-        {/* FIELDS */}
-        <Row gutter={[12, 8]}>
-          <Col xs={24} md={12}>
-            <Form.Item
-              label="ชื่อผู้ใช้ (Username)"
-              name="username"
-              validateStatus={usernameError ? "error" : ""}
-              help={usernameError || ""}
+            {/* FIELDS */}
+            <Row gutter={[12, 8]}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="Username"
+                  name="username"
+                  validateStatus={usernameError ? "error" : ""}
+                  help={usernameError || ""}
+                >
+                  <Input
+                    placeholder="Enter your username"
+                    size="large"
+                    className="rounded-lg"
+                    onChange={(e) =>
+                      validateUnique("username", e.target.value.trim())
+                    }
+                  />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="Email"
+                  name="email"
+                  validateStatus={emailError ? "error" : ""}
+                  help={emailError || ""}
+                >
+                  <Input
+                    type="email"
+                    placeholder="Enter your email"
+                    size="large"
+                    className="rounded-lg"
+                    onChange={(e) =>
+                      validateUnique("email", e.target.value.trim())
+                    }
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={[12, 8]}>
+              <Col xs={24} md={12}>
+                <Form.Item label="Firstname" name="firstname">
+                  <Input
+                    placeholder="Enter your FirstName"
+                    size="large"
+                    className="rounded-lg"
+                  />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <Form.Item label="Lastname" name="lastname">
+                  <Input
+                    placeholder="Enter your Lastname"
+                    size="large"
+                    className="rounded-lg"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={[12, 8]}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="Phone Number"
+                  name="phone"
+                  validateStatus={phoneError ? "error" : ""}
+                  help={phoneError || ""}
+                >
+                  <Input
+                    placeholder="Enter your phone number"
+                    size="large"
+                    className="rounded-lg"
+                    onChange={(e) =>
+                      validateUnique("phone", e.target.value.trim())
+                    }
+                  />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <Form.Item label="Gender" name="gender">
+                  <Select
+                    placeholder="Select gender"
+                    size="large"
+                    className="rounded-lg"
+                  >
+                    {genders.map((g) => (
+                      <Option key={g.ID} value={g.ID}>
+                        {g.Gender}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
+
+          {/* FOOTER */}
+          <div className="px-5 sm:px-6 py-4 bg-white border-t border-blue-100 flex flex-col md:flex-row justify-end gap-3">
+            <Button
+              onClick={onClose}
+              block={isMobile}
+              style={{
+                borderColor: "#2563eb",
+                color: "#2563eb",
+                height: 40,
+                borderRadius: 10,
+                fontWeight: 600,
+              }}
             >
-              <Input
-                placeholder="กรอกชื่อผู้ใช้"
-                size="large"
-                className="rounded-lg"
-                onChange={(e) =>
-                  validateUnique("username", e.target.value.trim())
-                }
-              />
-            </Form.Item>
-          </Col>
+              Cancel
+            </Button>
 
-          <Col xs={24} md={12}>
-            <Form.Item
-              label="อีเมล (Email)"
-              name="email"
-              validateStatus={emailError ? "error" : ""}
-              help={emailError || ""}
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={loading}
+              block={isMobile}
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(37,99,235,1) 0%, rgba(29,78,216,1) 100%)",
+                border: "none",
+                height: 40,
+                borderRadius: 10,
+                fontWeight: 700,
+                boxShadow: "0 8px 20px rgba(37,99,235,0.25)",
+              }}
             >
-              <Input
-                type="email"
-                placeholder="กรอกอีเมล"
-                size="large"
-                className="rounded-lg"
-                onChange={(e) => validateUnique("email", e.target.value.trim())}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={[12, 8]}>
-          <Col xs={24} md={12}>
-            <Form.Item label="ชื่อจริง (Firstname)" name="firstname">
-              <Input
-                placeholder="กรอกชื่อจริง"
-                size="large"
-                className="rounded-lg"
-              />
-            </Form.Item>
-          </Col>
-
-          <Col xs={24} md={12}>
-            <Form.Item label="นามสกุล (Lastname)" name="lastname">
-              <Input
-                placeholder="กรอกนามสกุล"
-                size="large"
-                className="rounded-lg"
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={[12, 8]}>
-          <Col xs={24} md={12}>
-            <Form.Item
-              label="เบอร์โทรศัพท์ (Phone)"
-              name="phone"
-              validateStatus={phoneError ? "error" : ""}
-              help={phoneError || ""}
-            >
-              <Input
-                placeholder="กรอกเบอร์โทรศัพท์"
-                size="large"
-                className="rounded-lg"
-                onChange={(e) => validateUnique("phone", e.target.value.trim())}
-              />
-            </Form.Item>
-          </Col>
-
-          <Col xs={24} md={12}>
-            <Form.Item label="เพศ (Gender)" name="gender">
-              <Select placeholder="เลือกเพศ" size="large" className="rounded-lg">
-                {genders.map((g) => (
-                  <Option key={g.ID} value={g.ID}>
-                    {g.Gender}
-                  </Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
-
-        {/* BUTTONS */}
-        <div className="mt-6 flex flex-col md:flex-row justify-end gap-3">
-          <Button
-            onClick={onClose}
-            block={isMobile}
-            style={{
-              borderColor: "#2563eb",
-              color: "#2563eb",
-              height: 40,
-              borderRadius: 10,
-              fontWeight: 600,
-            }}
-          >
-            ยกเลิก
-          </Button>
-
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={loading}
-            block={isMobile}
-            style={{
-              background:
-                "linear-gradient(135deg, rgba(37,99,235,1) 0%, rgba(29,78,216,1) 100%)",
-              border: "none",
-              height: 40,
-              borderRadius: 10,
-              fontWeight: 700,
-              boxShadow: "0 8px 20px rgba(37,99,235,0.25)",
-            }}
-          >
-            บันทึก
-          </Button>
-        </div>
-      </Form>
+              Save
+            </Button>
+          </div>
+        </Form>
+      </div>
     </Modal>
   );
 };
