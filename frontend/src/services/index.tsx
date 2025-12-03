@@ -2952,5 +2952,27 @@ export const GetChargingSessionMonitor = async (
   }
 };
 
-// ocpp
+// ดึงข้อมูล SolarRealtimeData ทั้งหมดของ device_id ที่ระบุ
+export const ListSolarRealtimeDataByDeviceID = async (
+  deviceID: string
+): Promise<any[] | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/solar/realtime/${deviceID}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data; // เป็น array ของ SolarRealtimeData (ตอนนี้ใช้ any[])
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching solar realtime data:", error);
+    return null;
+  }
+};
 

@@ -260,6 +260,8 @@ func main() {
 		public.POST("create-solar", solar.CreateSolar)
 		public.PUT("update-solar/:id", solar.UpdateSolarByID)
 		public.DELETE("delete-solar/:id", solar.DeleteSolarByID)
+		public.POST("/solar/create-data-realtime", solar.CreateSolarRealtimeData)
+		public.GET("/solar/realtime/:device_id", solar.ListSolarRealtimeDataByDeviceID)
 
 		// ⚙️ Hardware WebSocket Routes
 		public.GET("/hardware/:deviceID", hardware.HandleHardware) // สำหรับอุปกรณ์จริง
@@ -272,6 +274,7 @@ func main() {
 
 		//monitor
 		public.GET("/charging-session/monitor/:charge_point", cabinet.GetDataMonitorByChargePoint)
+
 	}
 
 	r.GET("/", func(c *gin.Context) {

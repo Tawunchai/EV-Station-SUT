@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/Tawunchai/work-project/entity"
 	"github.com/glebarez/sqlite" // ✅ pure Go driver (no CGO)
+	"gorm.io/datatypes"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -101,6 +104,7 @@ func enableSQLitePragmas(sqlDB *sql.DB) error {
 func SetupDatabase() {
 	// AutoMigrate ทุก entity
 	if err := db.AutoMigrate(
+		&entity.SolarRealtimeData{},
 		&entity.Brand{},
 		&entity.Hardware{},
 		&entity.EnergySource{},
@@ -167,6 +171,42 @@ func seedMasters(db *gorm.DB) {
 	genderFemale := entity.Genders{Gender: "Female"}
 	db.FirstOrCreate(&genderMale, &entity.Genders{Gender: "Male"})
 	db.FirstOrCreate(&genderFemale, &entity.Genders{Gender: "Female"})
+
+	// แปลงเวลาให้เป็น time.Time (ตาม timestamp ที่ส่งมาจาก JSON)
+	timestamp, _ := time.Parse("2006-01-02T15:04:05.999999", "2025-11-18T13:30:01.628179")
+
+	alertsBytes, _ := json.Marshal([]string{}) // หรือจะใส่ ["overvoltage"] ก็ได้
+
+	// SolarRealtimeData (ตัวอย่าง)
+	solarData := entity.SolarRealtimeData{
+		DeviceID:          "solar_001",
+		Timestamp:         timestamp,
+		PowerIn:           3198.04,
+		PowerOut:          2800.50,
+		BatteryPercentage: 88.14,
+		BatteryPower:      1200.00,
+		Voltage:           380.5,
+		Current:           7.4,
+		GridPower: 8.5,
+		SolarIrradiance:   800.0,
+		Temperature:       25.6,
+		PanelTemperature:  42.3,
+		Efficiency:        94.2,
+		Frequency:         50.0,
+		DailyEnergy:       15.4,
+		TotalEnergy:       1247.8,
+		Status:            "normal",
+		Alerts:            datatypes.JSON(alertsBytes),
+	}
+
+	// ป้องกันข้อมูลซ้ำ: ใช้ DeviceID + Timestamp เป็นเงื่อนไข
+	db.FirstOrCreate(
+		&solarData,
+		entity.SolarRealtimeData{
+			DeviceID:  "solar_001",
+			Timestamp: timestamp,
+		},
+	)
 
 	// Energy Sourse
 	energySolar := entity.EnergySource{
