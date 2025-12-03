@@ -13,6 +13,7 @@ import (
 	"github.com/Tawunchai/work-project/entity"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/datatypes"
 )
 
 // ✅ WebSocket Upgrader
@@ -383,4 +384,145 @@ func GetSolarByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, s)
+}
+
+
+// ==============================
+// Request structs
+// ==============================
+
+type SolarRealtimePayloadData struct {
+	PowerIn           float64       `json:"power_in"`
+	PowerOut          float64       `json:"power_out"`
+	BatteryPercentage float64       `json:"battery_percentage"`
+	BatteryPower      float64       `json:"battery_power"`
+	GridPower         float64       `json:"grid_power"`       // ✅ เพิ่ม field นี้
+	Voltage           float64       `json:"voltage"`
+	Current           float64       `json:"current"`
+	SolarIrradiance   float64       `json:"solar_irradiance"`
+	Temperature       float64       `json:"temperature"`
+	PanelTemperature  float64       `json:"panel_temperature"`
+	Efficiency        float64       `json:"efficiency"`
+	Frequency         float64       `json:"frequency"`
+	DailyEnergy       float64       `json:"daily_energy"`
+	TotalEnergy       float64       `json:"total_energy"`
+	Status            string        `json:"status"`
+	Alerts            []interface{} `json:"alerts"` // []string ก็ได้ ถ้ารูปแบบ fix แน่นอน
+}
+
+type SolarRealtimePayload struct {
+	DeviceID  string                   `json:"device_id"`
+	Timestamp string                   `json:"timestamp"` // รับมาเป็น string แล้วค่อย parse ทีหลัง
+	Data      SolarRealtimePayloadData `json:"data"`
+}
+
+type CreateSolarRealtimeRequest struct {
+	Type    string               `json:"type"`
+	Payload SolarRealtimePayload `json:"payload"`
+}
+
+// ==============================
+// Controller: POST /solar/realtime
+// ==============================
+
+func CreateSolarRealtimeData(c *gin.Context) {
+	var req CreateSolarRealtimeRequest
+
+	// 1) Bind JSON จาก body
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "รูปแบบ JSON ไม่ถูกต้อง", "detail": err.Error()})
+		return
+	}
+
+	// (ถ้าอยากบังคับ type = "realtime")
+	if req.Type != "realtime" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type ต้องเป็น realtime เท่านั้น"})
+		return
+	}
+
+	// 2) แปลง timestamp จาก string → time.Time (ลองหลาย layout)
+	var ts time.Time
+	layouts := []string{
+		time.RFC3339Nano,             // เช่น 2025-11-18T13:30:01.628179Z
+		"2006-01-02T15:04:05.999999", // แบบไม่มี timezone ตามตัวอย่าง
+		"2006-01-02T15:04:05",        // แบบไม่มี microsecond
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, req.Payload.Timestamp); err == nil {
+			ts = t
+			break
+		}
+	}
+
+	if ts.IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timestamp ไม่ถูกต้อง", "value": req.Payload.Timestamp})
+		return
+	}
+
+	// 3) แปลง alerts → datatypes.JSON
+	alertBytes, err := json.Marshal(req.Payload.Data.Alerts)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่สามารถแปลง alerts เป็น JSON ได้", "detail": err.Error()})
+		return
+	}
+
+	// 4) สร้าง entity.SolarRealtimeData จาก request
+	solarData := entity.SolarRealtimeData{
+		DeviceID:          req.Payload.DeviceID,
+		Timestamp:         ts,
+		PowerIn:           req.Payload.Data.PowerIn,
+		PowerOut:          req.Payload.Data.PowerOut,
+		BatteryPercentage: req.Payload.Data.BatteryPercentage,
+		BatteryPower:      req.Payload.Data.BatteryPower,
+		GridPower:         req.Payload.Data.GridPower,      // ✅ map ค่า grid_power
+		Voltage:           req.Payload.Data.Voltage,
+		Current:           req.Payload.Data.Current,
+		SolarIrradiance:   req.Payload.Data.SolarIrradiance,
+		Temperature:       req.Payload.Data.Temperature,
+		PanelTemperature:  req.Payload.Data.PanelTemperature,
+		Efficiency:        req.Payload.Data.Efficiency,
+		Frequency:         req.Payload.Data.Frequency,
+		DailyEnergy:       req.Payload.Data.DailyEnergy,
+		TotalEnergy:       req.Payload.Data.TotalEnergy,
+		Status:            req.Payload.Data.Status,
+		Alerts:            datatypes.JSON(alertBytes),
+	}
+
+	// 5) บันทึกลงฐานข้อมูล
+	if err := config.DB().Create(&solarData).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้", "detail": err.Error()})
+		return
+	}
+
+	// 6) ตอบกลับ
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Solar realtime data created successfully",
+		"data":    solarData,
+	})
+}
+
+// GET /api/solar/realtime/:device_id
+func ListSolarRealtimeDataByDeviceID(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	if deviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "device_id ห้ามเป็นค่าว่าง"})
+		return
+	}
+
+	var records []entity.SolarRealtimeData
+
+	db := config.DB()
+	result := db.
+		Where("device_id = ?", deviceID).
+		Order("timestamp DESC"). // เอาล่าสุดอยู่บนสุด ถ้าไม่อยากเรียงลบหนึ่งบรรทัดนี้ออกได้
+		Find(&records)
+
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": result.Error.Error()})
+		return
+	}
+
+	// แบบเดียวกับ ListNew → ส่ง array ตรง ๆ
+	c.JSON(http.StatusOK, records)
 }
