@@ -14,10 +14,11 @@ import (
 	"github.com/Tawunchai/work-project/entity"
 	"github.com/glebarez/sqlite" // ✅ pure Go driver (no CGO)
 	"gorm.io/datatypes"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+
 
 var db *gorm.DB
 func DB() *gorm.DB { return db }
