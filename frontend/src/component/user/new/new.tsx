@@ -60,13 +60,17 @@ const New = () => {
   return (
     <>
       {/* Title */}
-      <div className="mx-auto max-w-screen-lg px-4 pt-6 pb-3 text-center">
-        <h1 className="text-[20px] md:text-[22px] font-bold tracking-tight text-blue-800">
-          News and Events
-        </h1>
-        <p className="mt-1 text-[12px] text-blue-900/60">
-          Keep up to date with the latest EV stories for you.
-        </p>
+      <div className="mb-6 flex justify-center text-center">
+        <div
+          className="inline-flex flex-col items-center text-center"
+        >
+          <h1 className="text-[20px] md:text-[22px] font-bold tracking-tight text-blue-800">
+            News and Events
+          </h1>
+          <p className="mt-2 text-[12px] text-blue-900/60">
+            Keep up to date with the latest EV stories for you.
+          </p>
+        </div>
       </div>
 
       <section>
@@ -173,11 +177,10 @@ const New = () => {
                       type="button"
                       onClick={prev}
                       disabled={page === 1}
-                      className={`px-3 h-10 rounded-xl border text-sm font-medium transition ${
-                        page === 1
+                      className={`px-3 h-10 rounded-xl border text-sm font-medium transition ${page === 1
                           ? "border-gray-200 text-gray-400 cursor-not-allowed"
                           : "border-blue-200 text-blue-700 hover:bg-blue-50"
-                      }`}
+                        }`}
                     >
                       Previous
                     </button>
@@ -192,11 +195,10 @@ const New = () => {
                             key={p}
                             type="button"
                             onClick={() => goPage(p)}
-                            className={`min-w-[36px] h-10 px-2 rounded-xl text-sm font-semibold transition ${
-                              active
+                            className={`min-w-[36px] h-10 px-2 rounded-xl text-sm font-semibold transition ${active
                                 ? "bg-blue-600 text-white shadow"
                                 : "bg-white border border-blue-200 text-blue-700 hover:bg-blue-50"
-                            }`}
+                              }`}
                           >
                             {p}
                           </button>
@@ -208,11 +210,10 @@ const New = () => {
                       type="button"
                       onClick={next}
                       disabled={page === totalPages}
-                      className={`px-3 h-10 rounded-xl border text-sm font-medium transition ${
-                        page === totalPages
+                      className={`px-3 h-10 rounded-xl border text-sm font-medium transition ${page === totalPages
                           ? "border-gray-200 text-gray-400 cursor-not-allowed"
                           : "border-blue-200 text-blue-700 hover:bg-blue-50"
-                      }`}
+                        }`}
                     >
                       Next
                     </button>

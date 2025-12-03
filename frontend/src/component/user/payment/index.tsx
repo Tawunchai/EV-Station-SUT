@@ -189,16 +189,22 @@ const Index: React.FC = () => {
     grid_percent: number
   ) => {
     try {
-      const ws = connectHardwareSocket(() => {});
+      // 💡 ต้องมี hardwarePoint ก่อนถึงจะส่งคำสั่งได้
+      if (!hardwarePoint) {
+        console.warn(
+          "⚠️ ไม่มี HardwarePoint จาก Cabinet, ยกเลิกการส่งคำสั่งไป hardware"
+        );
+        return;
+      }
+
+      // 🔗 ส่ง hardwarePoint ไปให้ connectHardwareSocket → /hardware/frontend?deviceID=hardware_001
+      const ws = connectHardwareSocket(() => {}, hardwarePoint);
 
       ws.onopen = () => {
-        console.log("Connected to Hardware WebSocket");
-
-        if (!hardwarePoint) {
-          console.warn("⚠️ ไม่มี HardwarePoint จาก Cabinet, ยกเลิกการส่งคำสั่งไป hardware");
-          ws.close();
-          return;
-        }
+        console.log(
+          "Connected to Hardware WebSocket for device:",
+          hardwarePoint
+        );
 
         const command = {
           solar_kwh,
@@ -211,8 +217,13 @@ const Index: React.FC = () => {
         sendHardwareCommand(ws, hardwarePoint, command);
       };
 
-      ws.onclose = () => console.warn("Hardware WebSocket disconnected");
-      ws.onerror = (err) => console.error("Hardware WebSocket error:", err);
+      ws.onclose = () =>
+        console.warn(
+          "Hardware WebSocket disconnected for device:",
+          hardwarePoint
+        );
+      ws.onerror = (err) =>
+        console.error("Hardware WebSocket error for device:", hardwarePoint, err);
     } catch (err) {
       console.error("Failed to send to hardware:", err);
     }

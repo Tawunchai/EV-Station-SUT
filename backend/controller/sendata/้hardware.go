@@ -25,17 +25,28 @@ var upgrader = websocket.Upgrader{
 
 // ======================================================
 // 🌐 เก็บ client ทั้งสองฝั่ง (frontend + hardware)
+//    - frontendClients: แยกตาม deviceID เหมือน solar
+//    - hardwareClients: hardware ต่อเข้ามาทีละตัวตาม deviceID
 // ======================================================
 var (
 	hardwareMu      sync.Mutex
-	frontendClients = make(map[*websocket.Conn]bool)
-	hardwareClients = make(map[string]*websocket.Conn) // deviceID → conn
+	frontendClients = make(map[string]map[*websocket.Conn]bool) // deviceID → set ของ conn
+	hardwareClients = make(map[string]*websocket.Conn)          // deviceID → conn
 )
 
 // ======================================================
 // 💻 FRONTEND — React Dashboard
+//    ws://host/hardware/frontend?deviceID=hardware_001
 // ======================================================
 func HandleFrontend(c *gin.Context) {
+	// 📌 frontend ต้องระบุ deviceID ที่อยากดู
+	deviceID := c.Query("deviceID")
+	if strings.TrimSpace(deviceID) == "" {
+		fmt.Println("❌ Frontend missing deviceID query param (use /hardware/frontend?deviceID=hardware_001)")
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		fmt.Println("❌ Upgrade frontend error:", err)
@@ -43,36 +54,55 @@ func HandleFrontend(c *gin.Context) {
 	}
 	defer conn.Close()
 
+	// ✅ ผูก connection นี้กับ deviceID (เหมือน solar.HandleFrontend)
 	hardwareMu.Lock()
-	frontendClients[conn] = true
+	if frontendClients[deviceID] == nil {
+		frontendClients[deviceID] = make(map[*websocket.Conn]bool)
+	}
+	frontendClients[deviceID][conn] = true
 	hardwareMu.Unlock()
 
-	fmt.Println("💻 Frontend connected")
+	fmt.Println("💻 Frontend connected for hardware device:", deviceID)
 
+	// รอ message จาก frontend:
+	// - ถ้า disconnect → ลบออกจาก group
+	// - ถ้าส่ง JSON ที่มี device_id / command → ส่งคำสั่งไป hardware
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
+			// frontend ปิด หรือ connection หลุด
 			hardwareMu.Lock()
-			delete(frontendClients, conn)
+			if conns, ok := frontendClients[deviceID]; ok {
+				delete(conns, conn)
+				if len(conns) == 0 {
+					delete(frontendClients, deviceID)
+				}
+			}
 			hardwareMu.Unlock()
-			fmt.Println("❌ Frontend disconnected")
+
+			fmt.Println("❌ Frontend disconnected for hardware device:", deviceID)
 			break
 		}
 
 		// Frontend ส่งคำสั่งมา → เด้งไปหา hardware
 		var data map[string]interface{}
 		if err := json.Unmarshal(msg, &data); err == nil {
-			deviceID, _ := data["device_id"].(string)
+			// ถ้าใน message มี device_id ให้ override; ถ้าไม่มีก็ใช้ deviceID จาก query
+			targetDeviceID := deviceID
+			if d, ok := data["device_id"].(string); ok && strings.TrimSpace(d) != "" {
+				targetDeviceID = d
+			}
 
 			if payload, ok := data["command"]; ok {
-				SendCommandToHardware(deviceID, payload)
+				SendCommandToHardware(targetDeviceID, payload)
 			}
 		}
 	}
 }
 
 // ======================================================
-// 🔋 HARDWARE — ESP32 / Solar Controller
+// 🔋 HARDWARE — ESP32 / Solar / EV Controller
+//    ws://host/hardware/:deviceID
 // ======================================================
 func HandleHardware(c *gin.Context) {
 	deviceID := c.Param("deviceID")
@@ -101,7 +131,7 @@ func HandleHardware(c *gin.Context) {
 		}
 
 		// แจ้ง hardware ว่าระบบพร้อมรับข้อมูล
-		conn.WriteMessage(websocket.TextMessage, []byte("ready"))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("ready"))
 
 		var jsonData map[string]interface{}
 		if err := json.Unmarshal(msg, &jsonData); err != nil {
@@ -109,7 +139,16 @@ func HandleHardware(c *gin.Context) {
 			continue
 		}
 
-		fmt.Printf("📦 Data from '%s': %s\n", deviceID, string(msg))
+		// ฝัง device_id ลง payload ด้วย (เหมือน solar)
+		jsonData["device_id"] = deviceID
+
+		enriched, err := json.Marshal(jsonData)
+		if err != nil {
+			fmt.Println("❌ Cannot marshal enriched hardware data:", err)
+			continue
+		}
+
+		fmt.Printf("📦 Data from '%s': %s\n", deviceID, string(enriched))
 
 		// 🧠 ถ้าเป็น message type = "remaining_energy" → อัปเดต RemainingPower ใน DB + คืนเงิน
 		msgType, _ := jsonData["type"].(string)
@@ -117,23 +156,33 @@ func HandleHardware(c *gin.Context) {
 			go handleRemainingEnergyMessage(jsonData)
 		}
 
-		// ส่งข้อมูลจาก hardware → frontend ทุกตัว (ไม่เปลี่ยนแปลง payload)
-		broadcastToFrontend(msg)
+		// ส่งข้อมูลจาก hardware → frontend เฉพาะที่ subscribe deviceID นี้
+		broadcastToFrontend(deviceID, enriched)
 	}
 }
 
 // ======================================================
-// 📤 Broadcast Hardware → Frontend
+// 📤 Broadcast Hardware → Frontend (แยกตาม deviceID)
 // ======================================================
-func broadcastToFrontend(msg []byte) {
+func broadcastToFrontend(deviceID string, msg []byte) {
 	hardwareMu.Lock()
 	defer hardwareMu.Unlock()
 
-	for client := range frontendClients {
+	conns, ok := frontendClients[deviceID]
+	if !ok {
+		// ไม่มีใคร subscribe deviceID นี้อยู่
+		return
+	}
+
+	for client := range conns {
 		if err := client.WriteMessage(websocket.TextMessage, msg); err != nil {
 			client.Close()
-			delete(frontendClients, client)
+			delete(conns, client)
 		}
+	}
+
+	if len(conns) == 0 {
+		delete(frontendClients, deviceID)
 	}
 }
 

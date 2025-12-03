@@ -2436,14 +2436,26 @@ export const connectSolarSocket = (
   return ws;
 };
 
-
-
 /** 🌐 เชื่อมต่อ WebSocket ไปยัง Backend Hardware */
-export const connectHardwareSocket = (onMessage: (data: any) => void) => {
-  const ws = new WebSocket(`${apiUrl}/hardware/frontend`);
+export const connectHardwareSocket = (
+  onMessage: (data: any) => void,
+  deviceId: string
+) => {
+  if (!deviceId) {
+    console.warn("⚠️ deviceId is required to connect hardware WebSocket");
+    // จะ throw error หรือ return placeholder ก็ได้ แต่ตอนนี้ log ไว้เฉย ๆ
+  }
+
+  // 🔗 ต่อไปที่ /hardware/frontend พร้อม query ?deviceID=xxx
+  const ws = new WebSocket(
+    `${apiUrl}/hardware/frontend?deviceID=${encodeURIComponent(deviceId)}`
+  );
 
   ws.onopen = () => {
-    console.log("✅ Connected to Go Hardware WebSocket Server");
+    console.log(
+      "✅ Connected to Go Hardware WebSocket Server for device:",
+      deviceId
+    );
   };
 
   ws.onmessage = (event) => {
@@ -2458,7 +2470,7 @@ export const connectHardwareSocket = (onMessage: (data: any) => void) => {
   };
 
   ws.onclose = () => {
-    console.warn("⚠️ Hardware WebSocket disconnected");
+    console.warn("⚠️ Hardware WebSocket disconnected for device:", deviceId);
   };
 
   ws.onerror = (err) => {
@@ -2505,8 +2517,6 @@ export const requestEnergyUsage = async (
     throw err;
   }
 };
-
-
 
 /** 📤 ส่งคำสั่งจาก Web → Backend → Hardware */
 export const sendHardwareCommand = (

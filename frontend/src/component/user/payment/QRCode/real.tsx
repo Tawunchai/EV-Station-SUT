@@ -142,18 +142,22 @@ const PayPalCard: React.FC = () => {
     gridPercent: number
   ) => {
     try {
-      const ws = connectHardwareSocket(() => {});
+      // ต้องมี hardwarePoint ก่อน
+      if (!hardwarePoint) {
+        console.warn(
+          "⚠️ ไม่มี HardwarePoint จาก Cabinet (QR Page), ยกเลิกการส่งคำสั่งไป hardware"
+        );
+        return;
+      }
+
+      // ต่อ WebSocket แยกตาม deviceID: /hardware/frontend?deviceID=hardware_xxx
+      const ws = connectHardwareSocket(() => {}, hardwarePoint);
 
       ws.onopen = () => {
-        console.log("✅ Connected to Hardware WebSocket (QR Page)");
-
-        if (!hardwarePoint) {
-          console.warn(
-            "⚠️ ไม่มี HardwarePoint จาก Cabinet (QR Page), ยกเลิกการส่งคำสั่งไป hardware"
-          );
-          ws.close();
-          return;
-        }
+        console.log(
+          "✅ Connected to Hardware WebSocket (QR Page) for device:",
+          hardwarePoint
+        );
 
         const command = {
           solar_kwh: solarKwh,
@@ -161,6 +165,7 @@ const PayPalCard: React.FC = () => {
           solar_percent: solarPercent,
           grid_percent: gridPercent,
         };
+
         // ⭐ ใช้ HardwarePoint จาก Cabinet แทน "hardware_001"
         sendHardwareCommand(ws, hardwarePoint, command);
         console.log("📤 Sent Command to Hardware:", {
@@ -170,9 +175,16 @@ const PayPalCard: React.FC = () => {
       };
 
       ws.onclose = () =>
-        console.warn("⚠️ Hardware WebSocket disconnected (QR Page)");
+        console.warn(
+          "⚠️ Hardware WebSocket disconnected (QR Page) for device:",
+          hardwarePoint
+        );
       ws.onerror = (err) =>
-        console.error("❌ Hardware WebSocket error (QR Page):", err);
+        console.error(
+          "❌ Hardware WebSocket error (QR Page) for device:",
+          hardwarePoint,
+          err
+        );
     } catch (err) {
       console.error("❌ Failed to send to hardware (QR Page):", err);
     }
@@ -277,11 +289,11 @@ const PayPalCard: React.FC = () => {
         ev_cabinet_id: cabinet_id ?? undefined, // ✅ number | undefined
       };
 
-      console.log(paymentData)
+      console.log(paymentData);
 
       const paymentResult = await CreatePayment(paymentData);
 
-      console.log(paymentResult)
+      console.log(paymentResult);
 
       if (paymentResult && paymentResult.ID) {
         // ผูก EV Charging Payment
@@ -300,7 +312,7 @@ const PayPalCard: React.FC = () => {
 
         // สร้าง Token สำหรับตู้ชาร์จ
         const token = await CreateChargingToken(userID, paymentResult.ID);
-        console.log(token)
+        console.log(token);
         if (!token) {
           setLoading(false);
           return;
@@ -504,7 +516,7 @@ const PayPalCard: React.FC = () => {
         <div className="mx-auto flex max-w-screen-sm items-center gap-3 px-4 py-3">
           <button
             onClick={handleUploadClick}
-            className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition"
+            className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text.white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition"
           >
             <FaUpload />
             <span className="text-sm font-semibold">Upload slip</span>

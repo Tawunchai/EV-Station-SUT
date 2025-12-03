@@ -244,7 +244,8 @@ func main() {
 
 		//OCPP Test
 		public.GET("/ocpp/:chargerID", ocpp.HandleOCPP)
-		public.GET("/frontend", ocpp.HandleFrontend) // ส่งให้ frontend
+		public.GET("/frontend", ocpp.HandleFrontend) 
+		public.GET("/frontend/:chargerID", ocpp.HandleFrontend)
 		public.POST("/ocpp/remote-start", ocpp.RemoteStartHandler)
 		public.POST("/ocpp/remote-stop", ocpp.RemoteStopHandler)
 

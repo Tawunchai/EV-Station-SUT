@@ -356,7 +356,7 @@ const EVCalibet: React.FC = () => {
     }
   };
 
-  /** ---------- Connect OCPP monitor socket ---------- */
+  /** ---------- Connect OCPP monitor socket ---------- */ //
   useEffect(() => {
     appendLog("[SYSTEM] Connecting to OCPP monitor socket ...");
 
