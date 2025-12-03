@@ -13,8 +13,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { connectSolarSocket } from "../../../../services";
 import type { SolarInterface } from "../../../../interface/ISolar";
 
-import Ocppconnect from "./test";
-
 /** ---------- Types ---------- */
 type Parameter = {
   name: string;
@@ -653,9 +651,6 @@ const Index: React.FC = () => {
 
         <div className="h-10" />
       </main>
-
-      {/* ทดสอบ OCPP / component อื่น ๆ */}
-      <Ocppconnect />
     </div>
   );
 };

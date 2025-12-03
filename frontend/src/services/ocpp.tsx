@@ -2,11 +2,19 @@
 import axios from "axios";
 import { apiUrl } from "./index"
 
-export const connectOcppSocket = (onMessage: (data: any) => void): WebSocket => {
-  const ws = new WebSocket(`${apiUrl}/frontend`);
+// ===============================
+// WebSocket OCPP Frontend
+// ===============================
+export const connectOcppSocket = (
+  onMessage: (data: any) => void,
+  chargerId: string = "all" // ⭐ default = all → /frontend/all
+): WebSocket => {
+  const room = chargerId || "all";
+
+  const ws = new WebSocket(`${apiUrl}/frontend/${room}`);
 
   ws.onopen = () => {
-    console.log("✅ Connected to Go OCPP Server (/frontend)");
+    console.log(`✅ Connected to Go OCPP Server (/frontend/${room})`);
   };
 
   ws.onmessage = (event) => {
@@ -21,11 +29,11 @@ export const connectOcppSocket = (onMessage: (data: any) => void): WebSocket => 
   };
 
   ws.onclose = () => {
-    console.log("⚠️ WebSocket (/frontend) disconnected");
+    console.log(`⚠️ WebSocket (/frontend/${room}) disconnected`);
   };
 
   ws.onerror = (err) => {
-    console.error("❌ WebSocket (/frontend) error:", err);
+    console.error(`❌ WebSocket (/frontend/${room}) error:`, err);
   };
 
   return ws;
@@ -80,3 +88,4 @@ export const getChargerStatus = async (
   );
   return res.data.data;
 };
+

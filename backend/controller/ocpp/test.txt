@@ -28,13 +28,11 @@ var upgrader = websocket.Upgrader{
 }
 
 // ============================================================================
-// 🌐 Frontend WebSocket Clients (ดู log OCPP แบบ real-time แยกตามตู้)
-// 🔄 CHANGED: เปลี่ยนจาก clients(map[*websocket.Conn]bool) → frontendClients(map[*websocket.Conn]string)
-//      - value = roomID (เช่น "CP_1", "CP_2", "*" สำหรับดูทุกตู้)
+// 🌐 Frontend WebSocket Clients (ดู log OCPP แบบ real-time)
 // ============================================================================
 var (
-	frontendClients   = make(map[*websocket.Conn]string) // conn -> roomID
-	frontendClientsMu sync.Mutex
+	clients   = make(map[*websocket.Conn]bool)
+	clientsMu sync.Mutex
 )
 
 // ============================================================================
@@ -129,36 +127,25 @@ func nowOcppTime() string {
 
 // ============================================================================
 // 📡 Broadcast log / msg ไป frontend
-// 🔄 CHANGED: เพิ่มระบบ room-based broadcast (chargerID / "*" (ทุกตู้))
 // ============================================================================
+func broadcastToFrontend(msg []byte) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
 
-// roomID = "CP_1"  → ส่งให้คนที่ subscribe "CP_1" และ "*" (ดูทุกตู้)
-// roomID = "*"     → ส่งให้ทุก connection
-func broadcastToFrontendRoom(roomID string, msg []byte) {
-	frontendClientsMu.Lock()
-	defer frontendClientsMu.Unlock()
-
-	for conn, r := range frontendClients {
-		// r = room ที่ client subscribe: "CP_1", "CP_2", หรือ "*"
-		if roomID == "*" || r == "*" || r == roomID {
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				conn.Close()
-				delete(frontendClients, conn)
-			}
+	for client := range clients {
+		if err := client.WriteMessage(websocket.TextMessage, msg); err != nil {
+			client.Close()
+			delete(clients, client)
 		}
 	}
 }
 
-func broadcastTextToFrontendRoom(roomID, s string) {
-	broadcastToFrontendRoom(roomID, []byte(s))
+func broadcastTextToFrontend(s string) {
+	broadcastToFrontend([]byte(s))
 }
 
 // ============================================================================
 // 🔹 FRONTEND WebSocket (ใช้ดู log OCPP แบบ Real-time)
-// 🔄 CHANGED: รองรับ room ผ่าน path param :chargerID
-//      - GET /frontend/CP_1 → room = "CP_1"
-//      - GET /frontend/all  → room = "*"
-//      - GET /frontend      → room = "*" (ยัง backward-compatible)
 // ============================================================================
 func HandleFrontend(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -168,30 +155,20 @@ func HandleFrontend(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	// อ่าน chargerID จาก path param (ถ้า router ยังเป็น /frontend เฉย ๆ ก็จะได้ "")
-	roomID := c.Param("chargerID")
-	if roomID == "" || roomID == "all" {
-		roomID = "*"
-	}
+	clientsMu.Lock()
+	clients[conn] = true
+	clientsMu.Unlock()
 
-	frontendClientsMu.Lock()
-	frontendClients[conn] = roomID
-	frontendClientsMu.Unlock()
-
-	fmt.Println("🌐 Frontend connected, room =", roomID)
-
-	// ส่ง system message ให้เฉพาะ connection นี้
-	if err := conn.WriteMessage(websocket.TextMessage,
-		[]byte("[SYSTEM] Frontend connected to room "+roomID+"\n")); err != nil {
-		fmt.Println("⚠️ send system msg failed:", err)
-	}
+	fmt.Println("🌐 Frontend connected")
+	broadcastTextToFrontend("[SYSTEM] Frontend connected\n")
 
 	for {
 		if _, _, err := conn.NextReader(); err != nil {
-			frontendClientsMu.Lock()
-			delete(frontendClients, conn)
-			frontendClientsMu.Unlock()
-			fmt.Println("❌ Frontend disconnected from room:", roomID)
+			clientsMu.Lock()
+			delete(clients, conn)
+			clientsMu.Unlock()
+			fmt.Println("❌ Frontend disconnected")
+			broadcastTextToFrontend("[SYSTEM] Frontend disconnected\n")
 			break
 		}
 	}
@@ -222,8 +199,7 @@ func HandleOCPP(c *gin.Context) {
 	chargersMu.Unlock()
 
 	fmt.Println("🚗 Charger connected:", chargerID)
-	// 🔄 CHANGED: ส่ง system log เฉพาะ room ของตู้ + คนที่ subscribe "*"
-	broadcastTextToFrontendRoom(chargerID, "[SYSTEM] Charger connected: "+chargerID+"\n")
+	broadcastTextToFrontend("[SYSTEM] Charger connected: " + chargerID + "\n")
 
 	// อัปเดตสถานะว่า connected
 	statusMu.Lock()
@@ -241,8 +217,7 @@ func HandleOCPP(c *gin.Context) {
 		delete(chargers, chargerID)
 		chargersMu.Unlock()
 		fmt.Println("⚠️ Charger disconnected:", chargerID)
-		// 🔄 CHANGED: ส่งเฉพาะ room
-		broadcastTextToFrontendRoom(chargerID, "[SYSTEM] Charger disconnected: "+chargerID+"\n")
+		broadcastTextToFrontend("[SYSTEM] Charger disconnected: " + chargerID + "\n")
 
 		statusMu.Lock()
 		st, ok := chargerStatuses[chargerID]
@@ -261,8 +236,7 @@ func HandleOCPP(c *gin.Context) {
 		}
 
 		// ส่ง raw frame ให้ frontend ดูก่อน
-		// 🔄 CHANGED: ส่งเฉพาะคนที่ดู chargerID นี้ + คนที่ดู "*"
-		broadcastToFrontendRoom(chargerID, msg)
+		broadcastToFrontend(msg)
 
 		// พยายาม parse JSON เป็น []interface{}
 		var frame []interface{}
@@ -363,8 +337,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			fmt.Println("❌ Failed to send BootNotification conf:", err)
 		} else {
 			fmt.Println("✅ BootNotification Accepted for", chargerID)
-			// 🔄 CHANGED: ส่ง log ไปเฉพาะ room ของ charger + "*"
-			broadcastTextToFrontendRoom(chargerID, "[SENT] BootNotification.conf to "+chargerID+"\n")
+			broadcastTextToFrontend("[SENT] BootNotification.conf to " + chargerID + "\n")
 		}
 
 	// ---------------------------------------------------------------
@@ -678,8 +651,7 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 	}
 
 	fmt.Println("➡️ RemoteStartTransaction sent to", chargerID, "connectorId =", connectorID, "idTag =", idTag)
-	// 🔄 CHANGED: ส่ง log เฉพาะ room ของ charger
-	broadcastTextToFrontendRoom(chargerID, "[SENT] RemoteStartTransaction to "+chargerID+"\n")
+	broadcastTextToFrontend("[SENT] RemoteStartTransaction to " + chargerID + "\n")
 	return nil
 }
 
@@ -726,8 +698,7 @@ func SendRemoteStopTransaction(chargerID string, txID int) error {
 	}
 
 	fmt.Println("➡️ RemoteStopTransaction sent to", chargerID, "txID =", txID)
-	// 🔄 CHANGED: ส่ง log เฉพาะ room ของ charger
-	broadcastTextToFrontendRoom(chargerID, "[SENT] RemoteStopTransaction to "+chargerID+"\n")
+	broadcastTextToFrontend("[SENT] RemoteStopTransaction to " + chargerID + "\n")
 	return nil
 }
 
@@ -984,11 +955,11 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 			"start_time":   s.StartTime.Format(time.RFC3339),
 		}
 
-		// 🔄 CHANGED: ส่งเฉพาะ room ของ chargePoint (เช่น "CP_1") + ผู้ที่ subscribe "*"
+		// ✅ อันใหม่ (แปลงเป็น JSON แล้วค่อยส่ง)
 		if b, err := json.Marshal(startEnergyMsg); err != nil {
 			fmt.Println("❌ marshal startEnergyMsg failed:", err)
 		} else {
-			broadcastToFrontendRoom(chargePoint, b)
+			broadcastToFrontend(b)
 		}
 
 		return nil
@@ -1048,3 +1019,4 @@ func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) er
 
 	return nil
 }
+

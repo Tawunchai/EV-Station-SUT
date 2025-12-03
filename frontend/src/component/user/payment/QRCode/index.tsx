@@ -132,7 +132,7 @@ const PayPalCard: React.FC = () => {
     gridPercent: number
   ) => {
     try {
-      const ws = connectHardwareSocket(() => {});
+      const ws = connectHardwareSocket(() => {},"hardware_001");
 
       ws.onopen = () => {
         console.log("✅ Connected to Hardware WebSocket (QR Page)");

@@ -9,7 +9,7 @@ import {
   GetChargingSessionByUserID,
   UpdateSessionStatusByPaymentID,
   requestEnergyUsage,
-  connectHardwareSocket, // ⭐ WebSocket hardware
+  connectHardwareSocket, // ⭐ WebSocket hardware //
   GetCabinetByID, // ⭐ ดึงข้อมูลตู้ชาร์จตาม ID
 } from "../../../services";
 import {
@@ -349,134 +349,173 @@ const ChargingEV = () => {
     fetchInitialStatus();
   }, [chargerId]);
 
-  // 👉 ฟัง WebSocket OCPP จาก backend
+  // 👉 ฟัง WebSocket OCPP จาก backend (ผูกกับ ChargePoint โดยตรง)
   useEffect(() => {
-    const ws = connectOcppSocket((data: any) => {
-      try {
-        // ⭐ เคส event แบบ object (ไม่ใช่ OCPP frame array)
-        if (data && typeof data === "object" && !Array.isArray(data)) {
-          if (data.type === "start_energy_updated") {
-            console.log("🔥 [OCPP] start_energy_updated event:", data);
+    if (!chargerId) {
+      console.log(
+        "ℹ️ OCPP WS: chargerId ยังไม่มา (ยังไม่รู้ ChargePoint) → ยังไม่ต่อ WebSocket"
+      );
+      return;
+    }
 
-            if (!firstMeterRef.current) {
-              firstMeterRef.current = true;
-              console.log(
-                "⏳ start_energy_updated → wait 2s then reload session from backend"
-              );
-              setTimeout(() => {
-                checkSession();
-              }, 2000);
+    console.log("🛰️ OCPP WS: connecting with ChargePoint (room):", chargerId);
+
+    const ws = connectOcppSocket(
+      (data: any) => {
+        try {
+          // ⭐ เคส event แบบ object (ไม่ใช่ OCPP frame array)
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            if (data.type === "start_energy_updated") {
+              console.log("🔥 [OCPP] start_energy_updated event:", data);
+
+              if (!firstMeterRef.current) {
+                firstMeterRef.current = true;
+                console.log(
+                  "⏳ start_energy_updated → wait 2s then reload session from backend"
+                );
+                setTimeout(() => {
+                  checkSession();
+                }, 2000);
+              }
             }
-          }
-          // ไม่ใช่ frame array → จบที่นี่
-          return;
-        }
-
-        // ⭐ เคส OCPP raw frame (array)
-        if (!Array.isArray(data) || data.length < 3) {
-          return;
-        }
-
-        const messageType = data[0]; // 2 = CALL
-        const action = data[2];
-        const payload = data[3];
-
-        // ✅ StatusNotification
-        if (messageType === 2 && action === "StatusNotification") {
-          if (payload && typeof payload.status === "string") {
-            const newStatus = payload.status as string;
-            setOcppStatus(newStatus);
-
-            // ⭐ ถ้าเพิ่งเปลี่ยนเป็น SuspendedEV → โหลด Session จาก backend เพื่อเอา EndTime มาด้วย
-            if (newStatus === "SuspendedEV") {
-              setTimeout(() => {
-                checkSession();
-              }, 1000);
-            }
-          }
-        }
-
-        // ✅ MeterValues → ดึง Energy.Active.Import.Register (Wh)
-        if (messageType === 2 && action === "MeterValues") {
-          console.log("📥 [OCPP] Raw MeterValues message:", data);
-
-          if (!payload) return;
-
-          const meterValues = payload.meterValue;
-          if (!Array.isArray(meterValues) || meterValues.length === 0) {
+            // ไม่ใช่ frame array → จบที่นี่
             return;
           }
 
-          const firstMeter = meterValues[0];
-          const sampled = firstMeter?.sampledValue;
-          if (!Array.isArray(sampled)) return;
+          // ⭐ เคส OCPP raw frame (array)
+          if (!Array.isArray(data) || data.length < 3) {
+            return;
+          }
 
-          const energySample = sampled.find(
-            (s: any) =>
-              s?.measurand === "Energy.Active.Import.Register" &&
-              (s?.unit === "Wh" || !s?.unit)
-          );
+          const messageType = data[0]; // 2 = CALL
+          const action = data[2];
+          const payload = data[3];
 
-          if (!energySample || energySample.value == null) return;
+          // ✅ StatusNotification
+          if (messageType === 2 && action === "StatusNotification") {
+            if (payload && typeof payload.status === "string") {
+              const newStatus = payload.status as string;
+              setOcppStatus(newStatus);
 
-          const energyWh = Number(energySample.value);
-          if (!Number.isFinite(energyWh)) return;
+              // ⭐ ถ้าเพิ่งเปลี่ยนเป็น SuspendedEV → โหลด Session จาก backend เพื่อเอา EndTime มาด้วย
+              if (newStatus === "SuspendedEV") {
+                setTimeout(() => {
+                  checkSession();
+                }, 1000);
+              }
+            }
+          }
 
-          setCurrentEnergyWh(energyWh);
+          // ✅ MeterValues → ดึง Energy.Active.Import.Register (Wh)
+          if (messageType === 2 && action === "MeterValues") {
+            console.log("📥 [OCPP] Raw MeterValues message:", data);
 
-          console.log(
-            "🔎 [OCPP] MeterValues Energy.Active.Import.Register (Wh):",
-            energyWh
-          );
+            if (!payload) return;
 
-          // ❗ ตอนนี้ใช้ event start_energy_updated เป็นตัว reload session แล้ว
+            const meterValues = payload.meterValue;
+            if (!Array.isArray(meterValues) || meterValues.length === 0) {
+              return;
+            }
+
+            const firstMeter = meterValues[0];
+            const sampled = firstMeter?.sampledValue;
+            if (!Array.isArray(sampled)) return;
+
+            const energySample = sampled.find(
+              (s: any) =>
+                s?.measurand === "Energy.Active.Import.Register" &&
+                (s?.unit === "Wh" || !s?.unit)
+            );
+
+            if (!energySample || energySample.value == null) return;
+
+            const energyWh = Number(energySample.value);
+            if (!Number.isFinite(energyWh)) return;
+
+            setCurrentEnergyWh(energyWh);
+
+            console.log(
+              "🔎 [OCPP] MeterValues Energy.Active.Import.Register (Wh):",
+              energyWh
+            );
+
+            // ❗ ตอนนี้ใช้ event start_energy_updated เป็นตัว reload session แล้ว
+          }
+        } catch (err) {
+          console.error("Error parsing OCPP message:", err);
         }
-      } catch (err) {
-        console.error("Error parsing OCPP message:", err);
-      }
-    });
+      },
+      chargerId // ⭐ subscribe ตาม ChargePoint เช่น "CP_1"
+    );
 
     return () => {
+      console.log(
+        "🛑 OCPP WS: closing WebSocket for ChargePoint (room):",
+        chargerId
+      );
       ws.close();
     };
-  }, [checkSession]);
+  }, [chargerId, checkSession]);
 
-  // ⭐ ฟัง WebSocket Hardware → ดูค่าที่ hardware ส่งกลับมา
+  // ⭐ ฟัง WebSocket Hardware → ดูค่าที่ hardware ส่งกลับมา (แยกตาม HardwarePoint)
   useEffect(() => {
-    const ws = connectHardwareSocket((data: any) => {
-      console.log("🔌 [HW] Raw message from backend → frontend:", data);
+    if (!hardwarePoint) {
+      console.log(
+        "ℹ️ HW WS: hardwarePoint ยังไม่มา → ยังไม่ต่อ WebSocket hardware"
+      );
+      return;
+    }
 
-      if (typeof data === "string") {
-        console.log("🔹 [HW] String message:", data);
-        return;
-      }
+    console.log(
+      "🛰️ HW WS: connecting to hardware frontend stream for device:",
+      hardwarePoint
+    );
 
-      if (data?.type === "remaining_energy" && data?.payload) {
-        console.log("🔋 [HW] Remaining energy payload:", data.payload);
+    const ws = connectHardwareSocket(
+      (data: any) => {
+        console.log(
+          "🔌 [HW] Raw message from backend → frontend (device):",
+          hardwarePoint,
+          data
+        );
 
-        const payload = data.payload as Record<string, number | undefined>;
-
-        const solarVal = payload["Solar"];
-        const gridVal = payload["Grid"];
-
-        if (typeof solarVal === "number") {
-          setSolarKwh(solarVal);
+        if (typeof data === "string") {
+          console.log("🔹 [HW] String message:", data);
+          return;
         }
-        if (typeof gridVal === "number") {
-          setGridKwh(gridVal);
-        }
 
-        console.log("🌞 Solar remaining =", solarVal);
-        console.log("🔌 Grid remaining  =", gridVal);
-      } else {
-        console.log("ℹ️ [HW] Other hardware message:", data);
-      }
-    });
+        if (data?.type === "remaining_energy" && data?.payload) {
+          console.log("🔋 [HW] Remaining energy payload:", data.payload);
+
+          const payload = data.payload as Record<string, number | undefined>;
+
+          const solarVal = payload["Solar"];
+          const gridVal = payload["Grid"];
+
+          if (typeof solarVal === "number") {
+            setSolarKwh(solarVal);
+          }
+          if (typeof gridVal === "number") {
+            setGridKwh(gridVal);
+          }
+
+          console.log("🌞 Solar remaining =", solarVal);
+          console.log("🔌 Grid remaining  =", gridVal);
+        } else {
+          console.log("ℹ️ [HW] Other hardware message:", data);
+        }
+      },
+      hardwarePoint // ⭐ subscribe ตาม HardwarePoint เช่น "hardware_888"
+    );
 
     return () => {
+      console.log(
+        "🛑 HW WS: closing WebSocket for hardware device:",
+        hardwarePoint
+      );
       ws.close();
     };
-  }, []);
+  }, [hardwarePoint]);
 
   // 👉 นับเวลาโดยอิงจาก sessionStartTime + สถานะ OCPP
   useEffect(() => {
@@ -1118,7 +1157,7 @@ const ChargingEV = () => {
 
             <div className="flex flex-col md:flex-row md:items-center md:gap-2">
               <div className="flex items-center gap-2">
-                <FaBolt className="h-5 w-5 text-white" />
+                <FaBolt className="h-5 w-5 text.white" />
                 <span className="text-sm md:text-base font-semibold tracking-wide">
                   EV Charging
                 </span>
