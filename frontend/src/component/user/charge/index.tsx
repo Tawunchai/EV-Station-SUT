@@ -20,6 +20,7 @@ import {
 } from "../../../services/ocpp";
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { useNavigate, useLocation } from "react-router-dom";
+import Loader from "../../../component/third-patry/Loader";
 
 const ZERO_TIME_STR = "0001-01-01T00:00:00Z";
 const STORAGE_KEY_PREFIX = "ev_charging_state_";
@@ -764,16 +765,19 @@ const ChargingEV = () => {
     }
   };
 
-  // ✅ helper สำหรับ redirect ไปหน้า /user หลังชาร์จจบ
+  // ✅ helper สำหรับ redirect ไปหน้า /user หลังชาร์จจบ (delay 3 วินาที)
   const goToSummary = () => {
     if (!paymentID) return;
-    navigate("/user", {
-      replace: true,
-      state: {
-        fromCharging: true,
-        paymentID: Number(paymentID),
-      },
-    });
+
+    setTimeout(() => {
+      navigate("/user", {
+        replace: true,
+        state: {
+          fromCharging: true,
+          paymentID: Number(paymentID),
+        },
+      });
+    }, 750);
   };
 
   // ===========================================================
@@ -975,11 +979,7 @@ const ChargingEV = () => {
 
   // 👉 Loading ตรวจสอบ session
   if (isVerifying) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-gray-600 text-sm">
-        Verifying eligibility...
-      </div>
-    );
+    return <Loader />;
   }
 
   if (!sessionValid) return null;
@@ -1180,13 +1180,12 @@ const ChargingEV = () => {
               </h2>
 
               <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  charging
-                    ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                    : isComplete
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${charging
+                  ? "bg-green-50 text-green-700 ring-1 ring-green-200"
+                  : isComplete
                     ? "bg-green-50 text-green-700 ring-1 ring-green-200"
                     : "bg-gray-50 text-gray-600 ring-1 ring-gray-200"
-                }`}
+                  }`}
               >
                 {charging ? "CHARGING" : isComplete ? "COMPLETE" : "IDLE"}
               </span>
@@ -1258,10 +1257,9 @@ const ChargingEV = () => {
                   onClick={handleStart}
                   disabled={startDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold text-white
-                    ${
-                      startDisabled
-                        ? "bg-blue-300 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700"
+                    ${startDisabled
+                      ? "bg-blue-300 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700"
                     }`}
                 >
                   Start
@@ -1276,10 +1274,9 @@ const ChargingEV = () => {
                   }}
                   disabled={cancelDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${
-                      cancelDisabled
-                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                        : "bg-red-500 text-white hover:bg-red-600"
+                    ${cancelDisabled
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-red-500 text-white hover:bg-red-600"
                     }`}
                 >
                   Cancel
@@ -1290,10 +1287,9 @@ const ChargingEV = () => {
                   disabled={completeDisabled}
                   onClick={handleComplete}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${
-                      completeDisabled
-                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                        : "bg-green-600 text-white hover:bg-green-700"
+                    ${completeDisabled
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-green-600 text-white hover:bg-green-700"
                     }`}
                 >
                   Finish

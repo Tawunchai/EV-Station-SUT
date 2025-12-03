@@ -13,8 +13,8 @@ import {
 } from "react-icons/fi";
 import { FaCarSide } from "react-icons/fa";
 import { useLocation, useNavigate } from "react-router-dom";
-import { message, Modal } from "antd";
-import { ExclamationCircleOutlined } from "@ant-design/icons";
+import { message, Table } from "antd";
+import type { ColumnsType } from "antd/es/table";
 
 import {
   connectSolarSocket,
@@ -22,18 +22,6 @@ import {
   DeleteSolarRealtimeDataByIDs,
 } from "../../../../services";
 import type { SolarInterface } from "../../../../interface/ISolar";
-
-// ✅ Recharts สำหรับกราฟ Battery + Power In / Power Out (แบบ Area Chart)
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "recharts";
 
 /** ---------- Types ---------- */
 type Parameter = {
@@ -71,8 +59,8 @@ type SolarData = {
 };
 
 interface SolarHistoryItem {
-  ID?: number | string;
-  id?: number | string;
+  ID?: number;
+  id?: number;
   device_id?: string;
   CreatedAt?: string;
   created_at?: string;
@@ -90,7 +78,24 @@ interface SolarHistoryItem {
   grid_power?: number;
 }
 
-/** ---------- Column Keys สำหรับ Table + CSV ---------- */
+/** ---------- Helper: แปลงชุดข้อมูลเป็น polyline points ---------- */
+function toPolylinePoints(values: number[], width = 560, height = 120): string {
+  if (!values || values.length === 0) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(0.0001, max - min);
+  const stepX = width / Math.max(1, values.length - 1);
+
+  return values
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = height - ((v - min) / range) * height;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+/** ---------- Column Keys สำหรับ CSV ---------- */
 type ColumnKey =
   | "index"
   | "time"
@@ -121,51 +126,13 @@ const ALL_COLUMNS: { key: ColumnKey; label: string; align?: "left" | "right" }[]
     { key: "status", label: "Status", align: "left" },
   ];
 
-/** กลุ่มคอลัมน์แต่ละ Table */
-const TABLE1_COLUMNS: ColumnKey[] = [
-  "index",
-  "time",
-  "power_in",
-  "power_out",
-  "grid_power",
-  "battery",
-  "status",
-];
-
-const TABLE2_COLUMNS: ColumnKey[] = [
-  "index",
-  "time",
-  "voltage",
-  "current",
-  "irradiance",
-  "temp",
-  "panel_temp",
-];
-
-/** ---------- LIMIT ต่าง ๆ ---------- */
-// จำนวนแถวต่อหน้าในตาราง
-const TABLE_PAGE_SIZE = 5;
-
-// จำนวนจุดสูงสุดบนกราฟ (เช่น 10 ค่า ล่าสุด)
-const CHART_POINT_LIMIT = 10;
-
-/** format label บนแกนเวลาในกราฟ (✅ แสดงวินาทีด้วย) */
+/** format label บนแกนเวลาในกราฟ */
 function formatTimeLabel(d: Date): string {
   const day = d.getDate().toString().padStart(2, "0");
   const month = (d.getMonth() + 1).toString().padStart(2, "0");
   const hour = d.getHours().toString().padStart(2, "0");
   const minute = d.getMinutes().toString().padStart(2, "0");
-  const second = d.getSeconds().toString().padStart(2, "0");
-  return `${day}/${month} ${hour}:${minute}:${second}`;
-}
-
-/** helper: คืน ID เป็น string จาก record */
-function getRowId(item: SolarHistoryItem): string | null {
-  if (typeof item.ID === "number") return String(item.ID);
-  if (typeof item.id === "number") return String(item.id);
-  if (typeof item.ID === "string" && item.ID.trim() !== "") return item.ID;
-  if (typeof item.id === "string" && item.id.trim() !== "") return item.id;
-  return null;
+  return `${day}/${month} ${hour}:${minute}`;
 }
 
 const Index: React.FC = () => {
@@ -180,15 +147,13 @@ const Index: React.FC = () => {
   const [solarData, setSolarData] = useState<SolarData | null>(null);
   const [isLive, setIsLive] = useState(false);
 
-  // ✅ แยก state: apiHistoryData ใช้กับ Table/CSV เท่านั้น (fix จาก API)
-  const [apiHistoryData, setApiHistoryData] = useState<SolarHistoryItem[] | null>(
+  const [historyData, setHistoryData] = useState<SolarHistoryItem[] | null>(
     null
   );
-
-  // ✅ chartHistoryData ใช้เฉพาะกับกราฟ (เริ่มจาก API แล้ว append realtime)
-  const [chartHistoryData, setChartHistoryData] = useState<SolarHistoryItem[]>(
-    []
-  );
+  const [batterySeries, setBatterySeries] = useState<number[]>([]);
+  const [powerInSeries, setPowerInSeries] = useState<number[]>([]);
+  const [powerOutSeries, setPowerOutSeries] = useState<number[]>([]);
+  const [historyLabels, setHistoryLabels] = useState<string[]>([]); // label เวลาในกราฟ
 
   const [displayStatus, setDisplayStatus] = useState<string>("Unknown");
   const [lastStatusTime, setLastStatusTime] = useState<Date | null>(null);
@@ -201,33 +166,8 @@ const Index: React.FC = () => {
   const [showDateRangePicker, setShowDateRangePicker] =
     useState<boolean>(false);
 
-  // เก็บ ID เป็น string ล้วน
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [selectAll, setSelectAll] = useState<boolean>(false);
-
-  // Modal ลบข้อมูล
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  // page
-  const [currentPage, setCurrentPage] = useState<number>(1);
-
-  // ---------- Helper ของ Table / Series ---------- //
-  const getRecordDate = (item: SolarHistoryItem): Date | null => {
-    const ts = item.CreatedAt ?? item.created_at;
-    if (!ts) return null;
-    const d = new Date(ts);
-    return isNaN(d.getTime()) ? null : d;
-  };
-
-  const getRecordTime = (item: SolarHistoryItem): string => {
-    const d = getRecordDate(item);
-    if (!d) return "-";
-    return d.toLocaleString("th-TH");
-  };
-
-  const getRecordStatus = (item: SolarHistoryItem): string =>
-    item.status ?? item.Status ?? item.solar_status ?? "normal";
+  // AntD Table selection
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // ---------- CONNECT WEBSOCKET (Realtime) ---------- //
   useEffect(() => {
@@ -248,45 +188,6 @@ const Index: React.FC = () => {
       setIsOffline(false);
 
       console.log("Realtime solar data:", data);
-
-      // ✅ อัปเดตเฉพาะ chartHistoryData ให้กราฟวิ่งตาม realtime
-      setChartHistoryData((prev) => {
-        const payload = data?.payload;
-        const d = payload?.data;
-        if (!d) return prev;
-
-        const ts = payload?.timestamp || new Date().toISOString();
-
-        const newItem: SolarHistoryItem = {
-          device_id: payload.device_id ?? data.device_id,
-          CreatedAt: ts,
-          power_in: d.power_in,
-          power_out: d.power_out,
-          battery_percentage: d.battery_percentage,
-          voltage: d.voltage,
-          current: d.current,
-          solar_irradiance: d.solar_irradiance,
-          temperature: d.temperature,
-          panel_temperature: d.panel_temperature,
-          grid_power: d.grid_power,
-          status: d.status ?? realtimeStatus,
-        };
-
-        // กัน duplicate ง่าย ๆ ถ้า timestamp เท่ากับตัวสุดท้าย ให้ merge ทับแทน
-        if (prev && prev.length > 0) {
-          const last = prev[prev.length - 1];
-          const lastTs = last.CreatedAt ?? last.created_at;
-          if (lastTs && lastTs === newItem.CreatedAt) {
-            const mergedLast: SolarHistoryItem = { ...last, ...newItem };
-            return [...prev.slice(0, prev.length - 1), mergedLast];
-          }
-        }
-
-        const updated = prev ? [...prev, newItem] : [newItem];
-
-        // จำกัดจำนวนจุดใน chartHistoryData ตาม CHART_POINT_LIMIT (แต่จะจัดในตอนใช้ก็ได้)
-        return updated;
-      });
     }, deviceId);
 
     return () => {
@@ -299,65 +200,44 @@ const Index: React.FC = () => {
     };
   }, [solar]);
 
-  // ✅ Battery chart data (ใช้ chartHistoryData + จำกัด CHART_POINT_LIMIT ค่า ล่าสุด)
-  const batteryChartData = useMemo(() => {
-    if (!chartHistoryData || chartHistoryData.length === 0) return [];
-    const sorted = [...chartHistoryData].sort((a, b) => {
-      const da = getRecordDate(a)?.getTime() ?? 0;
-      const db = getRecordDate(b)?.getTime() ?? 0;
-      return da - db;
-    });
-    const chartStartIndex = Math.max(0, sorted.length - CHART_POINT_LIMIT);
-    const limited = sorted.slice(chartStartIndex);
-    return limited.map((item) => {
+  // ---------- Helper ของ Table / Series ---------- //
+  const getRecordDate = (item: SolarHistoryItem): Date | null => {
+    const ts = item.CreatedAt ?? item.created_at;
+    if (!ts) return null;
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const getRecordTime = (item: SolarHistoryItem): string => {
+    const d = getRecordDate(item);
+    if (!d) return "-";
+    return d.toLocaleString("th-TH");
+  };
+
+  const getRecordStatus = (item: SolarHistoryItem): string =>
+    item.status ?? item.Status ?? item.solar_status ?? "normal";
+
+  // Rebuild series + label สำหรับกราฟจาก history
+  const rebuildSeriesFromHistory = (data: SolarHistoryItem[]) => {
+    const batteryArr = data.map(
+      (item: SolarHistoryItem) => item.battery_percentage ?? 0
+    );
+    const powerInArr = data.map((item: SolarHistoryItem) => item.power_in ?? 0);
+    const powerOutArr = data.map(
+      (item: SolarHistoryItem) => item.power_out ?? 0
+    );
+    const labels = data.map((item) => {
       const d = getRecordDate(item);
-      return {
-        timeLabel: d ? formatTimeLabel(d) : "",
-        battery: item.battery_percentage ?? 0,
-      };
+      return d ? formatTimeLabel(d) : "";
     });
-  }, [chartHistoryData]);
 
-  // ✅ Power chart data (ใช้ chartHistoryData + จำกัด CHART_POINT_LIMIT ค่า ล่าสุด)
-  const powerChartData = useMemo(() => {
-    if (!chartHistoryData || chartHistoryData.length === 0) return [];
-    const sorted = [...chartHistoryData].sort((a, b) => {
-      const da = getRecordDate(a)?.getTime() ?? 0;
-      const db = getRecordDate(b)?.getTime() ?? 0;
-      return da - db;
-    });
-    const chartStartIndex = Math.max(0, sorted.length - CHART_POINT_LIMIT);
-    const limited = sorted.slice(chartStartIndex);
-    return limited.map((item) => {
-      const d = getRecordDate(item);
-      return {
-        timeLabel: d ? formatTimeLabel(d) : "",
-        power_in: item.power_in ?? 0,
-        power_out: item.power_out ?? 0,
-      };
-    });
-  }, [chartHistoryData]);
+    setBatterySeries(batteryArr);
+    setPowerInSeries(powerInArr);
+    setPowerOutSeries(powerOutArr);
+    setHistoryLabels(labels);
+  };
 
-  const hasHistory =
-    (batteryChartData && batteryChartData.length > 0) ||
-    (powerChartData && powerChartData.length > 0);
-
-  const lastBattery =
-    batteryChartData.length > 0
-      ? batteryChartData[batteryChartData.length - 1].battery
-      : undefined;
-
-  const lastPowerIn =
-    powerChartData.length > 0
-      ? powerChartData[powerChartData.length - 1].power_in
-      : undefined;
-
-  const lastPowerOut =
-    powerChartData.length > 0
-      ? powerChartData[powerChartData.length - 1].power_out
-      : undefined;
-
-  // ---------- LOAD HISTORY จาก API (ใช้ fix สำหรับ Table + initial chart) ---------- //
+  // ---------- LOAD HISTORY จาก API ---------- //
   useEffect(() => {
     if (!solar || !solar.SolarPoint) return;
 
@@ -368,23 +248,11 @@ const Index: React.FC = () => {
         const res = await ListSolarRealtimeDataByDeviceID(deviceId);
         console.log("History solar data from API:", res);
         if (res && Array.isArray(res)) {
-          // เรียงตามเวลาเก่า -> ใหม่
-          const sorted = [...res].sort(
-            (a: SolarHistoryItem, b: SolarHistoryItem) => {
-              const da = getRecordDate(a)?.getTime() ?? 0;
-              const db = getRecordDate(b)?.getTime() ?? 0;
-              return da - db;
-            }
-          );
+          setHistoryData(res);
+          rebuildSeriesFromHistory(res);
 
-          // ✅ ใช้กับ Table/CSV (fix จาก API)
-          setApiHistoryData(sorted);
-
-          // ✅ ใช้เป็นฐานให้ chartHistoryData (แล้วค่อย append realtime ภายหลัง)
-          setChartHistoryData(sorted);
-
-          if (sorted.length > 0) {
-            const lastRecord = sorted[sorted.length - 1] as SolarHistoryItem;
+          if (res.length > 0) {
+            const lastRecord = res[res.length - 1] as SolarHistoryItem;
             const histStatus =
               lastRecord.status ??
               lastRecord.Status ??
@@ -456,12 +324,12 @@ const Index: React.FC = () => {
     );
   }
 
-  // ---------- Filtered Data สำหรับ Table (ใช้ apiHistoryData เท่านั้น) ---------- //
+  // ---------- Filtered Data สำหรับ Table ---------- //
   const filteredHistoryData = useMemo(() => {
-    if (!apiHistoryData) return [];
+    if (!historyData) return [];
     const search = searchText.trim().toLowerCase();
 
-    return apiHistoryData.filter((item) => {
+    return historyData.filter((item) => {
       const d = getRecordDate(item);
 
       if (dateFrom) {
@@ -498,59 +366,7 @@ const Index: React.FC = () => {
 
       return true;
     });
-  }, [apiHistoryData, searchText, dateFrom, dateTo]);
-
-  // ✅ Pagination (5 แถวต่อหน้า)
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredHistoryData.length / TABLE_PAGE_SIZE)
-  );
-  const startIndex = (currentPage - 1) * TABLE_PAGE_SIZE;
-  const endIndex = Math.min(
-    startIndex + TABLE_PAGE_SIZE,
-    filteredHistoryData.length
-  );
-
-  const paginatedHistoryData = useMemo(
-    () => filteredHistoryData.slice(startIndex, endIndex),
-    [filteredHistoryData, startIndex, endIndex]
-  );
-
-  // reset page เมื่อ filter / history เปลี่ยน
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchText, dateFrom, dateTo, apiHistoryData]);
-
-  // ถ้า currentPage เกิน ให้ดึงกลับมาหน้า last
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [totalPages, currentPage]);
-
-  // sync selectAll กับ paginatedHistoryData
-  useEffect(() => {
-    if (paginatedHistoryData.length === 0) {
-      setSelectAll(false);
-      return;
-    }
-    const pageIds = paginatedHistoryData
-      .map((item) => getRowId(item))
-      .filter((id): id is string => !!id);
-    const allSelected =
-      pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
-    setSelectAll(allSelected);
-  }, [paginatedHistoryData, selectedIds]);
-
-  // ✅ แถวที่ถูกเลือกไว้สำหรับ preview ใน Modal (ใช้ apiHistoryData)
-  const selectedRowsForPreview = useMemo<SolarHistoryItem[]>(() => {
-    if (!apiHistoryData || selectedIds.length === 0) return [];
-    const idSet = new Set(selectedIds);
-    return apiHistoryData.filter((item) => {
-      const rid = getRowId(item);
-      return rid && idSet.has(rid);
-    });
-  }, [apiHistoryData, selectedIds]);
+  }, [historyData, searchText, dateFrom, dateTo]);
 
   // ---------- Export CSV (เฉพาะ Filtered) ---------- //
   const exportToCsv = (rows: SolarHistoryItem[], fileName: string) => {
@@ -559,7 +375,8 @@ const Index: React.FC = () => {
       return;
     }
 
-    const activeColumns = ALL_COLUMNS; // ใช้ทุกคอลัมน์
+    // ไม่มีเลือก column แล้ว → ใช้ทุก column
+    const activeColumns = ALL_COLUMNS;
 
     const header = activeColumns.map((c) => `"${c.label}"`).join(",");
 
@@ -629,99 +446,48 @@ const Index: React.FC = () => {
     exportToCsv(filteredHistoryData, "solar_realtime_filtered.csv");
   };
 
-  // ---------- Delete Selected (เปิด Modal) ---------- //
-  const handleToggleRowSelect = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  // ---------- Delete Selected (ใช้ AntD Table selection) ---------- //
+  const handleDeleteSelected = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.info("กรุณาเลือกแถวที่ต้องการลบก่อน");
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `ต้องการลบข้อมูลทั้งหมด ${selectedRowKeys.length} เรคคอร์ดหรือไม่?`
     );
-  };
+    if (!confirmDelete) return;
 
-  const handleToggleSelectAll = () => {
-    if (!paginatedHistoryData || paginatedHistoryData.length === 0) return;
-
-    const pageIds = paginatedHistoryData
-      .map((item) => getRowId(item))
-      .filter((id): id is string => !!id);
-
-    if (selectAll) {
-      setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
-      setSelectAll(false);
-    } else {
-      setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
-      setSelectAll(true);
-    }
-  };
-
-  // เดิม: มี window.confirm ในฟังก์ชันนี้ → เปลี่ยนเป็นเปิด Modal แทน
-  const handleDeleteSelected = () => {
-    if (selectedIds.length === 0) {
-      message.info("กรุณาเลือกแถวที่ต้องการลบก่อน");
-      return;
-    }
-    setIsDeleteModalOpen(true);
-  };
-
-  // ฟังก์ชันที่ถูกเรียกจริงตอนกด "ลบ" ใน Modal
-  const performDeleteSelected = async () => {
-    if (selectedIds.length === 0) {
-      message.info("กรุณาเลือกแถวที่ต้องการลบก่อน");
-      setIsDeleteModalOpen(false);
-      return;
-    }
-
-    const numericIds = selectedIds
-      .map((id) => Number(id))
-      .filter((n) => !Number.isNaN(n));
+    // ✅ แปลง rowKeys ให้เป็น number[] ก่อนส่งไป service
+    const numericIds = selectedRowKeys
+      .map((k) => Number(k))
+      .filter((n) => !isNaN(n));
 
     if (numericIds.length === 0) {
       message.error("ไม่พบ ID ที่สามารถลบได้");
-      setIsDeleteModalOpen(false);
       return;
     }
 
-    try {
-      setIsDeleting(true);
-      const ok = await DeleteSolarRealtimeDataByIDs(numericIds);
-      if (!ok) {
-        message.error("Deletion failed");
-        return;
-      }
-
-      message.success("Deletion successful");
-
-      const idsToDeleteStr = numericIds.map(String);
-
-      // ✅ ลบออกจาก apiHistoryData (Table/CSV)
-      setApiHistoryData((prev) => {
-        if (!prev) return prev;
-        const newData = prev.filter((item) => {
-          const rid = getRowId(item);
-          if (!rid) return true;
-          return !idsToDeleteStr.includes(rid);
-        });
-        return newData;
-      });
-
-      // ✅ ลบออกจาก chartHistoryData ด้วย (ให้กราฟไม่แสดง record ที่ลบ)
-      setChartHistoryData((prev) => {
-        if (!prev) return prev;
-        const newData = prev.filter((item) => {
-          const rid = getRowId(item);
-          if (!rid) return true;
-          return !idsToDeleteStr.includes(rid);
-        });
-        return newData;
-      });
-
-      setSelectedIds([]);
-      setSelectAll(false);
-      setIsDeleteModalOpen(false);
-    } catch (err) {
-      console.error("Delete error:", err);
-      message.error("เกิดข้อผิดพลาดระหว่างลบข้อมูล");
-    } finally {
-      setIsDeleting(false);
+    const ok = await DeleteSolarRealtimeDataByIDs(numericIds);
+    if (!ok) {
+      message.error("ลบข้อมูลไม่สำเร็จ");
+      return;
     }
+
+    message.success("ลบข้อมูลสำเร็จ");
+
+    setHistoryData((prev) => {
+      if (!prev) return prev;
+      const newData = prev.filter((item) => {
+        const idVal = item.ID ?? item.id;
+        if (idVal == null) return true;
+        return !numericIds.includes(Number(idVal));
+      });
+      rebuildSeriesFromHistory(newData);
+      return newData;
+    });
+
+    setSelectedRowKeys([]);
   };
 
   // ---------- เตรียมค่าที่จะใช้แสดงจาก realtime ---------- //
@@ -793,6 +559,42 @@ const Index: React.FC = () => {
     },
   ];
 
+  const chartWidth = 720;
+  const chartHeight = 140;
+  const batteryPoints = toPolylinePoints(
+    batterySeries,
+    chartWidth,
+    chartHeight
+  );
+  const powerInPoints = toPolylinePoints(
+    powerInSeries,
+    chartWidth,
+    chartHeight
+  );
+  const powerOutPoints = toPolylinePoints(
+    powerOutSeries,
+    chartWidth,
+    chartHeight
+  );
+
+  const hasHistory =
+    batterySeries.length > 0 ||
+    powerInSeries.length > 0 ||
+    powerOutSeries.length > 0;
+
+  const lastBattery =
+    batterySeries.length > 0
+      ? batterySeries[batterySeries.length - 1]
+      : undefined;
+  const lastPowerIn =
+    powerInSeries.length > 0
+      ? powerInSeries[powerInSeries.length - 1]
+      : undefined;
+  const lastPowerOut =
+    powerOutSeries.length > 0
+      ? powerOutSeries[powerOutSeries.length - 1]
+      : undefined;
+
   // สรุปช่วงวันที่บนปุ่มเลือกช่วงเวลา
   const dateRangeLabel = useMemo(() => {
     if (!dateFrom && !dateTo) return "ทั้งหมด";
@@ -810,118 +612,167 @@ const Index: React.FC = () => {
     return "ทั้งหมด";
   }, [dateFrom, dateTo]);
 
-  // ---------- helper render cell table ---------- //
-  const renderCellValue = (
-    colKey: ColumnKey,
-    item: SolarHistoryItem,
-    index: number
-  ): React.ReactNode => {
-    const timeStr = getRecordTime(item);
-    const powerInVal = item.power_in ?? 0;
-    const powerOutVal = item.power_out ?? 0;
-    const gridPowerVal = item.grid_power ?? 0;
-    const batteryVal = item.battery_percentage ?? 0;
-    const voltageVal = item.voltage ?? 0;
-    const currentVal = item.current ?? 0;
-    const irVal = item.solar_irradiance ?? 0;
-    const tempVal = item.temperature ?? 0;
-    const panelTempVal = item.panel_temperature ?? 0;
-    const statusStr = getRecordStatus(item);
-    const isError =
-      statusStr.toLowerCase().includes("fault") ||
-      statusStr.toLowerCase().includes("error");
-
-    switch (colKey) {
-      case "index":
-        return index + 1;
-      case "time":
-        return timeStr;
-      case "power_in":
-        return powerInVal.toFixed(2);
-      case "power_out":
-        return powerOutVal.toFixed(2);
-      case "grid_power":
-        return gridPowerVal.toFixed(2);
-      case "battery":
-        return batteryVal.toFixed(1);
-      case "voltage":
-        return voltageVal.toFixed(1);
-      case "current":
-        return currentVal.toFixed(2);
-      case "irradiance":
-        return irVal.toFixed(1);
-      case "temp":
-        return tempVal.toFixed(1);
-      case "panel_temp":
-        return panelTempVal.toFixed(1);
-      case "status":
+  // ---------- AntD Table Columns ---------- //
+  const tableColumns: ColumnsType<SolarHistoryItem> = [
+    {
+      title: "#",
+      dataIndex: "index",
+      key: "index",
+      width: 60,
+      render: (_: any, __: SolarHistoryItem, index: number) => index + 1,
+    },
+    {
+      title: "Time",
+      dataIndex: "CreatedAt",
+      key: "time",
+      render: (_: any, record: SolarHistoryItem) => getRecordTime(record),
+    },
+    {
+      title: "Battery (%)",
+      dataIndex: "battery_percentage",
+      key: "battery",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(1) : "-",
+    },
+    {
+      title: "Power In (W)",
+      dataIndex: "power_in",
+      key: "power_in",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(2) : "-",
+    },
+    {
+      title: "Power Out (W)",
+      dataIndex: "power_out",
+      key: "power_out",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(2) : "-",
+    },
+    {
+      title: "Grid Power (W)",
+      dataIndex: "grid_power",
+      key: "grid_power",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(2) : "-",
+    },
+    {
+      title: "Voltage (V)",
+      dataIndex: "voltage",
+      key: "voltage",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(1) : "-",
+    },
+    {
+      title: "Current (A)",
+      dataIndex: "current",
+      key: "current",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(2) : "-",
+    },
+    {
+      title: "Irradiance (W/m²)",
+      dataIndex: "solar_irradiance",
+      key: "irradiance",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(1) : "-",
+    },
+    {
+      title: "Temp (°C)",
+      dataIndex: "temperature",
+      key: "temp",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(1) : "-",
+    },
+    {
+      title: "Panel Temp (°C)",
+      dataIndex: "panel_temperature",
+      key: "panel_temp",
+      align: "right",
+      render: (value: number | undefined) =>
+        value !== undefined ? value.toFixed(1) : "-",
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      render: (_: any, record: SolarHistoryItem) => {
+        const statusStr = getRecordStatus(record);
+        const isError =
+          statusStr.toLowerCase().includes("fault") ||
+          statusStr.toLowerCase().includes("error");
         return (
           <span
             className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
               isError
                 ? "bg-red-50 text-red-700 border border-red-200"
-                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200"
             }`}
           >
             {statusStr}
           </span>
         );
-      default:
-        return "";
-    }
+      },
+    },
+  ];
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 text-gray-900 mt-14 sm:mt-0">
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-blue-600 text-white shadow-sm">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          {/* ซ้าย: ปุ่ม Back + ชื่อ Solar */}
+      <header className="sticky top-0 z-20 bg-white/95 border-b border-sky-100 backdrop-blur">
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate(-1)}
-              className="inline-flex items-center rounded-lg bg-white/10 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white border border-white/20 hover:bg-white/15 active:scale-[0.99] transition"
+              className="inline-flex items-center rounded-lg bg-sky-50 px-3 py-1.5 text-xs sm:text-sm font-semibold text-sky-700 shadow-sm hover:bg-sky-100 border border-sky-100"
             >
               ← Back
             </button>
-
             <div className="flex flex-col">
-              <span className="text-[11px] uppercase tracking-[0.18em] text-blue-100">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-sky-500">
                 Solar Monitor
               </span>
-              <span className="text-xs sm:text-sm font-semibold">
+              <span className="text-xs sm:text-sm font-semibold text-sky-900">
                 {solar.Name}
                 {solar.SolarPoint ? ` • ${solar.SolarPoint}` : ""}
               </span>
             </div>
           </div>
 
-          {/* ขวา: สถานะ Online/Offline + สถานะ Text */}
           <div className="flex flex-col items-end text-[11px] sm:text-xs gap-1">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 border border-sky-100 text-sky-800">
               <FiSun
                 className={
                   isOffline
-                    ? "text-red-300"
+                    ? "text-red-400"
                     : isLive
-                    ? "text-yellow-300"
-                    : "text-blue-100"
+                    ? "text-amber-400"
+                    : "text-sky-400"
                 }
               />
-              <span>
-                {isOffline
-                  ? "Offline"
-                  : isLive
-                  ? "Receiving data..."
-                  : "Waiting signal..."}
-              </span>
+              {isOffline
+                ? "Offline"
+                : isLive
+                ? "Receiving data..."
+                : "Waiting signal..."}
             </span>
-
             <span
               className={`px-2 py-0.5 rounded-full border font-semibold ${
                 isOffline
-                  ? "bg-red-500/20 text-red-100 border-red-300/50"
-                  : "bg-emerald-500/20 text-emerald-100 border-emerald-300/50"
+                  ? "bg-red-50 text-red-700 border-red-200"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
               }`}
             >
               {isOffline ? "Offline" : displayStatus}
@@ -1080,14 +931,14 @@ const Index: React.FC = () => {
                   </circle>
 
                   {/* จุดวิ่ง Grid -> EV */}
-                  <circle r={5} fill="#38BDF8">
+                  <circle r={5} fill="#22C55E">
                     <animateMotion dur="2.4s" repeatCount="indefinite">
                       <mpath xlinkHref="#gridPath" />
                     </animateMotion>
                   </circle>
 
                   {/* จุดวิ่ง Battery -> EV */}
-                  <circle r={5} fill="#22C55E">
+                  <circle r={5} fill="#38BDF8">
                     <animateMotion dur="2.8s" repeatCount="indefinite">
                       <mpath xlinkHref="#batteryPath" />
                     </animateMotion>
@@ -1233,7 +1084,7 @@ const Index: React.FC = () => {
           </div>
         </section>
 
-        {/* SECTION 2: กราฟใหญ่ Battery + Power In/Out รวมกัน (Area Charts) */}
+        {/* SECTION 2: กราฟ 3 ตัว (Battery ด้านบน, Power In/Out ด้านล่าง 2 กราฟ) */}
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -1241,11 +1092,11 @@ const Index: React.FC = () => {
                 Historical Charts
               </p>
               <p className="text-lg md:text-xl font-bold text-sky-800">
-                Battery • Power In &amp; Out
+                Battery • Power In • Power Out
               </p>
             </div>
             <div className="flex flex-col items-end text-[10px] md:text-xs text-slate-500">
-              <span>Records: {apiHistoryData?.length ?? 0}</span>
+              <span>Records: {historyData?.length ?? 0}</span>
               {alerts && alerts.length > 0 && (
                 <span className="mt-1 text-red-500">
                   Alerts: {alerts.join(", ")}
@@ -1256,7 +1107,7 @@ const Index: React.FC = () => {
 
           {hasHistory ? (
             <div className="space-y-4">
-              {/* ✅ Battery Area Chart */}
+              {/* Battery Chart (ด้านบนเต็มแถวเดียว) */}
               <div className="rounded-2xl bg-white border border-sky-100 shadow-sm shadow-sky-100 p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -1272,54 +1123,91 @@ const Index: React.FC = () => {
                       : "—"}
                   </span>
                 </div>
-
-                {batteryChartData.length > 0 ? (
-                  <div className="w-full h-64 md:h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={batteryChartData}
-                        margin={{ left: -10 }}
+                {batterySeries.length > 0 && batteryPoints ? (
+                  <svg
+                    viewBox={`0 0 ${chartWidth} 220`}
+                    className="w-full h-40 md:h-44"
+                  >
+                    {/* grid y */}
+                    <g>
+                      {[40, 80, 120, 160].map((y) => (
+                        <line
+                          key={y}
+                          x1="0"
+                          x2={chartWidth}
+                          y1={y}
+                          y2={y}
+                          stroke="rgba(148,163,184,0.25)"
+                          strokeWidth="1"
+                        />
+                      ))}
+                    </g>
+                    <defs>
+                      <linearGradient
+                        id="lineBatterySingle"
+                        x1="0"
+                        y1="0"
+                        x2="1"
+                        y2="0"
                       >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          stroke="rgba(148,163,184,0.4)"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="timeLabel"
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickMargin={8}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickMargin={8}
-                          width={60}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: 12,
-                            borderColor: "#e2e8f0",
-                            fontSize: 11,
-                          }}
-                        />
-                        <Legend
-                          wrapperStyle={{ fontSize: 11 }}
-                          iconType="circle"
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="battery"
-                          name="Battery (%)"
-                          stroke="#F97316"
-                          strokeWidth={2.5}
-                          fill="#FDBA74"
-                          fillOpacity={0.2}
-                          dot={{ r: 3 }}
-                          activeDot={{ r: 5 }}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                        <stop offset="0%" stopColor="#FBBF24" />
+                        <stop offset="100%" stopColor="#F59E0B" />
+                      </linearGradient>
+                    </defs>
+                    <polyline
+                      points={batteryPoints}
+                      fill="none"
+                      stroke="url(#lineBatterySingle)"
+                      strokeWidth={3}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                    />
+
+                    {/* แกนเวลา (x-axis labels) */}
+                    {historyLabels.length > 0 && (
+                      <g>
+                        {(() => {
+                          const labels = historyLabels;
+                          const n = labels.length;
+                          const maxTicks = 4;
+                          const stepIndex = Math.max(
+                            1,
+                            Math.floor(n / maxTicks)
+                          );
+                          const stepX =
+                            n > 1 ? chartWidth / (n - 1) : chartWidth / 2;
+                          const ticks: { x: number; label: string }[] = [];
+                          for (let i = 0; i < n; i += stepIndex) {
+                            ticks.push({
+                              x: i * stepX,
+                              label: labels[i],
+                            });
+                          }
+                          if (
+                            ticks[ticks.length - 1]?.label !==
+                            labels[n - 1]
+                          ) {
+                            ticks.push({
+                              x: (n - 1) * stepX,
+                              label: labels[n - 1],
+                            });
+                          }
+                          return ticks.map((t, idx) => (
+                            <text
+                              key={idx}
+                              x={t.x}
+                              y={205}
+                              textAnchor="middle"
+                              fontSize="9"
+                              fill="#64748b"
+                            >
+                              {t.label}
+                            </text>
+                          ));
+                        })()}
+                      </g>
+                    )}
+                  </svg>
                 ) : (
                   <div className="h-24 flex items-center justify-center text-xs text-slate-500">
                     ไม่มีข้อมูล Battery % สำหรับกราฟ
@@ -1327,95 +1215,238 @@ const Index: React.FC = () => {
                 )}
               </div>
 
-              {/* ✅ Power In & Power Out Area Chart */}
-              <div className="rounded-2xl bg-white border border-sky-100 shadow-sm shadow-sky-100 p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block h-2 w-2 rounded-full bg-sky-500" />
-                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                    <span className="text-xs md:text-sm font-semibold text-sky-700">
-                      Power In &amp; Power Out
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-end text-[11px] text-slate-500 gap-0.5">
-                    <span>
-                      Last In:{" "}
+              {/* Power In / Power Out Charts (ด้านล่าง 2 กราฟ) */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {/* Power In */}
+                <div className="rounded-2xl bg-white border border-sky-100 shadow-sm shadow-sky-100 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-sky-500" />
+                      <span className="text-xs md:text-sm font-semibold text-sky-700">
+                        Power In
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      Last:{" "}
                       {lastPowerIn !== undefined
                         ? `${lastPowerIn.toFixed(2)} W`
                         : "—"}
                     </span>
-                    <span>
-                      Last Out:{" "}
+                  </div>
+                  {powerInSeries.length > 0 && powerInPoints ? (
+                    <svg
+                      viewBox={`0 0 ${chartWidth} 220`}
+                      className="w-full h-40 md:h-44"
+                    >
+                      <g>
+                        {[40, 80, 120, 160].map((y) => (
+                          <line
+                            key={y}
+                            x1="0"
+                            x2={chartWidth}
+                            y1={y}
+                            y2={y}
+                            stroke="rgba(148,163,184,0.25)"
+                            strokeWidth="1"
+                          />
+                        ))}
+                      </g>
+                      <defs>
+                        <linearGradient
+                          id="linePowerInSingle"
+                          x1="0"
+                          y1="0"
+                          x2="1"
+                          y2="0"
+                        >
+                          <stop offset="0%" stopColor="#38BDF8" />
+                          <stop offset="100%" stopColor="#2563EB" />
+                        </linearGradient>
+                        <linearGradient
+                          id="areaPowerInSingle"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop offset="0%" stopColor="rgba(56,189,248,0.3)" />
+                          <stop offset="100%" stopColor="transparent" />
+                        </linearGradient>
+                      </defs>
+                      <polyline
+                        points={`${powerInPoints} ${chartWidth},220 0,220`}
+                        fill="url(#areaPowerInSingle)"
+                        stroke="none"
+                      />
+                      <polyline
+                        points={powerInPoints}
+                        fill="none"
+                        stroke="url(#linePowerInSingle)"
+                        strokeWidth={3}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+
+                      {historyLabels.length > 0 && (
+                        <g>
+                          {(() => {
+                            const labels = historyLabels;
+                            const n = labels.length;
+                            const maxTicks = 4;
+                            const stepIndex = Math.max(
+                              1,
+                              Math.floor(n / maxTicks)
+                            );
+                            const stepX =
+                              n > 1
+                                ? chartWidth / (n - 1)
+                                : chartWidth / 2;
+                            const ticks: { x: number; label: string }[] = [];
+                            for (let i = 0; i < n; i += stepIndex) {
+                              ticks.push({
+                                x: i * stepX,
+                                label: labels[i],
+                              });
+                            }
+                            if (
+                              ticks[ticks.length - 1]?.label !==
+                              labels[n - 1]
+                            ) {
+                              ticks.push({
+                                x: (n - 1) * stepX,
+                                label: labels[n - 1],
+                              });
+                            }
+                            return ticks.map((t, idx) => (
+                              <text
+                                key={idx}
+                                x={t.x}
+                                y={205}
+                                textAnchor="middle"
+                                fontSize="9"
+                                fill="#64748b"
+                              >
+                                {t.label}
+                              </text>
+                            ));
+                          })()}
+                        </g>
+                      )}
+                    </svg>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-xs text-slate-500">
+                      ไม่มีข้อมูล Power In สำหรับกราฟ
+                    </div>
+                  )}
+                </div>
+
+                {/* Power Out */}
+                <div className="rounded-2xl bg-white border border-sky-100 shadow-sm shadow-sky-100 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                      <span className="text-xs md:text-sm font-semibold text-emerald-700">
+                        Power Out
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      Last:{" "}
                       {lastPowerOut !== undefined
                         ? `${lastPowerOut.toFixed(2)} W`
                         : "—"}
                     </span>
                   </div>
-                </div>
+                  {powerOutSeries.length > 0 && powerOutPoints ? (
+                    <svg
+                      viewBox={`0 0 ${chartWidth} 220`}
+                      className="w-full h-40 md:h-44"
+                    >
+                      <g>
+                        {[40, 80, 120, 160].map((y) => (
+                          <line
+                            key={y}
+                            x1="0"
+                            x2={chartWidth}
+                            y1={y}
+                            y2={y}
+                            stroke="rgba(148,163,184,0.25)"
+                            strokeWidth="1"
+                          />
+                        ))}
+                      </g>
+                      <defs>
+                        <linearGradient
+                          id="linePowerOutSingle"
+                          x1="0"
+                          y1="0"
+                          x2="1"
+                          y2="0"
+                        >
+                          <stop offset="0%" stopColor="#22C55E" />
+                          <stop offset="100%" stopColor="#16A34A" />
+                        </linearGradient>
+                      </defs>
+                      <polyline
+                        points={powerOutPoints}
+                        fill="none"
+                        stroke="url(#linePowerOutSingle)"
+                        strokeWidth={3}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
 
-                {powerChartData.length > 0 ? (
-                  <div className="w-full h-64 md:h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={powerChartData}
-                        margin={{ left: -10 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          stroke="rgba(148,163,184,0.4)"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="timeLabel"
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickMargin={8}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickMargin={8}
-                          width={60}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: 12,
-                            borderColor: "#e2e8f0",
-                            fontSize: 11,
-                          }}
-                        />
-                        <Legend
-                          wrapperStyle={{ fontSize: 11 }}
-                          iconType="circle"
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="power_in"
-                          name="Power In (W)"
-                          stroke="#0EA5E9"
-                          strokeWidth={2.5}
-                          fill="#7DD3FC"
-                          fillOpacity={0.2}
-                          dot={{ r: 3 }}
-                          activeDot={{ r: 5 }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="power_out"
-                          name="Power Out (W)"
-                          stroke="#22C55E"
-                          strokeWidth={2.5}
-                          fill="#86EFAC"
-                          fillOpacity={0.2}
-                          dot={{ r: 3 }}
-                          activeDot={{ r: 5 }}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-24 flex items-center justify-center text-xs text-slate-500">
-                    ไม่มีข้อมูล Power In/Out สำหรับกราฟ
-                  </div>
-                )}
+                      {historyLabels.length > 0 && (
+                        <g>
+                          {(() => {
+                            const labels = historyLabels;
+                            const n = labels.length;
+                            const maxTicks = 4;
+                            const stepIndex = Math.max(
+                              1,
+                              Math.floor(n / maxTicks)
+                            );
+                            const stepX =
+                              n > 1
+                                ? chartWidth / (n - 1)
+                                : chartWidth / 2;
+                            const ticks: { x: number; label: string }[] = [];
+                            for (let i = 0; i < n; i += stepIndex) {
+                              ticks.push({
+                                x: i * stepX,
+                                label: labels[i],
+                              });
+                            }
+                            if (
+                              ticks[ticks.length - 1]?.label !==
+                              labels[n - 1]
+                            ) {
+                              ticks.push({
+                                x: (n - 1) * stepX,
+                                label: labels[n - 1],
+                              });
+                            }
+                            return ticks.map((t, idx) => (
+                              <text
+                                key={idx}
+                                x={t.x}
+                                y={205}
+                                textAnchor="middle"
+                                fontSize="9"
+                                fill="#64748b"
+                              >
+                                {t.label}
+                              </text>
+                            ));
+                          })()}
+                        </g>
+                      )}
+                    </svg>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-xs text-slate-500">
+                      ไม่มีข้อมูล Power Out สำหรับกราฟ
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
@@ -1425,20 +1456,16 @@ const Index: React.FC = () => {
           )}
         </section>
 
-        {/* SECTION 3: Table Data แยก 2 ตาราง */}
+        {/* SECTION 3: Table (Ant Design) */}
         <section className="rounded-2xl bg-white border border-sky-100 shadow-sm shadow-sky-100 p-4 md:p-5">
-          {/* หัวข้อก่อน ตามด้วยสรุป/ปุ่ม */}
+          {/* Header controls */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
               <p className="text-lg md:text-xl font-bold text-sky-800">
                 Solar Data Table
               </p>
-              <p className="text-[11px] md:text-xs text-slate-500">
-                แสดงประวัติการอ่านค่าจาก Solar Realtime แยกเป็น 2 ตารางเพื่อให้อ่านง่าย
-              </p>
             </div>
 
-            {/* Controls: Search + DateRange + CSV + Delete */}
             <div className="flex flex-col md:flex-row gap-2 md:items-center">
               {/* Search */}
               <div className="flex items-center gap-1 border border-sky-100 bg-sky-50/60 rounded-lg px-2 py-1">
@@ -1456,7 +1483,9 @@ const Index: React.FC = () => {
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setShowDateRangePicker((prev) => !prev)}
+                  onClick={() =>
+                    setShowDateRangePicker((prev) => !prev)
+                  }
                   className="inline-flex items-center gap-1 rounded-lg border border-sky-100 bg-white px-2 py-1 text-[11px] md:text-xs text-sky-700 hover:bg-sky-50"
                 >
                   <FiFilter className="text-sky-500" />
@@ -1483,7 +1512,9 @@ const Index: React.FC = () => {
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <span className="text-[10px] text-slate-500">End</span>
+                        <span className="text-[10px] text-slate-500">
+                          End
+                        </span>
                         <input
                           type="datetime-local"
                           value={dateTo}
@@ -1529,338 +1560,41 @@ const Index: React.FC = () => {
               <button
                 type="button"
                 onClick={handleDeleteSelected}
-                disabled={selectedIds.length === 0}
+                disabled={selectedRowKeys.length === 0}
                 className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] md:text-xs border ${
-                  selectedIds.length === 0
+                  selectedRowKeys.length === 0
                     ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                     : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
                 }`}
               >
                 <FiTrash2 className="text-red-500" />
-                ลบที่เลือก ({selectedIds.length})
+                ลบที่เลือก ({selectedRowKeys.length})
               </button>
             </div>
           </div>
 
-          {/* Tables: แยก 2 ตาราง */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {/* TABLE 1: Power / Battery / Status พร้อม checkbox เลือกแถว */}
-            <div className="relative rounded-2xl border border-sky-100 bg-white overflow-hidden">
-              <div className="px-3 pt-3 pb-1 text-[11px] md:text-xs font-semibold text-slate-600">
-                ตารางที่ 1 – Power / Battery / Status
-              </div>
-              <div className="max-h-[320px] overflow-auto">
-                <table className="min-w-full text-[11px] md:text-xs">
-                  <thead className="bg-sky-50 sticky top-0 z-10">
-                    <tr>
-                      {/* Checkbox header */}
-                      <th className="px-3 py-2 text-left border-b border-sky-100">
-                        <input
-                          type="checkbox"
-                          checked={
-                            paginatedHistoryData.length > 0 && selectAll === true
-                          }
-                          onChange={handleToggleSelectAll}
-                          className="rounded border-sky-300 text-sky-600 focus:ring-sky-500"
-                        />
-                      </th>
-                      {TABLE1_COLUMNS.map((colKey) => {
-                        const col = ALL_COLUMNS.find(
-                          (c) => c.key === colKey
-                        )!;
-                        return (
-                          <th
-                            key={col.key}
-                            className={`px-3 py-2 font-semibold text-slate-700 border-b border-sky-100 ${
-                              col.align === "right"
-                                ? "text-right"
-                                : "text-left"
-                            }`}
-                          >
-                            {col.label}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedHistoryData && paginatedHistoryData.length > 0 ? (
-                      paginatedHistoryData.map((item, index) => {
-                        const rowId = getRowId(item);
-                        const idStr = rowId ?? `row-${index}`;
-                        const checked =
-                          rowId !== null && selectedIds.includes(rowId);
-
-                        return (
-                          <tr
-                            key={idStr}
-                            className="border-t border-sky-50 hover:bg-sky-50/70"
-                          >
-                            {/* row checkbox */}
-                            <td className="px-3 py-2">
-                              {rowId ? (
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => handleToggleRowSelect(rowId)}
-                                  className="rounded border-sky-300 text-sky-600 focus:ring-sky-500"
-                                />
-                              ) : (
-                                <input
-                                  type="checkbox"
-                                  disabled
-                                  className="rounded border-slate-200 text-slate-300"
-                                />
-                              )}
-                            </td>
-
-                            {TABLE1_COLUMNS.map((colKey) => {
-                              const col = ALL_COLUMNS.find(
-                                (c) => c.key === colKey
-                              )!;
-                              const content = renderCellValue(
-                                colKey,
-                                item,
-                                startIndex + index
-                              );
-                              const alignClass =
-                                col.align === "right"
-                                  ? "text-right"
-                                  : "text-left";
-
-                              return (
-                                <td
-                                  key={colKey}
-                                  className={`px-3 py-2 text-slate-800 whitespace-nowrap ${alignClass}`}
-                                >
-                                  {content}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={1 + TABLE1_COLUMNS.length}
-                          className="px-3 py-4 text-center text-sm text-slate-500"
-                        >
-                          ยังไม่มีข้อมูลจาก ListSolarRealtimeDataByDeviceID
-                          หรือผลหลังกรองเป็นค่าว่าง
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* TABLE 2: Voltage / Current / Irradiance / Temp */}
-            <div className="relative rounded-2xl border border-sky-100 bg-white overflow-hidden">
-              <div className="px-3 pt-3 pb-1 text-[11px] md:text-xs font-semibold text-slate-600">
-                ตารางที่ 2 – Voltage / Current / Environment
-              </div>
-              <div className="max-h-[320px] overflow-auto">
-                <table className="min-w-full text-[11px] md:text-xs">
-                  <thead className="bg-sky-50 sticky top-0 z-10">
-                    <tr>
-                      {TABLE2_COLUMNS.map((colKey) => {
-                        const col = ALL_COLUMNS.find(
-                          (c) => c.key === colKey
-                        )!;
-                        return (
-                          <th
-                            key={col.key}
-                            className={`px-3 py-2 font-semibold text-slate-700 border-b border-sky-100 ${
-                              col.align === "right"
-                                ? "text-right"
-                                : "text-left"
-                            }`}
-                          >
-                            {col.label}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedHistoryData && paginatedHistoryData.length > 0 ? (
-                      paginatedHistoryData.map((item, index) => {
-                        const rowId = getRowId(item);
-                        const idStr = rowId ?? `row2-${index}`;
-
-                        return (
-                          <tr
-                            key={idStr}
-                            className="border-t border-sky-50 hover:bg-sky-50/70"
-                          >
-                            {TABLE2_COLUMNS.map((colKey) => {
-                              const col = ALL_COLUMNS.find(
-                                (c) => c.key === colKey
-                              )!;
-                              const content = renderCellValue(
-                                colKey,
-                                item,
-                                startIndex + index
-                              );
-                              const alignClass =
-                                col.align === "right"
-                                  ? "text-right"
-                                  : "text-left";
-
-                              return (
-                                <td
-                                  key={colKey}
-                                  className={`px-3 py-2 text-slate-800 whitespace-nowrap ${alignClass}`}
-                                >
-                                  {content}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={TABLE2_COLUMNS.length}
-                          className="px-3 py-4 text-center text-sm text-slate-500"
-                        >
-                          ยังไม่มีข้อมูลจาก ListSolarRealtimeDataByDeviceID
-                          หรือผลหลังกรองเป็นค่าว่าง
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* ✅ Pagination Controls ด้านล่าง Table */}
-          <div className="mt-4 flex items-center justify-between text-[11px] md:text-xs text-slate-600">
-            <span>
-              แสดง{" "}
-              {filteredHistoryData.length === 0
-                ? 0
-                : endIndex - startIndex}{" "}
-              จากทั้งหมด {filteredHistoryData.length} รายการ
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  setCurrentPage((prev) => Math.max(1, prev - 1))
-                }
-                disabled={currentPage === 1}
-                className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${
-                  currentPage === 1
-                    ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
-                    : "border-sky-200 text-sky-700 bg-white hover:bg-sky-50"
-                }`}
-              >
-                ย้อนกลับ
-              </button>
-              <span>
-                หน้า {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-                }
-                disabled={
-                  currentPage === totalPages ||
-                  filteredHistoryData.length === 0
-                }
-                className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${
-                  currentPage === totalPages || filteredHistoryData.length === 0
-                    ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
-                    : "border-sky-200 text-sky-700 bg-white hover:bg-sky-50"
-                }`}
-              >
-                ถัดไป
-              </button>
-            </div>
+          {/* AntD Table */}
+          <div className="rounded-2xl border border-sky-100 bg-white">
+            <Table<SolarHistoryItem>
+              rowKey={(record, index) =>
+                record.ID ?? record.id ?? index!
+              }
+              columns={tableColumns}
+              dataSource={filteredHistoryData}
+              size="small"
+              rowSelection={rowSelection}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                showTotal: (total) => `ทั้งหมด ${total} รายการ`,
+              }}
+              scroll={{ x: "max-content", y: 320 }}
+            />
           </div>
         </section>
 
         <div className="h-10" />
       </main>
-
-      {/* ✅ Modal ยืนยันการลบข้อมูล */}
-      <Modal
-        open={isDeleteModalOpen}
-        onCancel={() => {
-          if (!isDeleting) setIsDeleteModalOpen(false);
-        }}
-        onOk={performDeleteSelected}
-        okText={
-          selectedIds.length > 0
-            ? `ลบ ${selectedIds.length} รายการ`
-            : "ลบข้อมูล"
-        }
-        okButtonProps={{
-          type: "primary",
-          danger: false,
-          style: {
-            backgroundColor: "#1677ff",
-            borderColor: "#1677ff",
-          },
-        }}
-        cancelText="ยกเลิก"
-        confirmLoading={isDeleting}
-        centered
-        title={
-          <div className="flex items-center gap-2">
-            <ExclamationCircleOutlined className="text-blue-500" />
-            <span>ยืนยันการลบข้อมูล Solar</span>
-          </div>
-        }
-      >
-        <div className="space-y-2 text-[12px] md:text-sm text-slate-700">
-          <p>
-            คุณกำลังจะลบข้อมูล Solar realtime จำนวน{" "}
-            <span className="font-semibold text-blue-600">
-              {selectedIds.length}
-            </span>{" "}
-            เรคคอร์ด
-          </p>
-          {selectedRowsForPreview.length > 0 && (
-            <div className="mt-2 border border-sky-100 rounded-lg bg-sky-50/40 max-h-40 overflow-auto">
-              <div className="px-3 py-2 text-[11px] font-semibold text-slate-600 border-b border-sky-100">
-                รายการตัวอย่างที่เลือก
-              </div>
-              <ul className="text-[11px] text-slate-700 divide-y divide-sky-100">
-                {selectedRowsForPreview.slice(0, 5).map((row, idx) => (
-                  <li
-                    key={idx}
-                    className="px-3 py-1.5 flex justify-between gap-2"
-                  >
-                    <span className="truncate">
-                      {getRecordTime(row)} — {getRecordStatus(row)}
-                    </span>
-                    <span className="flex-shrink-0 text-slate-500">
-                      {typeof row.power_in === "number"
-                        ? `${row.power_in.toFixed(1)} W`
-                        : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {selectedRowsForPreview.length > 5 && (
-                <div className="px-3 py-1 text-[10px] text-slate-500">
-                  ...และอีก {selectedRowsForPreview.length - 5} รายการ
-                </div>
-              )}
-            </div>
-          )}
-          <p className="mt-2 text-[11px] text-blue-500">
-            การลบนี้ไม่สามารถย้อนกลับได้ กรุณาตรวจสอบให้แน่ใจก่อนดำเนินการลบ
-          </p>
-        </div>
-      </Modal>
     </div>
   );
 };

@@ -261,6 +261,7 @@ func main() {
 		public.DELETE("delete-solar/:id", solar.DeleteSolarByID)
 		public.POST("/solar/create-data-realtime", solar.CreateSolarRealtimeData)
 		public.GET("/solar/realtime/:device_id", solar.ListSolarRealtimeDataByDeviceID)
+		public.DELETE("/deletes-realtime", solar.DeleteSolarRealtimeDataByIDs)
 
 		// ⚙️ Hardware WebSocket Routes
 		public.GET("/hardware/:deviceID", hardware.HandleHardware) // สำหรับอุปกรณ์จริง
@@ -273,7 +274,6 @@ func main() {
 
 		//monitor
 		public.GET("/charging-session/monitor/:charge_point", cabinet.GetDataMonitorByChargePoint)
-
 	}
 
 	r.GET("/", func(c *gin.Context) {
@@ -286,7 +286,7 @@ func main() {
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://192.168.1.141:5173") // frontend origin 10.167.17.128 10.0.14.228 192.168.1.141
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.0.14.228:5173") // frontend origin 10.167.17.128 10.0.14.228 192.168.1.141
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")

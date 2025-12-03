@@ -526,3 +526,52 @@ func ListSolarRealtimeDataByDeviceID(c *gin.Context) {
 	// แบบเดียวกับ ListNew → ส่ง array ตรง ๆ
 	c.JSON(http.StatusOK, records)
 }
+
+// DELETE /api/solar/realtime
+func DeleteSolarRealtimeDataByIDs(c *gin.Context) {
+	// โครงสร้างรับ body: { "ids": [1,2,3] }
+	var req struct {
+		IDs []uint `json:"ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "รูปแบบข้อมูลไม่ถูกต้อง (ต้องเป็น JSON ที่มี field ids เป็น array จำนวนเต็ม)",
+		})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "ต้องส่งรายการ ids มาอย่างน้อย 1 ค่า",
+		})
+		return
+	}
+
+	db := config.DB()
+
+	// ลบตาม id ที่ส่งมา
+	result := db.
+		Where("id IN ?", req.IDs).
+		Delete(&entity.SolarRealtimeData{})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": result.Error.Error(),
+		})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "ไม่พบข้อมูลที่ตรงกับ ids ที่ส่งมา",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "ลบข้อมูล SolarRealtimeData สำเร็จ",
+		"deleted_count": result.RowsAffected,
+		"ids":           req.IDs,
+	})
+}
