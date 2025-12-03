@@ -153,6 +153,8 @@ func SetupDatabase() {
 	// ข้อมูลรถ
 	SeedVehicleCatalog(db)
 
+	seedSolarRealtimeData(db, "solar_001")
+
 	// ตัวอย่าง: seed payments หากยังไม่มี
 	userID := uint(1)
 	methodID := uint(1)
@@ -172,42 +174,6 @@ func seedMasters(db *gorm.DB) {
 	genderFemale := entity.Genders{Gender: "Female"}
 	db.FirstOrCreate(&genderMale, &entity.Genders{Gender: "Male"})
 	db.FirstOrCreate(&genderFemale, &entity.Genders{Gender: "Female"})
-
-	// แปลงเวลาให้เป็น time.Time (ตาม timestamp ที่ส่งมาจาก JSON)
-	timestamp, _ := time.Parse("2006-01-02T15:04:05.999999", "2025-11-18T13:30:01.628179")
-
-	alertsBytes, _ := json.Marshal([]string{}) // หรือจะใส่ ["overvoltage"] ก็ได้
-
-	// SolarRealtimeData (ตัวอย่าง)
-	solarData := entity.SolarRealtimeData{
-		DeviceID:          "solar_001",
-		Timestamp:         timestamp,
-		PowerIn:           3198.04,
-		PowerOut:          2800.50,
-		BatteryPercentage: 88.14,
-		BatteryPower:      1200.00,
-		Voltage:           380.5,
-		Current:           7.4,
-		GridPower: 8.5,
-		SolarIrradiance:   800.0,
-		Temperature:       25.6,
-		PanelTemperature:  42.3,
-		Efficiency:        94.2,
-		Frequency:         50.0,
-		DailyEnergy:       15.4,
-		TotalEnergy:       1247.8,
-		Status:            "normal",
-		Alerts:            datatypes.JSON(alertsBytes),
-	}
-
-	// ป้องกันข้อมูลซ้ำ: ใช้ DeviceID + Timestamp เป็นเงื่อนไข
-	db.FirstOrCreate(
-		&solarData,
-		entity.SolarRealtimeData{
-			DeviceID:  "solar_001",
-			Timestamp: timestamp,
-		},
-	)
 
 	// Energy Sourse
 	energySolar := entity.EnergySource{
@@ -840,4 +806,77 @@ func SeedVehicleCatalog(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+func seedSolarRealtimeData(db *gorm.DB, deviceID string) error {
+	// เวลาเริ่มต้นตามตัวอย่าง
+	baseTime, err := time.Parse("2006-01-02T15:04:05.999999", "2025-11-18T13:30:01.628179")
+	if err != nil {
+		return fmt.Errorf("parse time error: %w", err)
+	}
+
+	for i := 0; i < 20; i++ {
+		// เวลาห่างกัน 10 วินาที
+		ts := baseTime.Add(time.Duration(i*10) * time.Second)
+
+		// ===== ค่าที่ไม่ซ้ำเดิม =====
+		// เพิ่มทีละนิดให้ไม่ชนกัน
+		powerIn := 3198.04 + float64(i)*17.3   // ไม่ซ้ำ
+		powerOut := 2800.50 + float64(i)*15.7 // ไม่ซ้ำ
+		battPct := 88.14 + float64(i)*0.7     // ไม่ซ้ำ
+
+		// กันเกิน 100%
+		if battPct > 100 {
+			battPct = 100
+		}
+
+		gridPower := 8.5 + float64(i)*0.3
+		voltage := 380.5 + float64(i)*0.2
+		current := 7.4 + float64(i)*0.05
+
+		solarIrr := 800.0 + float64(i)*3.5
+		temperature := 25.6 + float64(i)*0.1
+		panelTemp := 42.3 + float64(i)*0.15
+
+		efficiency := 94.2 - float64(i)*0.05
+		frequency := 50.0
+		dailyEnergy := 15.4 + float64(i)*0.2
+		totalEnergy := 1247.8 + float64(i)*0.2
+
+		alertsBytes, err := json.Marshal([]string{}) // หรือ []string{"overvoltage"} ก็ได้
+		if err != nil {
+			return fmt.Errorf("marshal alerts error: %w", err)
+		}
+
+		record := entity.SolarRealtimeData{
+			DeviceID:          deviceID,
+			Timestamp:         ts,
+			PowerIn:           powerIn,
+			PowerOut:          powerOut,
+			BatteryPercentage: battPct,
+			BatteryPower:      1200.0, // จะให้เปลี่ยนตาม i ก็ได้
+			Voltage:           voltage,
+			Current:           current,
+			GridPower:         gridPower,
+			SolarIrradiance:   solarIrr,
+			Temperature:       temperature,
+			PanelTemperature:  panelTemp,
+			Efficiency:        efficiency,
+			Frequency:         frequency,
+			DailyEnergy:       dailyEnergy,
+			TotalEnergy:       totalEnergy,
+			Status:            "normal",
+			Alerts:            datatypes.JSON(alertsBytes),
+		}
+
+		// ป้องกันข้อมูลซ้ำ: ใช้ DeviceID + Timestamp เป็น unique key
+		if err := db.
+			Where("device_id = ? AND timestamp = ?", deviceID, ts).
+			FirstOrCreate(&record).
+			Error; err != nil {
+			return fmt.Errorf("FirstOrCreate error (i=%d): %w", i, err)
+		}
+	}
+
+	return nil
 }

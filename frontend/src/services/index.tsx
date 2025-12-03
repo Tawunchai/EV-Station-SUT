@@ -2976,3 +2976,42 @@ export const ListSolarRealtimeDataByDeviceID = async (
   }
 };
 
+export const DeleteSolarRealtimeDataByIDs = async (
+  ids: number[]
+): Promise<boolean> => {
+  if (!ids || ids.length === 0) {
+    console.error("DeleteSolarRealtimeDataByIDs: ids is empty");
+    return false;
+  }
+
+  // ✅ บังคับให้เป็น number ล้วน (กันกรณีเป็น string จาก AntD rowSelection เช่น "1","2")
+  const numericIds = ids.map((id) => Number(id)).filter((n) => !isNaN(n));
+
+  if (numericIds.length === 0) {
+    console.error("DeleteSolarRealtimeDataByIDs: numericIds is empty after parsing");
+    return false;
+  }
+
+  try {
+    const res = await axios.delete(`${apiUrl}/deletes-realtime`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(), // ถ้า route นี้ public จริง ๆ จะลบออกก็ได้
+      },
+      // axios.delete ต้องส่ง body ผ่าน field `data`
+      data: {
+        ids: numericIds,
+      },
+    });
+
+    if (res.status === 200) {
+      return true;
+    }
+
+    console.error("Unexpected status on delete solar realtime:", res.status);
+    return false;
+  } catch (err) {
+    console.error("Error deleting solar realtime by ids:", err);
+    return false;
+  }
+};
