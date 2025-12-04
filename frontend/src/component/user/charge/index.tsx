@@ -210,9 +210,19 @@ const ChargingEV = () => {
       console.log("🎯 Session ที่เลือกใช้สำหรับตู้ปัจจุบัน:", targetSession);
 
       // ⭐ StartEnergy (จาก session ปัจจุบัน) → Wh
-      const startEnergy = Number(targetSession?.StartEnergy ?? 0);
-      setStartEnergyWh(startEnergy);
-      console.log("⚡ StartEnergy (Wh) ของ session:", startEnergy);
+      //    ถ้า backend ส่ง 0 มา → ยังไม่ใช้ค่านี้ รอให้ socket อัปเดตแล้วค่อย set
+      const rawStartEnergy = targetSession?.StartEnergy;
+      const startEnergy = Number(rawStartEnergy ?? 0);
+
+      if (startEnergy > 0) {
+        setStartEnergyWh(startEnergy);
+        console.log("⚡ StartEnergy (Wh) ของ session:", startEnergy);
+      } else {
+        console.log(
+          "⚠️ StartEnergy จาก backend = 0 → ยังไม่เอาไปใช้ รอ socket อัปเดตแล้วค่อยดึงใหม่อีกครั้ง",
+          rawStartEnergy
+        );
+      }
 
       // ⭐ จัดการ StartTime / EndTime → เอาไว้คำนวณ Time ตอนกลับเข้าหน้า
       const startTimeStr: string | undefined = targetSession?.StartTime;
@@ -765,7 +775,7 @@ const ChargingEV = () => {
     }
   };
 
-  // ✅ helper สำหรับ redirect ไปหน้า /user หลังชาร์จจบ (delay 3 วินาที)
+  // ✅ helper สำหรับ redirect ไปหน้า /user หลังชาร์จจบ
   const goToSummary = () => {
     if (!paymentID) return;
 
@@ -898,6 +908,12 @@ const ChargingEV = () => {
       return;
     }
 
+    // ❗ ถ้า status = Charging ห้ามทำงาน finish
+    if (statusLabel === "Charging") {
+      message.error("Cannot finish while charging is in progress");
+      return;
+    }
+
     const isSuspendedEV = statusLabel === "SuspendedEV";
     const isFull = isComplete;
 
@@ -988,19 +1004,20 @@ const ChargingEV = () => {
   const startDisabled =
     hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
 
+  // 🟢 แก้ตรงนี้: ให้ Cancel ใช้ได้ถ้าอยู่ในสถานะ Preparing / Charging / Finishing และมี chargerId
   const cancelDisabled =
-    !hasStarted ||
-    isComplete ||
     !chargerId ||
     !(
       statusLabel === "Preparing" ||
       statusLabel === "Charging" ||
       statusLabel === "Finishing"
-    ); // ไม่ให้ Cancel ตอน SuspendedEV
+    );
 
+  // ⭐ Finish: ห้ามกดตอนยัง Charging
   const completeDisabled =
     !chargerId ||
     !hasStarted ||
+    statusLabel === "Charging" ||
     (!isComplete && statusLabel !== "SuspendedEV") ||
     (statusLabel === "SuspendedEV" && !hardwarePoint);
 
@@ -1180,12 +1197,13 @@ const ChargingEV = () => {
               </h2>
 
               <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${charging
-                  ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                  : isComplete
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  charging
+                    ? "bg-green-50 text-green-700 ring-1 ring-green-200"
+                    : isComplete
                     ? "bg-green-50 text-green-700 ring-1 ring-green-200"
                     : "bg-gray-50 text-gray-600 ring-1 ring-gray-200"
-                  }`}
+                }`}
               >
                 {charging ? "CHARGING" : isComplete ? "COMPLETE" : "IDLE"}
               </span>
@@ -1257,9 +1275,10 @@ const ChargingEV = () => {
                   onClick={handleStart}
                   disabled={startDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold text-white
-                    ${startDisabled
-                      ? "bg-blue-300 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-700"
+                    ${
+                      startDisabled
+                        ? "bg-blue-300 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700"
                     }`}
                 >
                   Start
@@ -1274,9 +1293,10 @@ const ChargingEV = () => {
                   }}
                   disabled={cancelDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${cancelDisabled
-                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                      : "bg-red-500 text-white hover:bg-red-600"
+                    ${
+                      cancelDisabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : "bg-red-500 text-white hover:bg-red-600"
                     }`}
                 >
                   Cancel
@@ -1287,9 +1307,10 @@ const ChargingEV = () => {
                   disabled={completeDisabled}
                   onClick={handleComplete}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${completeDisabled
-                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                      : "bg-green-600 text-white hover:bg-green-700"
+                    ${
+                      completeDisabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : "bg-green-600 text-white hover:bg-green-700"
                     }`}
                 >
                   Finish
