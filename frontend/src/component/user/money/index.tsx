@@ -3,7 +3,7 @@ import { FaPaypal, FaUpload, FaPaperPlane, FaTimes } from "react-icons/fa";
 import { message, QRCode, Image, InputNumber } from "antd";
 import generatePayload from "promptpay-qr";
 import {
-  uploadSlipOK,
+  uploadSlip,
   UpdateCoin,
   getUserByID,
   CreatePaymentCoin,
@@ -21,6 +21,40 @@ const BoltIcon: React.FC<{ className?: string }> = ({ className }) => (
     <path d="M13.5 2 4 13h6l-1.5 9L20 11h-6l1.5-9Z" fill="currentColor" />
   </svg>
 );
+
+// ✅ normalize ชื่อ: ตัดช่องว่างซ้ำ, ตัดจุดท้าย, trim
+const normalizeThaiName = (s?: string) =>
+  (s ?? "")
+    .replace(/\./g, "")        // กันกรณี "ฟ."
+    .replace(/\s+/g, " ")
+    .trim();
+
+// ✅ แปลงชื่อเต็ม -> "คำนำหน้า ชื่อ ตัวอักษรแรกของนามสกุล"
+// เช่น "นาง ทิพย์วรรณ ฟังสุวรรณรักษ์" -> "นาง ทิพย์วรรณ ฟ"
+const shortThaiName = (full?: string) => {
+  const n = normalizeThaiName(full);
+  if (!n) return "";
+
+  const parts = n.split(" ");
+  if (parts.length >= 3) {
+    const title = parts[0];
+    const firstName = parts[1];
+    const lastName = parts[2];
+    const lastInitial = (lastName ?? "").charAt(0);
+    return normalizeThaiName(`${title} ${firstName} ${lastInitial}`);
+  }
+
+  // ถ้าชื่อมีแค่ 1-2 คำ ก็คืนกลับตามเดิม
+  return n;
+};
+
+// ✅ เช็กชื่อผู้รับให้ผ่านทั้งแบบเต็มและแบบย่อ
+const isRecipientMatch = (receiver?: string, managerFull?: string) => {
+  const r = normalizeThaiName(receiver).toUpperCase();
+  const mFull = normalizeThaiName(managerFull).toUpperCase();
+  const mShort = shortThaiName(managerFull).toUpperCase();
+  return r === mFull || (!!mShort && r.startsWith(mShort));
+};
 
 const AddMoneyCoin: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,24 +158,35 @@ const AddMoneyCoin: React.FC = () => {
       setLoading(true);
 
       // 🔹 อัปโหลดสลิป
-      const result = await uploadSlipOK(uploadedFile);
+      const result = await uploadSlip(uploadedFile);
       console.log("🔹 uploadSlipOK result:", result);
 
-      if (!result || !result.data?.ref) {
+      if (!result || !result.data?.transRef) {
         message.warning("Unable to read data from slip");
         setLoading(false);
         return;
       }
 
-      // ✅ ตรวจสอบข้อมูลสลิป
       const slipData = result.data;
-      const receiverBank = slipData.receiver_bank;
-      const receiverName = slipData.receiver_name?.trim()?.toUpperCase();
-      const slipAmount = Number(slipData.amount);
-      const refNumber = slipData.ref;
-
+      const receiverBank = slipData.receiver.bank.id;
+      const slipAmount = Number(slipData.amount.amount);
+      const refNumber = slipData.transRef;
       const bankCode = bankingCode?.trim()?.toUpperCase();
       const manager = managerName?.trim()?.toUpperCase();
+
+      const receiverNameRaw = slipData.receiver.account.name.th ?? "";
+      const managerNameRaw = managerName ?? "";
+
+      const receiverName = normalizeThaiName(receiverNameRaw).toUpperCase();
+      const managerFull = normalizeThaiName(managerNameRaw).toUpperCase();
+      const managerShort = shortThaiName(managerNameRaw).toUpperCase();
+
+      console.log("🧾 receiverNameRaw =", receiverNameRaw);
+      console.log("🏦 managerNameRaw  =", managerNameRaw);
+      console.log("✅ receiverName(normalized) =", receiverName);
+      console.log("✅ managerFull(normalized)  =", managerFull);
+      console.log("⭐ managerShort (นาง ทิพย์วรรณ ฟ) =", managerShort);
+
 
       console.log("🧩 ตรวจสอบข้อมูล:", {
         receiverBank,
@@ -153,20 +198,14 @@ const AddMoneyCoin: React.FC = () => {
         refNumber,
       });
 
-      if (receiverBank !== bankCode) {
-        message.warning(`Wrong recipient bank`);
-        setLoading(false);
-        return;
-      }
-
-      if (receiverName !== manager) {
-        message.warning(`Recipient mismatch`);
-        setLoading(false);
-        return;
-      }
-
       if (slipAmount !== coinAmount) {
         message.warning(`Amounts do not match`);
+        setLoading(false);
+        return;
+      }
+
+      if (!isRecipientMatch(receiverName, managerName)) {
+        message.warning(`Recipient mismatch`);
         setLoading(false);
         return;
       }
@@ -182,11 +221,13 @@ const AddMoneyCoin: React.FC = () => {
       // ✅ สร้างข้อมูล PaymentCoin
       const paymentCoin = {
         Date: slipData.date || new Date().toISOString(),
-        Amount: slipData.amount || coinAmount,
+        Amount: slipData.amount.amount || coinAmount,
         ReferenceNumber: refNumber,
         Picture: uploadedFile,
         UserID: userID,
       };
+
+      console.log(paymentCoin)
 
       const paymentResult = await CreatePaymentCoin(paymentCoin);
       if (!paymentResult) {
@@ -381,11 +422,10 @@ const AddMoneyCoin: React.FC = () => {
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className={`flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white transition ${
-              canSubmit
-                ? "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
-                : "bg-blue-300 cursor-not-allowed"
-            }`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white transition ${canSubmit
+              ? "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
+              : "bg-blue-300 cursor-not-allowed"
+              }`}
           >
             <FaPaperPlane />
             <span className="text-sm font-semibold">Submit</span>

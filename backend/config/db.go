@@ -198,12 +198,12 @@ func seedMasters(db *gorm.DB) {
 
 	// Banking (ตัวอย่าง)
 	banking := entity.Bank{
-		PromptPay: "0935096372",
-		Manager:   "MR. TAWANCHAI BURAKHON",
-		Banking:   "006",
+		PromptPay: "0856613088",
+		Manager:   "นาง ทิพย์วรรณ ฟังสุวรรณรักษ์",
+		Banking:   "014",
 		Minimum:   100,
 	}
-	db.FirstOrCreate(&banking, &entity.Bank{PromptPay: "0935096372"})
+	db.FirstOrCreate(&banking, &entity.Bank{PromptPay: "0856613088"})
 }
 
 // ----------------------------- Conditional seed (Users Empty) -----------------------------

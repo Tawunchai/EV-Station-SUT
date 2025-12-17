@@ -14,7 +14,6 @@ const Loader = Loadable(lazy(() => import("../component/third-patry/Loader")));
 const User = Loadable(lazy(() => import("../page/user/index")));
 const BookingEV = Loadable(lazy(() => import("../component/user/booking/index")));
 const BookingDate = Loadable(lazy(() => import("../component/user/booking/book/index")));
-const TestPaymentGateway = Loadable(lazy(() => import("../component/user/payment/gateway/index")));
 const Profile = Loadable(lazy(() => import("../component/user/header/SocialProfile/SocialProfile")));
 const EVInputUser = Loadable(lazy(() => import("../component/user/evs")));
 const PaymentUser = Loadable(lazy(() => import("../component/user/payment")));
@@ -76,7 +75,6 @@ const UserRoutes = (): RouteObject[] => [
       { path: "after-payment", element: <AfterPayment /> },
       { path: "booking-ev", element: <BookingEV /> },
       { path: "booking-date", element: <BookingDate /> },
-      { path: "test-payment-gateway", element: <TestPaymentGateway /> },
       { path: "*", element: <User /> },
     ],
   },
