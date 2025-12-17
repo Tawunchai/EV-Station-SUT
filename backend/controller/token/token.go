@@ -238,9 +238,11 @@ func GetChargingSessionByStatusAndUserID(c *gin.Context) {
 	var sessions []entity.ChargingSession
 	db := config.DB()
 
-	// Query: หาเฉพาะ Status = true และ UserID ที่ส่งมา
+	now := time.Now() // ✅ เพิ่ม
+
+	// ✅ Query: Status = true, UserID ตรง, และยังไม่หมดอายุ
 	if err := db.
-		Where("status = ? AND user_id = ?", true, uint(userID)).
+		Where("status = ? AND user_id = ? AND expires_at > ?", true, uint(userID), now). // ✅ เพิ่มเงื่อนไข
 		Preload("Payment").
 		Preload("Payment.EVCabinet").
 		Find(&sessions).Error; err != nil {
@@ -255,3 +257,4 @@ func GetChargingSessionByStatusAndUserID(c *gin.Context) {
 		"data": sessions,
 	})
 }
+
