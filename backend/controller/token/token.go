@@ -203,12 +203,13 @@ func UpdateStatusByPaymentID(c *gin.Context) {
 // GET /charging-session/status/true
 func GetChargingSessionByStatus(c *gin.Context) {
 	var sessions []entity.ChargingSession
-
 	db := config.DB()
 
-	// Query เฉพาะ Status = true
+	now := time.Now() // ✅ เพิ่ม
+
+	// ✅ Query เฉพาะ Status = true และยังไม่หมดอายุ
 	if err := db.
-		Where("status = ?", true).
+		Where("status = ? AND expires_at > ?", true, now). // ✅ เพิ่มเงื่อนไข
 		Preload("Payment").
 		Preload("Payment.EVCabinet"). // preload ต่อไปยัง Cabinet
 		Find(&sessions).Error; err != nil {
