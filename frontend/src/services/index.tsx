@@ -29,8 +29,8 @@ import { HardwareInterface } from "../interface/IHardware";
 
 //export const apiUrl = "http://10.0.14.228:8000";
 //export const apiUrlPicture = "http://10.0.14.228:8000/";
-//export const apiUrl = "http://10.167.17.128:8000";
-//export const apiUrlPicture = "http://10.167.17.128:8000/";
+//export const apiUrl = "http://10.52.142.128:8000";
+//export const apiUrlPicture = "http://10.52.142.128:8000/";
 //export const apiUrlPicture = "http://localhost:8000/";
 //export const apiUrl = "http://localhost:8000";
 //export const apiUrlPicture = "http://192.168.1.141:8000/";

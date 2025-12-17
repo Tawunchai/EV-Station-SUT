@@ -5,7 +5,7 @@ import { message, QRCode, Image } from "antd";
 import generatePayload from "promptpay-qr";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  uploadSlipOK,
+  uploadSlip,
   CreatePayment,
   CreateEVChargingPayment,
   ListBank,
@@ -18,6 +18,40 @@ import {
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 import { FileImageOutlined } from "@ant-design/icons";
 import LoadingAnimation from "../../../../component/user/money/LoadingAnimation";
+
+// ✅ normalize ชื่อ: ตัดช่องว่างซ้ำ, ตัดจุดท้าย, trim
+const normalizeThaiName = (s?: string) =>
+  (s ?? "")
+    .replace(/\./g, "")        // กันกรณี "ฟ."
+    .replace(/\s+/g, " ")
+    .trim();
+
+// ✅ แปลงชื่อเต็ม -> "คำนำหน้า ชื่อ ตัวอักษรแรกของนามสกุล"
+// เช่น "นาง ทิพย์วรรณ ฟังสุวรรณรักษ์" -> "นาง ทิพย์วรรณ ฟ"
+const shortThaiName = (full?: string) => {
+  const n = normalizeThaiName(full);
+  if (!n) return "";
+
+  const parts = n.split(" ");
+  if (parts.length >= 3) {
+    const title = parts[0];
+    const firstName = parts[1];
+    const lastName = parts[2];
+    const lastInitial = (lastName ?? "").charAt(0);
+    return normalizeThaiName(`${title} ${firstName} ${lastInitial}`);
+  }
+
+  // ถ้าชื่อมีแค่ 1-2 คำ ก็คืนกลับตามเดิม
+  return n;
+};
+
+// ✅ เช็กชื่อผู้รับให้ผ่านทั้งแบบเต็มและแบบย่อ
+const isRecipientMatch = (receiver?: string, managerFull?: string) => {
+  const r = normalizeThaiName(receiver).toUpperCase();
+  const mFull = normalizeThaiName(managerFull).toUpperCase();
+  const mShort = shortThaiName(managerFull).toUpperCase();
+  return r === mFull || (!!mShort && r.startsWith(mShort));
+};
 
 const PayPalCard: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,7 +185,7 @@ const PayPalCard: React.FC = () => {
       }
 
       // ต่อ WebSocket แยกตาม deviceID: /hardware/frontend?deviceID=hardware_xxx
-      const ws = connectHardwareSocket(() => {}, hardwarePoint);
+      const ws = connectHardwareSocket(() => { }, hardwarePoint);
 
       ws.onopen = () => {
         console.log(
@@ -219,7 +253,7 @@ const PayPalCard: React.FC = () => {
     setLoading(true);
     try {
       // 🔹 อัปโหลดสลิปไป OIIO
-      const result = await uploadSlipOK(uploadedFile);
+      const result = await uploadSlip(uploadedFile);
       console.log("🔹 uploadSlipOK result (QR Page):", result);
 
       if (!result || !result.data) {
@@ -229,13 +263,25 @@ const PayPalCard: React.FC = () => {
       }
 
       const slipData = result.data;
-      const receiverBank = slipData.receiver_bank;
-      const receiverName = slipData.receiver_name?.trim()?.toUpperCase();
-      const slipAmount = Number(slipData.amount);
-      const refNumber = slipData.ref;
-
+      const receiverBank = slipData.receiver.bank.id;
+      const slipAmount = Number(slipData.amount.amount);
+      const refNumber = slipData.transRef;
       const bankCode = bankingCode?.trim()?.toUpperCase();
       const manager = managerName?.trim()?.toUpperCase();
+
+      const receiverNameRaw = slipData.receiver.account.name.th ?? "";
+      const managerNameRaw = managerName ?? "";
+
+      const receiverName = normalizeThaiName(receiverNameRaw).toUpperCase();
+      const managerFull = normalizeThaiName(managerNameRaw).toUpperCase();
+      const managerShort = shortThaiName(managerNameRaw).toUpperCase();
+
+      console.log("🧾 receiverNameRaw =", receiverNameRaw);
+      console.log("🏦 managerNameRaw  =", managerNameRaw);
+      console.log("✅ receiverName(normalized) =", receiverName);
+      console.log("✅ managerFull(normalized)  =", managerFull);
+      console.log("⭐ managerShort (นาง ทิพย์วรรณ ฟ) =", managerShort);
+
 
       console.log("🧩 ตรวจข้อมูลสลิป (QR Page):", {
         receiverBank,
@@ -247,23 +293,22 @@ const PayPalCard: React.FC = () => {
         refNumber,
       });
 
-      // ✅ เช็คธนาคารผู้รับ
-      if (receiverBank !== bankCode) {
-        message.warning("Recipient bank mismatch");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ เช็คชื่อผู้รับ
-      if (receiverName !== manager) {
-        message.warning("Recipient mismatch");
-        setLoading(false);
-        return;
-      }
-
       // ✅ เช็คจำนวนเงินตาม QR (ต้องเท่ากับ totalAmount ที่หน้า Payment ส่งมา)
       if (slipAmount !== amountNumber) {
         message.warning("Amounts do not match");
+        setLoading(false);
+        return;
+      }
+
+      // ✅ เช็คธนาคารผู้รับ
+      /*if (receiverBank !== bankCode) {
+        message.warning("Recipient bank mismatch");
+        setLoading(false);
+        return;
+      }*/
+
+      if (!isRecipientMatch(receiverName, managerName)) {
+        message.warning(`Recipient mismatch`);
         setLoading(false);
         return;
       }
@@ -284,9 +329,9 @@ const PayPalCard: React.FC = () => {
         amount: Number(totalAmount),
         user_id: userID,
         method_id: MethodID,
-        reference_number: result.data.ref,
+        reference_number: result.data.transRef,
         picture: uploadedFile,
-        ev_cabinet_id: cabinet_id ?? undefined, // ✅ number | undefined
+        ev_cabinet_id: cabinet_id ?? 1, // ✅ number | undefined
       };
 
       console.log(paymentData);
@@ -518,18 +563,17 @@ const PayPalCard: React.FC = () => {
             onClick={handleUploadClick}
             className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text.white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition"
           >
-            <FaUpload />
-            <span className="text-sm font-semibold">Upload slip</span>
+           <FaUpload className="text-white" />
+            <span className="text-sm font-semibold text-white">Upload slip</span>
           </button>
 
           <button
             onClick={handleSubmit}
             disabled={!uploadedFile || loading}
-            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white transition ${
-              uploadedFile && !loading
-                ? "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 active:from-blue-800 active:to-blue-700"
-                : "bg-blue-300 cursor-not-allowed"
-            }`}
+            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white transition ${uploadedFile && !loading
+              ? "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 active:from-blue-800 active:to-blue-700"
+              : "bg-blue-300 cursor-not-allowed"
+              }`}
           >
             <FaPaperPlane />
             <span className="text-sm font-semibold">Submit</span>

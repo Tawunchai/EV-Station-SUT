@@ -101,12 +101,14 @@ func GetDataByUserID(c *gin.Context) {
 		return
 	}
 
-	// 2) Query DB - เฉพาะ status = true เท่านั้น
+	// 2) Query DB - เฉพาะ status = true และยังไม่หมดอายุเท่านั้น ✅
 	var sessions []entity.ChargingSession
 	db := config.DB()
 
+	now := time.Now() // ✅ เพิ่ม
+
 	err = db.
-		Where("user_id = ? AND status = ?", uint(userID), true).
+		Where("user_id = ? AND status = ? AND expires_at > ?", uint(userID), true, now). // ✅ เพิ่มเงื่อนไข
 		Preload("Payment").
 		Preload("Payment.EVCabinet").
 		Preload("Payment.EVChargingPayments").
