@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Tawunchai/work-project/config"
@@ -16,7 +18,41 @@ import (
 	"gorm.io/datatypes"
 )
 
+// ============================================================================
+// ✅ LOG SWITCH (ปิด log เพื่อไม่ให้หนัก server)
+// - default: ปิด (0)
+// - เปิดได้ด้วย env: SOLAR_LOG=1 / true / on
+// ============================================================================
+var solarLogEnabled uint32 = 0
+
+func init() {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("SOLAR_LOG")))
+	if v == "1" || v == "true" || v == "on" || v == "yes" {
+		atomic.StoreUint32(&solarLogEnabled, 1)
+	}
+}
+
+func isSolarLogEnabled() bool {
+	return atomic.LoadUint32(&solarLogEnabled) == 1
+}
+
+func solarLogln(args ...interface{}) {
+	if !isSolarLogEnabled() {
+		return
+	}
+	fmt.Println(args...)
+}
+
+func solarLogf(format string, args ...interface{}) {
+	if !isSolarLogEnabled() {
+		return
+	}
+	fmt.Printf(format, args...)
+}
+
+// ============================================================================
 // ✅ WebSocket Upgrader
+// ============================================================================
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -36,16 +72,14 @@ func HandleFrontend(c *gin.Context) {
 	// 📌 frontend ต้องบอกว่าอยากดู device ตัวไหน ผ่าน query ?deviceID=
 	deviceID := c.Query("deviceID")
 	if deviceID == "" {
-		// จะให้รับทุกตัวก็ได้ แต่ตอนนี้เราออกแบบให้ต้องระบุชัดเจน
-		// ถ้าไม่ระบุ จะไม่ subscribe ใครเลย
-		fmt.Println("❌ Frontend missing deviceID query param (use /solar/frontend?deviceID=solar_001)")
+		// ✅ เงียบ: ไม่ print (กัน log หนัก)
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		fmt.Println("❌ Upgrade frontend error:", err)
+		// ✅ เงียบ: ไม่ print
 		return
 	}
 	defer conn.Close()
@@ -58,7 +92,8 @@ func HandleFrontend(c *gin.Context) {
 	solarClients[deviceID][conn] = true
 	solarClientsMu.Unlock()
 
-	fmt.Println("🌐 Frontend connected to Solar stream for device:", deviceID)
+	// ✅ (ถ้าจะ debug ค่อยเปิด SOLAR_LOG=1)
+	solarLogln("🌐 Frontend connected to Solar stream for device:", deviceID)
 
 	// รอจน frontend ปิด connection เอง หรือหลุด
 	for {
@@ -71,7 +106,7 @@ func HandleFrontend(c *gin.Context) {
 			}
 			solarClientsMu.Unlock()
 
-			fmt.Println("❌ Frontend disconnected from Solar stream for device:", deviceID)
+			solarLogln("❌ Frontend disconnected from Solar stream for device:", deviceID)
 			break
 		}
 	}
@@ -84,28 +119,35 @@ func HandleFrontend(c *gin.Context) {
 func HandleSolar(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		fmt.Println("❌ Upgrade solar error:", err)
+		// ✅ เงียบ: ไม่ print
 		return
 	}
 	defer conn.Close()
 
 	deviceID := c.Param("deviceID")
-	fmt.Println("🔋 Solar device connected:", deviceID)
+	solarLogln("🔋 Solar device connected:", deviceID)
 
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Println("⚠️  Solar device disconnected:", deviceID)
+			solarLogln("⚠️  Solar device disconnected:", deviceID)
 			break
 		}
 
-		// ตอบกลับ hardware ว่าเราโอเค
+		// ✅ ตอบกลับ hardware ว่าเราโอเค (ยังทำเหมือนเดิม)
 		_ = conn.WriteMessage(websocket.TextMessage, []byte("ready"))
+
+		// ✅ ไม่ print log ที่หนัก:
+		// - "📤 [WS] Sent data: {...}"
+		// - "📩 [WS] Server response: ready"
+		// - "📦 Solar Data Received ..." (payload ยาว)
+		// ดังนั้นโค้ดยัง parse + broadcast เหมือนเดิม แต่เงียบ
 
 		// ตรวจสอบ JSON ที่เข้ามา
 		var jsonData map[string]interface{}
 		if err := json.Unmarshal(msg, &jsonData); err != nil {
-			fmt.Println("❌ Invalid JSON from solar:", err)
+			// ✅ เงียบ: ไม่ print (ถ้าจะ debug เปิด SOLAR_LOG)
+			solarLogln("❌ Invalid JSON from solar:", err)
 			continue
 		}
 
@@ -114,11 +156,13 @@ func HandleSolar(c *gin.Context) {
 
 		enriched, err := json.Marshal(jsonData)
 		if err != nil {
-			fmt.Println("❌ Cannot marshal enriched solar data:", err)
+			// ✅ เงียบ
+			solarLogln("❌ Cannot marshal enriched solar data:", err)
 			continue
 		}
 
-		fmt.Println("📦 Solar Data Received from", deviceID, ":", string(enriched))
+		// ✅ ถ้าจะ debug ค่อยเปิด SOLAR_LOG
+		// solarLogln("📦 Solar Data Received from", deviceID, ":", string(enriched))
 
 		// ✅ ส่งข้อมูลเฉพาะให้ frontend ที่ subscribe deviceID นี้
 		broadcastToFrontend(deviceID, enriched)
@@ -153,7 +197,6 @@ func broadcastToFrontend(deviceID string, msg []byte) {
 // ==============================
 //   LIST ALL SOLAR
 // ==============================
-
 func ListSolar(c *gin.Context) {
 	var solars []entity.Solar
 
@@ -171,7 +214,6 @@ func ListSolar(c *gin.Context) {
 //   CREATE SOLAR
 // ==============================
 //
-
 func CreateSolar(c *gin.Context) {
 	db := config.DB()
 
@@ -225,9 +267,6 @@ func CreateSolar(c *gin.Context) {
 			return
 		}
 	} else {
-		// ถ้าอยาก "บังคับให้มีรูป" เหมือน News:
-		// c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาอัปโหลดรูปภาพ"})
-		// return
 		// ตอนนี้จะปล่อยให้ว่างได้
 		filePath = "" // ไม่มีรูป
 	}
@@ -257,7 +296,6 @@ func CreateSolar(c *gin.Context) {
 //   UPDATE SOLAR BY ID
 // ==============================
 //
-
 func UpdateSolarByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -346,7 +384,6 @@ func UpdateSolarByID(c *gin.Context) {
 //   DELETE SOLAR BY ID
 // ==============================
 //
-
 func DeleteSolarByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -371,7 +408,6 @@ func DeleteSolarByID(c *gin.Context) {
 //   GET SOLAR BY ID
 // ==============================
 //
-
 func GetSolarByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -386,17 +422,15 @@ func GetSolarByID(c *gin.Context) {
 	c.JSON(http.StatusOK, s)
 }
 
-
 // ==============================
 // Request structs
 // ==============================
-
 type SolarRealtimePayloadData struct {
 	PowerIn           float64       `json:"power_in"`
 	PowerOut          float64       `json:"power_out"`
 	BatteryPercentage float64       `json:"battery_percentage"`
 	BatteryPower      float64       `json:"battery_power"`
-	GridPower         float64       `json:"grid_power"`       // ✅ เพิ่ม field นี้
+	GridPower         float64       `json:"grid_power"` // ✅ เพิ่ม field นี้
 	Voltage           float64       `json:"voltage"`
 	Current           float64       `json:"current"`
 	SolarIrradiance   float64       `json:"solar_irradiance"`
@@ -424,7 +458,6 @@ type CreateSolarRealtimeRequest struct {
 // ==============================
 // Controller: POST /solar/realtime
 // ==============================
-
 func CreateSolarRealtimeData(c *gin.Context) {
 	var req CreateSolarRealtimeRequest
 
@@ -475,7 +508,7 @@ func CreateSolarRealtimeData(c *gin.Context) {
 		PowerOut:          req.Payload.Data.PowerOut,
 		BatteryPercentage: req.Payload.Data.BatteryPercentage,
 		BatteryPower:      req.Payload.Data.BatteryPower,
-		GridPower:         req.Payload.Data.GridPower,      // ✅ map ค่า grid_power
+		GridPower:         req.Payload.Data.GridPower, // ✅ map ค่า grid_power
 		Voltage:           req.Payload.Data.Voltage,
 		Current:           req.Payload.Data.Current,
 		SolarIrradiance:   req.Payload.Data.SolarIrradiance,
@@ -515,7 +548,7 @@ func ListSolarRealtimeDataByDeviceID(c *gin.Context) {
 	db := config.DB()
 	result := db.
 		Where("device_id = ?", deviceID).
-		Order("timestamp DESC"). // เอาล่าสุดอยู่บนสุด ถ้าไม่อยากเรียงลบหนึ่งบรรทัดนี้ออกได้
+		Order("timestamp DESC").
 		Find(&records)
 
 	if result.Error != nil {
@@ -523,7 +556,6 @@ func ListSolarRealtimeDataByDeviceID(c *gin.Context) {
 		return
 	}
 
-	// แบบเดียวกับ ListNew → ส่ง array ตรง ๆ
 	c.JSON(http.StatusOK, records)
 }
 

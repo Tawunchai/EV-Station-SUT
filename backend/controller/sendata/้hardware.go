@@ -150,7 +150,8 @@ func HandleHardware(c *gin.Context) {
 
 		fmt.Printf("📦 Data from '%s': %s\n", deviceID, string(enriched))
 
-		// 🧠 ถ้าเป็น message type = "remaining_energy" → อัปเดต RemainingPower ใน DB + คืนเงิน
+		// 🧠 ถ้าเป็น message type = "remaining_energy" → อัปเดต RemainingPower ใน DB
+		// ❗ NOTE: ตัด "คิดเงินคืน/คืน coin ให้ลูกค้า" ออกแล้ว ตามที่ขอ
 		msgType, _ := jsonData["type"].(string)
 		if msgType == "remaining_energy" {
 			go handleRemainingEnergyMessage(jsonData)
@@ -259,8 +260,8 @@ func RequestEnergyUsage(c *gin.Context) {
 // 🧠 Handle remaining_energy message จาก hardware
 //    {"type":"remaining_energy","payload":{"Solar":10,"Grid":10},"payment_id":"245"}
 //    - payload = พลังงานที่เหลือ (kWh) → บันทึกลง RemainingPower
-//    - ใช้ EVcharging.Price * RemainingPower รวมเป็นยอดคืน (refundTotal)
-//    - หา ChargingSession จาก PaymentID → UserID → อัปเดต Coin
+//
+// ✅ ตัด "คิดเงินคืน/คืน coin ให้ลูกค้า" ออกแล้ว (ไม่กระทบ flow อื่น)
 // ======================================================
 func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 	// 1) ดึง payment_id
@@ -294,6 +295,7 @@ func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 	db := config.DB()
 
 	// 3) โหลด EVChargingPayment ของ PaymentID นี้ พร้อม EVcharging + EnergySource
+	//    (ยัง preload เหมือนเดิม เผื่อใช้ match sourceName)
 	var evPays []entity.EVChargingPayment
 	if err := db.
 		Preload("EVcharging").
@@ -312,10 +314,10 @@ func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 
 	fmt.Printf("🔍 Found %d EVChargingPayment rows for payment_id=%d\n", len(evPays), paymentID)
 
-	// 4) คำนวณยอดคืนรวม (refundTotal) จาก energy ที่เหลือของแต่ละ source
-	refundTotal := 0.0
+	// 4) loop ทีละ source ใน payload เช่น Solar / Grid
+	//    แล้ว UPDATE remaining_power ลง DB ให้แถวที่ energy source ตรงกัน
+	updatedCount := 0
 
-	// loop ทีละ source ใน payload เช่น Solar / Grid
 	for sourceName, remainingVal := range payloadMap {
 		// JSON number → float64
 		remainingKwh, ok := remainingVal.(float64)
@@ -338,7 +340,7 @@ func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 				continue
 			}
 
-			// ❗ ตอนนี้ payload = พลังงานที่เหลืออยู่แล้ว → บันทึกลง RemainingPower ตรง ๆ
+			// payload = พลังงานที่เหลืออยู่แล้ว → บันทึกลง RemainingPower ตรง ๆ
 			p.RemainingPower = remainingKwh
 
 			// UPDATE RemainingPower ลง DB
@@ -348,6 +350,7 @@ func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 
 				fmt.Printf("❌ Failed to update RemainingPower for EVChargingPayment ID=%d: %v\n", p.ID, err)
 			} else {
+				updatedCount++
 				fmt.Printf("✅ Updated RemainingPower: EVChargingPayment ID=%d, Source=%s, Power=%.3f, Remaining=%.3f\n",
 					p.ID,
 					sourceName,
@@ -355,55 +358,10 @@ func handleRemainingEnergyMessage(jsonData map[string]interface{}) {
 					remainingKwh,
 				)
 			}
-
-			// 💰 คำนวณยอดคืนสำหรับ source นี้
-			pricePerKwh := p.EVcharging.Price
-			refundForThis := remainingKwh * pricePerKwh
-			refundTotal += refundForThis
-
-			fmt.Printf("💰 Refund calc → Source=%s, Remaining=%.3f kWh, Price=%.2f, Refund=%.2f (subtotal)\n",
-				sourceName, remainingKwh, pricePerKwh, refundForThis)
 		}
 	}
 
-	if refundTotal <= 0 {
-		fmt.Println("ℹ️ No refund to apply (refundTotal <= 0)")
-		return
-	}
-
-	// 5) หา ChargingSession เพื่อรู้ว่าเป็นของ User คนไหน
-	var session entity.ChargingSession
-	if err := db.
-		Where("payment_id = ?", paymentID).
-		First(&session).Error; err != nil {
-
-		fmt.Printf("⚠️ Cannot find ChargingSession for payment_id=%d: %v\n", paymentID, err)
-		return
-	}
-
-	// 6) โหลด User แล้วอัปเดต Coin
-	var user entity.User
-	if err := db.
-		First(&user, session.UserID).Error; err != nil {
-
-		fmt.Printf("⚠️ Cannot find User for user_id=%d: %v\n", session.UserID, err)
-		return
-	}
-
-	oldCoin := user.Coin
-	newCoin := oldCoin + refundTotal
-
-	if err := db.
-		Model(&entity.User{}).
-		Where("id = ?", user.ID).
-		Update("coin", newCoin).Error; err != nil {
-
-		fmt.Printf("❌ Failed to update user coin (user_id=%d): %v\n", user.ID, err)
-		return
-	}
-
-	fmt.Printf("💰 Refund applied → user_id=%d, old_coin=%.2f, refund=%.2f, new_coin=%.2f\n",
-		user.ID, oldCoin, refundTotal, newCoin)
+	fmt.Printf("✅ RemainingPower update done: payment_id=%d updated_rows=%d (refund logic removed)\n", paymentID, updatedCount)
 }
 
 // =======================================================

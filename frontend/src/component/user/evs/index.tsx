@@ -245,7 +245,7 @@ const Index: React.FC = () => {
       id: it.charger.ID,
       name: it.charger.Name,
       picture: it.charger.Picture,
-      power: it.power,
+      power: Number(it.power.toFixed(2)),
       total: it.amount,
       percent: it.percent,
       price_per_power: it.charger.Price,
