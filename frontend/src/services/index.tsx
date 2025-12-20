@@ -3015,3 +3015,89 @@ export const DeleteSolarRealtimeDataByIDs = async (
     return false;
   }
 };
+
+// ==============================
+// Types (อยู่ไฟล์เดียวทั้งหมด)
+// ==============================
+export type CancelSolarGridItem = {
+  // ส่งมาอย่างใดอย่างหนึ่งก็ได้
+  evcharging_id?: number;
+  ev_charging_id?: number;
+
+  remaining_power: number;
+};
+
+export type CancelSolarGridPayload = {
+  items: CancelSolarGridItem[]; // ต้องมี 2 รายการ (Solar + Grid)
+};
+
+export type CancelSolarGridResponse = {
+  message: string;
+  payment_id: number;
+  updated_sessions: number;
+  updated_ev_payments: number;
+  end_time: string; // ISO string
+  items: CancelSolarGridItem[];
+};
+
+// ==============================
+// Helpers (validate + normalize)
+// ==============================
+const getEvId = (it: CancelSolarGridItem): number => {
+  return Number(it.evcharging_id ?? it.ev_charging_id ?? 0);
+};
+
+const validatePayload = (payload: CancelSolarGridPayload): void => {
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("payload.items ต้องเป็น array");
+  }
+
+  if (payload.items.length !== 2) {
+    throw new Error("ต้องส่ง items จำนวน 2 รายการเท่านั้น (Solar และ Grid)");
+  }
+
+  const seen = new Set<number>();
+
+  payload.items.forEach((it, idx) => {
+    const evId = getEvId(it);
+    if (!evId || evId <= 0) {
+      throw new Error(`items[${idx}].evcharging_id หรือ ev_charging_id ต้องไม่เป็น 0`);
+    }
+    if (typeof it.remaining_power !== "number" || Number.isNaN(it.remaining_power)) {
+      throw new Error(`items[${idx}].remaining_power ต้องเป็นตัวเลข`);
+    }
+    if (it.remaining_power < 0) {
+      throw new Error(`items[${idx}].remaining_power ต้องไม่ติดลบ`);
+    }
+    if (seen.has(evId)) {
+      throw new Error("evcharging_id ห้ามซ้ำกัน");
+    }
+    seen.add(evId);
+  });
+};
+
+// ==============================
+// Service: PUT /charging-session/cancel-solar-grid/:payment_id
+// ==============================
+export const CancelSessionSolarGrid = async (
+  paymentID: number,
+  payload: CancelSolarGridPayload
+): Promise<CancelSolarGridResponse> => {
+  if (!paymentID || paymentID <= 0) {
+    throw new Error("paymentID ไม่ถูกต้อง");
+  }
+
+  // ✅ กันพลาดก่อนยิง API
+  validatePayload(payload);
+
+  const url = `${apiUrl}/charging-session/cancel-solar-grid/${paymentID}`;
+
+  const res = await axios.put<CancelSolarGridResponse>(url, payload, {
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeader(),
+    },
+  });
+
+  return res.data;
+};

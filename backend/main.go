@@ -120,6 +120,7 @@ func main() {
 		public.DELETE("/payment-coins", payment.DeletePaymentCoins)
 		public.DELETE("/payments", payment.DeletePayment)
 		public.GET("/ref/:ref", payment.GetDataPaymentByRef)
+		public.PUT("/charging-session/cancel-solar-grid/:payment_id", payment.UpdateSessionAfterCancelSolarGrid)
 
 		//Send Email
 		public.GET("/send-emails", sendemail.ListSendEmail)
@@ -236,7 +237,6 @@ func main() {
 		public.PUT("/charging-session/update-status/:payment_id", tokening.UpdateStatusByPaymentID)
 		public.GET("/charging-session/status/true", tokening.GetChargingSessionByStatus)
 		public.GET("/charging-session/status/:user_id", tokening.GetChargingSessionByStatusAndUserID)
-		
 
 		// ✅ ตรวจสอบ token
 		public.GET("/token/verify", tokening.VerifyChargingSession)
@@ -244,7 +244,7 @@ func main() {
 
 		//OCPP Test
 		public.GET("/ocpp/:chargerID", ocpp.HandleOCPP)
-		public.GET("/frontend", ocpp.HandleFrontend) 
+		public.GET("/frontend", ocpp.HandleFrontend)
 		public.GET("/frontend/:chargerID", ocpp.HandleFrontend)
 		public.POST("/ocpp/remote-start", ocpp.RemoteStartHandler)
 		public.POST("/ocpp/remote-stop", ocpp.RemoteStopHandler)
@@ -268,10 +268,10 @@ func main() {
 		public.GET("/hardware/:deviceID", hardware.HandleHardware) // สำหรับอุปกรณ์จริง
 		public.GET("/hardware/frontend", hardware.HandleFrontend)  // สำหรับ React dashboard
 		public.POST("/hardware/request-energy", hardware.RequestEnergyUsage)
-        public.GET("/hardwares", hardware.ListHardwares)
-        public.POST("/create-hardware", hardware.CreateHardware)
-        public.PATCH("/update-hardware/:id", hardware.UpdateHardwareByID)
-        public.DELETE("/hardware/:id", hardware.DeleteHardwareByID)
+		public.GET("/hardwares", hardware.ListHardwares)
+		public.POST("/create-hardware", hardware.CreateHardware)
+		public.PATCH("/update-hardware/:id", hardware.UpdateHardwareByID)
+		public.DELETE("/hardware/:id", hardware.DeleteHardwareByID)
 
 		//monitor
 		public.GET("/charging-session/monitor/:charge_point", cabinet.GetDataMonitorByChargePoint)

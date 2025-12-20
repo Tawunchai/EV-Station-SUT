@@ -3,6 +3,7 @@ package payment
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/Tawunchai/work-project/entity"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func ListEVChargingPayment(c *gin.Context) {
@@ -642,5 +644,325 @@ func GetDataPaymentByRef(c *gin.Context) {
 		"found":   false,
 		"ref":     ref,
 		"message": "ไม่พบข้อมูลใน Payment หรือ PaymentCoin",
+	})
+}
+
+// PUT /charging-session/cancel-solar-grid/:payment_id
+// ✅ Cancel + คืนเงิน (เติม Coin) ตาม remaining_power * EVcharging.Price
+// ✅ กันกดซ้ำ: คืนเงิน “เฉพาะส่วนต่าง” (newRemaining - oldRemaining) ถ้า newRemaining มากกว่าเดิมเท่านั้น
+type CancelItem struct {
+	EVchargingID   uint    `json:"evcharging_id"`   // แบบไม่มี underscore
+	EVChargingID   uint    `json:"ev_charging_id"`  // แบบมี underscore
+	RemainingPower float64 `json:"remaining_power"` // kWh
+}
+
+func (it CancelItem) GetEVID() uint {
+	if it.EVchargingID != 0 {
+		return it.EVchargingID
+	}
+	return it.EVChargingID
+}
+
+type CancelSolarGridPayload struct {
+	Items []CancelItem `json:"items"`
+}
+
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// PUT /charging-session/cancel-solar-grid/:payment_id
+func UpdateSessionAfterCancelSolarGrid(c *gin.Context) {
+	// 1) payment_id
+	paymentIDStr := c.Param("payment_id")
+	paymentID64, err := strconv.ParseUint(paymentIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "payment_id ไม่ถูกต้อง"})
+		return
+	}
+	paymentID := uint(paymentID64)
+
+	// 2) body
+	var payload CancelSolarGridPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "รูปแบบข้อมูลไม่ถูกต้อง",
+			"hint":   `{"items":[{"evcharging_id":1,"remaining_power":6.5},{"evcharging_id":2,"remaining_power":3.5}]}`,
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	// ✅ ต้องการ Solar+Grid => 2 รายการเท่านั้น
+	if len(payload.Items) != 2 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "ต้องส่ง items จำนวน 2 รายการเท่านั้น (Solar และ Grid)",
+		})
+		return
+	}
+
+	// validate items
+	seen := map[uint]bool{}
+	for i, it := range payload.Items {
+		evID := it.GetEVID()
+		if evID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "items.evcharging_id ต้องไม่เป็น 0",
+				"hint":  "ส่ง evcharging_id หรือ ev_charging_id ในแต่ละ item",
+				"index": i,
+				"item":  it,
+			})
+			return
+		}
+		if it.RemainingPower < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "items.remaining_power ต้องไม่ติดลบ"})
+			return
+		}
+		if seen[evID] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "evcharging_id ห้ามซ้ำกัน"})
+			return
+		}
+		seen[evID] = true
+	}
+
+	db := config.DB()
+	tx := db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "เริ่ม transaction ไม่สำเร็จ",
+			"detail": tx.Error.Error(),
+		})
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "เกิดข้อผิดพลาดภายในระบบ"})
+		}
+	}()
+
+	// (dev) ให้คอลัมน์ remaining_power มีแน่
+	if err := tx.AutoMigrate(&entity.ChargingSession{}, &entity.EVChargingPayment{}, &entity.Payment{}, &entity.User{}, &entity.EVcharging{}); err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "AutoMigrate ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	// 3) หา Payment -> เพื่อรู้ UserID (และ lock แถว Payment)
+	var pay entity.Payment
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&pay, paymentID).Error; err != nil {
+
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ Payment ของ payment_id นี้"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "ค้นหา Payment ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	if pay.UserID == nil || *pay.UserID == 0 {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Payment นี้ไม่มี UserID",
+			"payment_id": paymentID,
+		})
+		return
+	}
+
+	// 4) ต้องมี ChargingSession ของ payment นี้
+	var sessions []entity.ChargingSession
+	if err := tx.Where("payment_id = ?", paymentID).Find(&sessions).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "ค้นหา ChargingSession ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+	if len(sessions) == 0 {
+		tx.Rollback()
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ ChargingSession ของ payment_id นี้"})
+		return
+	}
+
+	now := time.Now()
+	zeroTime := time.Time{}
+
+	// 5) ปิด session: status=false (ทุกแถวที่ payment_id นี้)
+	if err := tx.Model(&entity.ChargingSession{}).
+		Where("payment_id = ?", paymentID).
+		Update("status", false).Error; err != nil {
+
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "อัปเดต session.status ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	// 6) ตั้ง end_time เฉพาะตัวที่ยังว่าง (zero time / null)
+	if err := tx.Model(&entity.ChargingSession{}).
+		Where("payment_id = ? AND (end_time = ? OR end_time IS NULL)", paymentID, zeroTime).
+		Update("end_time", now).Error; err != nil {
+
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "อัปเดต session.end_time ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	// 7) โหลด User แล้ว lock (กันแข่งตอนบวก coin)
+	var user entity.User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&user, *pay.UserID).Error; err != nil {
+
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ User ของ Payment นี้"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "ค้นหา User ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+	coinBefore := user.Coin
+
+	// 8) อัปเดต remaining_power ของ EVChargingPayment + คำนวณ refund
+	updatedEvPays := int64(0)
+	refund := 0.0
+
+	for _, it := range payload.Items {
+		evID := it.GetEVID()
+		newRemaining := round2(it.RemainingPower)
+
+		// 8.1) หา EVChargingPayment (lock)
+		var evPay entity.EVChargingPayment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(&entity.EVChargingPayment{
+				PaymentID:    paymentID,
+				EVchargingID: evID,
+			}).First(&evPay).Error; err != nil {
+
+			tx.Rollback()
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error":         "ไม่พบ EVChargingPayment ของ payment_id และ evcharging_id นี้",
+					"payment_id":    paymentID,
+					"evcharging_id": evID,
+					"hint":          "เช็คว่ามีการ CreateEVChargingPayment (แพ็กเกจ Solar/Grid) ของ payment_id นี้แล้วจริง",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":         "ค้นหา EVChargingPayment ไม่สำเร็จ",
+				"payment_id":    paymentID,
+				"evcharging_id": evID,
+				"detail":        err.Error(),
+			})
+			return
+		}
+
+		oldRemaining := round2(evPay.RemainingPower)
+
+		// 8.2) หา EVcharging เพื่อเอา Price
+		var pack entity.EVcharging
+		if err := tx.Select("id", "price").
+			First(&pack, evID).Error; err != nil {
+
+			tx.Rollback()
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error":         "ไม่พบ EVcharging (package) ของ evcharging_id นี้",
+					"evcharging_id": evID,
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":         "ค้นหา EVcharging ไม่สำเร็จ",
+				"evcharging_id": evID,
+				"detail":        err.Error(),
+			})
+			return
+		}
+
+		// 8.3) กันกดซ้ำ: คืนเงินเฉพาะ “ส่วนต่าง” ที่เพิ่มขึ้นจากเดิม
+		deltaKwh := newRemaining - oldRemaining
+		if deltaKwh < 0 {
+			deltaKwh = 0
+		}
+		refund += deltaKwh * pack.Price
+
+		// 8.4) อัปเดต RemainingPower (เก็บตามค่าที่คำนวณมาจริง)
+		if err := tx.Model(&evPay).
+			Update("remaining_power", newRemaining).Error; err != nil {
+
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":         "อัปเดต remaining_power ไม่สำเร็จ",
+				"payment_id":    paymentID,
+				"evcharging_id": evID,
+				"detail":        err.Error(),
+			})
+			return
+		}
+
+		updatedEvPays++
+	}
+
+	refund = round2(refund)
+
+	// 9) คืนเงินเข้า Coin (ถ้า refund > 0)
+	if refund > 0 {
+		// ใช้ Expr เพื่อบวกแบบ atomic ใน DB
+		if err := tx.Model(&entity.User{}).
+			Where("id = ?", user.ID).
+			UpdateColumn("coin", gorm.Expr("coin + ?", refund)).Error; err != nil {
+
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":  "อัปเดต Coin ไม่สำเร็จ",
+				"detail": err.Error(),
+			})
+			return
+		}
+	}
+
+	coinAfter := round2(coinBefore + refund)
+
+	// 10) commit
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "Commit ไม่สำเร็จ",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	// 11) response
+	c.JSON(http.StatusOK, gin.H{
+		"message":              "Cancel สำเร็จ: ปิด Session + อัปเดต RemainingPower (Solar+Grid) + คืนเงินเข้า Coin แล้ว",
+		"payment_id":           paymentID,
+		"user_id":              user.ID,
+		"refund_amount":         refund,
+		"coin_before":          round2(coinBefore),
+		"coin_after":           coinAfter,
+		"updated_sessions":     len(sessions),
+		"updated_ev_payments":  updatedEvPays,
+		"end_time":             now,
+		"items":                payload.Items,
 	})
 }

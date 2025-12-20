@@ -1,16 +1,16 @@
 // src/pages/user/ev/ChargingEV.tsx
 
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { FaBolt } from "react-icons/fa";
 import { message } from "antd";
 import ModalCreate from "../review/create";
 import {
   GetReviewByUserID,
   GetChargingSessionByUserID,
-  UpdateSessionStatusByPaymentID,
-  requestEnergyUsage,
   connectHardwareSocket, // ⭐ WebSocket hardware //
   GetCabinetByID, // ⭐ ดึงข้อมูลตู้ชาร์จตาม ID
+  CancelSessionSolarGrid,
+  UpdateSessionStatusByPaymentID,
 } from "../../../services";
 import {
   connectOcppSocket,
@@ -25,10 +25,24 @@ import Loader from "../../../component/third-patry/Loader";
 const ZERO_TIME_STR = "0001-01-01T00:00:00Z";
 const STORAGE_KEY_PREFIX = "ev_charging_state_";
 
+type SourceName = "Solar" | "Grid" | string;
+
+type EvChargingAlloc = {
+  evcharging_id: number;
+  sourceName: SourceName;
+  purchased_kwh: number; // สัดส่วนที่ซื้อของ source นี้
+};
+
+type CancelSolarGridPayload = {
+  items: Array<{
+    evcharging_id: number;
+    remaining_power: number; // kWh
+  }>;
+};
+
 const ChargingEV = () => {
   const navigate = useNavigate();
 
-  // ⭐ รับค่าจากหน้า before-payment → after-payment
   const location = useLocation();
   // @ts-ignore
   const { paymentID, cabinet_id } = location.state || {};
@@ -37,7 +51,7 @@ const ChargingEV = () => {
   console.log("🟩 CABINET ID:", cabinet_id);
 
   const [charging, setCharging] = useState(false);
-  const [energy, setEnergy] = useState(0); // จะใช้เก็บ "เปอร์เซ็นต์" จาก MeterValues จริง
+  const [energy, setEnergy] = useState(0); // % จาก MeterValues จริง
   const [time, setTime] = useState(0);
   const [showReviewModal, setShowReviewModal] = useState(false);
 
@@ -48,54 +62,63 @@ const ChargingEV = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
 
-  // ⭐ Modal ยืนยันยกเลิก
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
-  // ⭐ เก็บสถานะจาก OCPP StatusNotification / API
   const [ocppStatus, setOcppStatus] = useState<string>("Unknown");
 
-  // ⭐ เก็บค่าจาก hardware (เอาไว้ log + future UI)
   // @ts-ignore
   const [solarKwh, setSolarKwh] = useState<number | null>(null);
   // @ts-ignore
   const [gridKwh, setGridKwh] = useState<number | null>(null);
 
-  // ⭐ ChargePoint ที่ได้จากตู้ (EVCabinet)
   const [chargerId, setChargerId] = useState<string | null>(null);
   const [cabinetName, setCabinetName] = useState<string>("");
 
-  // ⭐ HardwarePoint จาก Hardware ของ Cabinet (เช่น "hardware_888")
   const [hardwarePoint, setHardwarePoint] = useState<string | null>(null);
 
-  // ⭐ StartEnergy / FinalEnergy จาก session (หน่วย Wh)
-  const [startEnergyWh, setStartEnergyWh] = useState<number | null>(null); //@ts-ignore
+  const [startEnergyWh, setStartEnergyWh] = useState<number | null>(null);
+  // @ts-ignore
   const [finalEnergyWh, setFinalEnergyWh] = useState<number | null>(null);
 
-  // ⭐ Energy ปัจจุบันจาก MeterValues (Wh)
   const [currentEnergyWh, setCurrentEnergyWh] = useState<number | null>(null);
 
-  // ⭐ พลังงานที่ “ซื้อทั้งหมด” (kWh) จาก EVChargingPayments
-  const [totalPurchasedKwh, setTotalPurchasedKwh] = useState<number | null>(
-    null
-  );
+  const [totalPurchasedKwh, setTotalPurchasedKwh] = useState<number | null>(null);
 
-  // ⭐ แหล่งพลังงานใน session นี้ (["Solar", "Grid"])
   const [energySources, setEnergySources] = useState<string[]>([]);
 
-  // ⭐ เวลาเริ่ม/จบชาร์จของ session (จาก backend)
+  const [evChargingAllocs, setEvChargingAllocs] = useState<EvChargingAlloc[]>([]);
+
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
 
-  // ⭐ Energy ที่ชาร์จไปแล้วแบบตัวเลข (kWh) → ไว้เซฟลง localStorage ได้ง่าย
   const [chargedKwhVal, setChargedKwhVal] = useState<number>(0);
 
-  // ⭐ flag ว่า reload session จาก event แล้วหรือยัง
   const firstMeterRef = useRef(false);
 
   const storageKey =
     typeof paymentID !== "undefined" && paymentID !== null
       ? `${STORAGE_KEY_PREFIX}${paymentID}`
       : null;
+
+  const fmt2 = useCallback((v: any) => {
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isFinite(n)) return "0.00";
+    return n.toFixed(2);
+  }, []);
+
+  const purchasedText = useMemo(() => fmt2(totalPurchasedKwh ?? 0), [totalPurchasedKwh, fmt2]);
+  const usedText = useMemo(() => fmt2(chargedKwhVal ?? 0), [chargedKwhVal, fmt2]);
+
+  const sourcesInline = useMemo(() => {
+    return energySources?.length ? energySources.join(", ") : "";
+  }, [energySources]);
+
+  // ✅ clamp % ให้ชัวร์ ๆ (กันกรณีแสดงผลทะลุ 100)
+  const energyClamped = useMemo(() => {
+    const n = Number(energy);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(100, n));
+  }, [energy]);
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
   useEffect(() => {
@@ -142,9 +165,7 @@ const ChargingEV = () => {
 
         const cp = (cabinet as any).ChargePoint as string | undefined;
         const name = (cabinet as any).Name as string | undefined;
-        const hwPoint = (cabinet as any).Hardware?.HardwarePoint as
-          | string
-          | undefined;
+        const hwPoint = (cabinet as any).Hardware?.HardwarePoint as string | undefined;
 
         if (!cp) {
           message.error("ChargePoint not set");
@@ -153,9 +174,7 @@ const ChargingEV = () => {
           console.log("✅ Loaded ChargePoint from cabinet:", cp);
         }
 
-        if (name) {
-          setCabinetName(name);
-        }
+        if (name) setCabinetName(name);
 
         if (hwPoint) {
           setHardwarePoint(hwPoint);
@@ -175,179 +194,152 @@ const ChargingEV = () => {
   // ===========================================================
   // ⭐ ฟังก์ชันโหลด Session (ดึง StartEnergy, StartTime, EndTime, EVChargingPayments)
   // ===========================================================
-  const checkSession = useCallback(
-    async () => {
-      if (!userID) return;
+  const checkSession = useCallback(async () => {
+    if (!userID) return;
 
-      const sessions = await GetChargingSessionByUserID(userID);
-      console.log("📦 All sessions from GetChargingSessionByUserID:", sessions);
+    const sessions = await GetChargingSessionByUserID(userID);
+    console.log("📦 All sessions from GetChargingSessionByUserID:", sessions);
 
-      if (!sessions || sessions.length === 0) {
-        navigate("/user");
-        setIsVerifying(false);
-        return;
-      }
-
-      let targetSession: any | undefined;
-
-      // ⭐ ถ้ามีหลาย session และรู้ chargerId → เลือกตัวที่ ChargePoint ตรงกับตู้ปัจจุบัน
-      if (sessions.length > 2 && chargerId) {
-        targetSession = sessions.find(
-          (s: any) =>
-            s?.Payment?.EVCabinet?.ChargePoint &&
-            s.Payment.EVCabinet.ChargePoint === chargerId
-        );
-      }
-
-      // ⭐ ถ้าไม่เจอจาก ChargePoint หรือจำนวน session ≤ 2 → fallback เป็น session ที่ active / ตัวแรก
-      if (!targetSession) {
-        targetSession =
-          sessions.find(
-            (s: any) => s.Status === true || s.Status === 1
-          ) ?? sessions[0];
-      }
-
-      console.log("🎯 Session ที่เลือกใช้สำหรับตู้ปัจจุบัน:", targetSession);
-
-      // ⭐ StartEnergy (จาก session ปัจจุบัน) → Wh
-      //    ถ้า backend ส่ง 0 มา → ยังไม่ใช้ค่านี้ รอให้ socket อัปเดตแล้วค่อย set
-      const rawStartEnergy = targetSession?.StartEnergy;
-      const startEnergy = Number(rawStartEnergy ?? 0);
-
-      if (startEnergy > 0) {
-        setStartEnergyWh(startEnergy);
-        console.log("⚡ StartEnergy (Wh) ของ session:", startEnergy);
-      } else {
-        console.log(
-          "⚠️ StartEnergy จาก backend = 0 → ยังไม่เอาไปใช้ รอ socket อัปเดตแล้วค่อยดึงใหม่อีกครั้ง",
-          rawStartEnergy
-        );
-      }
-
-      // ⭐ จัดการ StartTime / EndTime → เอาไว้คำนวณ Time ตอนกลับเข้าหน้า
-      const startTimeStr: string | undefined = targetSession?.StartTime;
-      const endTimeStr: string | undefined = targetSession?.EndTime;
-
-      let startDate: Date | null = null;
-      let endDate: Date | null = null;
-
-      if (startTimeStr && startTimeStr !== ZERO_TIME_STR) {
-        const d = new Date(startTimeStr);
-        if (!Number.isNaN(d.getTime())) {
-          startDate = d;
-        } else {
-          console.log("⚠️ Invalid StartTime:", startTimeStr);
-        }
-      }
-
-      if (endTimeStr && endTimeStr !== ZERO_TIME_STR) {
-        const e = new Date(endTimeStr);
-        if (!Number.isNaN(e.getTime())) {
-          endDate = e;
-        } else {
-          console.log("⚠️ Invalid EndTime:", endTimeStr);
-        }
-      }
-
-      setSessionStartTime(startDate);
-      setSessionEndTime(endDate);
-
-      if (startDate && endDate) {
-        // ✅ มีทั้ง StartTime และ EndTime → ใช้เวลารวม EndTime - StartTime แสดงใน Time (กรณี status ไม่ใช่ Charging)
-        const diffMs = endDate.getTime() - startDate.getTime();
-        const sec = Math.max(0, Math.floor(diffMs / 1000));
-        setTime(sec);
-        setHasStarted(true);
-        setCharging(false);
-        console.log("⏱️ Restore elapsed time from StartTime & EndTime:", {
-          startTimeStr,
-          endTimeStr,
-          sec,
-        });
-      } else if (startDate && !endDate) {
-        // ✅ เริ่มชาร์จแล้ว แต่ยังไม่มี EndTime → ใช้เวลาจนถึงตอนนี้ (กรณีกลับเข้าหน้าในระหว่างชาร์จ)
-        setHasStarted(true);
-        setCharging(true);
-
-        const nowMs = Date.now();
-        const diffMs = nowMs - startDate.getTime();
-        const sec = Math.max(0, Math.floor(diffMs / 1000));
-        setTime(sec);
-        console.log("⏱️ Restore elapsed time from StartTime:", {
-          startTimeStr,
-          sec,
-        });
-      } else {
-        // ยังไม่เริ่มชาร์จ
-        setHasStarted(false);
-        setCharging(false);
-        setTime(0);
-      }
-
-      // ⭐ ดึง Power ทั้งหมดจาก EVChargingPayments แล้ว log ให้ดู
-      const evPays = targetSession?.Payment?.EVChargingPayments || [];
-
-      // ⭐⭐ ดึง EnergySource.Name → แปลงเป็น ["Solar", "Grid"] แบบ unique
-      const sourceList: string[] = Array.from(
-        new Set<string>(
-          evPays
-            .map((p: any) => p?.EVcharging?.EnergySource?.Name)
-            .filter((name: any): name is string => typeof name === "string")
-        )
-      );
-
-      setEnergySources(sourceList);
-      console.log("🔆 Energy sources for this session:", sourceList);
-
-      const powerList = evPays.map((p: any) => p.Power);
-      const totalPowerKwh = powerList.reduce(
-        (sum: number, val: any) => sum + (Number(val) || 0),
-        0
-      );
-
-      // ⭐ เก็บพลังงานที่ “ซื้อทั้งหมด” ไว้แยกต่างหาก (kWh)
-      setTotalPurchasedKwh(totalPowerKwh);
-
-      const totalPowerWh = totalPowerKwh * 1000;
-      const finalEnergy = startEnergy + totalPowerWh;
-
-      setFinalEnergyWh(finalEnergy);
-
-      console.log("🔋 Power list จาก EVChargingPayments (kWh):", powerList);
-      console.log("🔋 Total Power (kWh) จาก EVChargingPayments:", totalPowerKwh);
-      console.log("🔋 Total Power (Wh) จาก EVChargingPayments:", totalPowerWh);
-      console.log(
-        "📊 FinalEnergy (Wh) = StartEnergy + TotalPowerWh:",
-        finalEnergy
-      );
-
-      const active =
-        targetSession &&
-        (targetSession.Status === true || targetSession.Status === 1);
-
-      if (active) {
-        setSessionValid(true);
-      } else {
-        navigate("/user");
-      }
-
+    if (!sessions || sessions.length === 0) {
+      navigate("/user");
       setIsVerifying(false);
-    },
-    [userID, chargerId, navigate]
-  );
+      return;
+    }
 
-  // 👉 ตรวจ session ครั้งแรกเมื่อรู้ userID / chargerId
+    let targetSession: any | undefined;
+
+    if (sessions.length > 2 && chargerId) {
+      targetSession = sessions.find(
+        (s: any) =>
+          s?.Payment?.EVCabinet?.ChargePoint && s.Payment.EVCabinet.ChargePoint === chargerId
+      );
+    }
+
+    if (!targetSession) {
+      targetSession = sessions.find((s: any) => Boolean(s?.Status)) ?? sessions[0];
+    }
+
+    console.log("🎯 Session ที่เลือกใช้สำหรับตู้ปัจจุบัน:", targetSession);
+
+    const rawStartEnergy = targetSession?.StartEnergy;
+    const startEnergy = Number(rawStartEnergy ?? 0);
+
+    if (startEnergy > 0) {
+      setStartEnergyWh(startEnergy);
+      console.log("⚡ StartEnergy (Wh) ของ session:", startEnergy);
+    } else {
+      console.log("⚠️ StartEnergy จาก backend = 0 → รอ socket อัปเดต", rawStartEnergy);
+    }
+
+    const startTimeStr: string | undefined = targetSession?.StartTime;
+    const endTimeStr: string | undefined = targetSession?.EndTime;
+
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    if (startTimeStr && startTimeStr !== ZERO_TIME_STR) {
+      const d = new Date(startTimeStr);
+      if (!Number.isNaN(d.getTime())) startDate = d;
+      else console.log("⚠️ Invalid StartTime:", startTimeStr);
+    }
+
+    if (endTimeStr && endTimeStr !== ZERO_TIME_STR) {
+      const e = new Date(endTimeStr);
+      if (!Number.isNaN(e.getTime())) endDate = e;
+      else console.log("⚠️ Invalid EndTime:", endTimeStr);
+    }
+
+    setSessionStartTime(startDate);
+    setSessionEndTime(endDate);
+
+    if (startDate && endDate) {
+      const sec = Math.max(0, Math.floor((endDate.getTime() - startDate.getTime()) / 1000));
+      setTime(sec);
+      setHasStarted(true);
+      setCharging(false);
+    } else if (startDate && !endDate) {
+      setHasStarted(true);
+      setCharging(true);
+      const sec = Math.max(0, Math.floor((Date.now() - startDate.getTime()) / 1000));
+      setTime(sec);
+    } else {
+      setHasStarted(false);
+      setCharging(false);
+      setTime(0);
+    }
+
+    const evPays = targetSession?.Payment?.EVChargingPayments || [];
+
+    const sourceList: string[] = Array.from(
+      new Set<string>(
+        evPays
+          .map((p: any) => p?.EVcharging?.EnergySource?.Name)
+          .filter((name: any): name is string => typeof name === "string")
+      )
+    );
+    setEnergySources(sourceList);
+    console.log("🔆 Energy sources for this session:", sourceList);
+
+    const allocsRaw: EvChargingAlloc[] = evPays
+      .map((p: any) => {
+        const id = Number(p?.EVchargingID ?? p?.evcharging_id ?? p?.ev_charging_id ?? 0);
+        const purchased = Number(p?.Power ?? 0); // kWh
+        const srcName = (p?.EVcharging?.EnergySource?.Name ?? "") as SourceName;
+
+        return {
+          evcharging_id: id,
+          purchased_kwh: Number.isFinite(purchased) ? purchased : 0,
+          sourceName: srcName || "Unknown",
+        };
+      })
+      .filter(
+        (x: any) => Number.isFinite(x.evcharging_id) && x.evcharging_id > 0 && x.purchased_kwh > 0
+      );
+
+    const mergedMap = new Map<number, EvChargingAlloc>();
+    for (const a of allocsRaw) {
+      const prev = mergedMap.get(a.evcharging_id);
+      if (!prev) mergedMap.set(a.evcharging_id, { ...a });
+      else
+        mergedMap.set(a.evcharging_id, {
+          ...prev,
+          purchased_kwh: (prev.purchased_kwh || 0) + (a.purchased_kwh || 0),
+          sourceName: prev.sourceName || a.sourceName,
+        });
+    }
+
+    const allocs = Array.from(mergedMap.values());
+    setEvChargingAllocs(allocs);
+
+    console.log("🧮 EVCharging allocs (ตามที่ซื้อ):", allocs);
+
+    const totalPowerKwh = allocs.reduce((sum, a) => sum + (Number(a.purchased_kwh) || 0), 0);
+    setTotalPurchasedKwh(totalPowerKwh);
+
+    const totalPowerWh = totalPowerKwh * 1000;
+    const finalEnergy = startEnergy + totalPowerWh;
+    setFinalEnergyWh(finalEnergy);
+
+    console.log("🔋 Total Purchased (kWh):", totalPowerKwh);
+    console.log("📊 FinalEnergy(Wh)=StartEnergy+TotalPowerWh:", finalEnergy);
+
+    const active = Boolean(targetSession?.Status);
+    if (active) setSessionValid(true);
+    else navigate("/user");
+
+    setIsVerifying(false);
+  }, [userID, chargerId, navigate]);
+
   useEffect(() => {
     if (!userID) return;
     checkSession();
   }, [userID, checkSession]);
 
-  // ⭐ เรียก API ถามสถานะตู้ตอนเปิดหน้านี้ (ใช้ chargerId จากตู้)
+  // ⭐ เรียก API ถามสถานะตู้ตอนเปิดหน้านี้
   useEffect(() => {
     const fetchInitialStatus = async () => {
       try {
         if (!chargerId) return;
-
         const status = await getChargerStatus(chargerId);
         if (status && typeof status.status === "string") {
           setOcppStatus(status.status);
@@ -356,77 +348,52 @@ const ChargingEV = () => {
         console.error("❌ getChargerStatus error:", err);
       }
     };
-
     fetchInitialStatus();
   }, [chargerId]);
 
-  // 👉 ฟัง WebSocket OCPP จาก backend (ผูกกับ ChargePoint โดยตรง)
+  // 👉 ฟัง WebSocket OCPP
   useEffect(() => {
     if (!chargerId) {
-      console.log(
-        "ℹ️ OCPP WS: chargerId ยังไม่มา (ยังไม่รู้ ChargePoint) → ยังไม่ต่อ WebSocket"
-      );
+      console.log("ℹ️ OCPP WS: chargerId ยังไม่มา → ยังไม่ต่อ WebSocket");
       return;
     }
-
-    console.log("🛰️ OCPP WS: connecting with ChargePoint (room):", chargerId);
 
     const ws = connectOcppSocket(
       (data: any) => {
         try {
-          // ⭐ เคส event แบบ object (ไม่ใช่ OCPP frame array)
           if (data && typeof data === "object" && !Array.isArray(data)) {
             if (data.type === "start_energy_updated") {
-              console.log("🔥 [OCPP] start_energy_updated event:", data);
-
               if (!firstMeterRef.current) {
                 firstMeterRef.current = true;
-                console.log(
-                  "⏳ start_energy_updated → wait 2s then reload session from backend"
-                );
-                setTimeout(() => {
-                  checkSession();
-                }, 2000);
+                console.log("🔥 [OCPP] start_energy_updated → reload session in 2s");
+                setTimeout(() => checkSession(), 2000);
               }
             }
-            // ไม่ใช่ frame array → จบที่นี่
             return;
           }
 
-          // ⭐ เคส OCPP raw frame (array)
-          if (!Array.isArray(data) || data.length < 3) {
-            return;
-          }
+          if (!Array.isArray(data) || data.length < 3) return;
 
-          const messageType = data[0]; // 2 = CALL
+          const messageType = data[0];
           const action = data[2];
           const payload = data[3];
 
-          // ✅ StatusNotification
           if (messageType === 2 && action === "StatusNotification") {
             if (payload && typeof payload.status === "string") {
               const newStatus = payload.status as string;
               setOcppStatus(newStatus);
 
-              // ⭐ ถ้าเพิ่งเปลี่ยนเป็น SuspendedEV → โหลด Session จาก backend เพื่อเอา EndTime มาด้วย
               if (newStatus === "SuspendedEV") {
-                setTimeout(() => {
-                  checkSession();
-                }, 1000);
+                setTimeout(() => checkSession(), 1000);
               }
             }
           }
 
-          // ✅ MeterValues → ดึง Energy.Active.Import.Register (Wh)
           if (messageType === 2 && action === "MeterValues") {
-            console.log("📥 [OCPP] Raw MeterValues message:", data);
-
             if (!payload) return;
 
             const meterValues = payload.meterValue;
-            if (!Array.isArray(meterValues) || meterValues.length === 0) {
-              return;
-            }
+            if (!Array.isArray(meterValues) || meterValues.length === 0) return;
 
             const firstMeter = meterValues[0];
             const sampled = firstMeter?.sampledValue;
@@ -434,8 +401,7 @@ const ChargingEV = () => {
 
             const energySample = sampled.find(
               (s: any) =>
-                s?.measurand === "Energy.Active.Import.Register" &&
-                (s?.unit === "Wh" || !s?.unit)
+                s?.measurand === "Energy.Active.Import.Register" && (s?.unit === "Wh" || !s?.unit)
             );
 
             if (!energySample || energySample.value == null) return;
@@ -444,165 +410,93 @@ const ChargingEV = () => {
             if (!Number.isFinite(energyWh)) return;
 
             setCurrentEnergyWh(energyWh);
-
-            console.log(
-              "🔎 [OCPP] MeterValues Energy.Active.Import.Register (Wh):",
-              energyWh
-            );
-
-            // ❗ ตอนนี้ใช้ event start_energy_updated เป็นตัว reload session แล้ว
           }
         } catch (err) {
           console.error("Error parsing OCPP message:", err);
         }
       },
-      chargerId // ⭐ subscribe ตาม ChargePoint เช่น "CP_1"
+      chargerId
     );
 
-    return () => {
-      console.log(
-        "🛑 OCPP WS: closing WebSocket for ChargePoint (room):",
-        chargerId
-      );
-      ws.close();
-    };
+    return () => ws.close();
   }, [chargerId, checkSession]);
 
-  // ⭐ ฟัง WebSocket Hardware → ดูค่าที่ hardware ส่งกลับมา (แยกตาม HardwarePoint)
+  // ⭐ ฟัง WebSocket Hardware
   useEffect(() => {
     if (!hardwarePoint) {
-      console.log(
-        "ℹ️ HW WS: hardwarePoint ยังไม่มา → ยังไม่ต่อ WebSocket hardware"
-      );
+      console.log("ℹ️ HW WS: hardwarePoint ยังไม่มา → ยังไม่ต่อ WebSocket hardware");
       return;
     }
 
-    console.log(
-      "🛰️ HW WS: connecting to hardware frontend stream for device:",
+    const ws = connectHardwareSocket(
+      (data: any) => {
+        if (typeof data === "string") return;
+
+        if (data?.type === "remaining_energy" && data?.payload) {
+          const payload = data.payload as Record<string, number | undefined>;
+          const solarVal = payload["Solar"];
+          const gridVal = payload["Grid"];
+          if (typeof solarVal === "number") setSolarKwh(solarVal);
+          if (typeof gridVal === "number") setGridKwh(gridVal);
+        }
+      },
       hardwarePoint
     );
 
-    const ws = connectHardwareSocket(
-      (data: any) => {
-        console.log(
-          "🔌 [HW] Raw message from backend → frontend (device):",
-          hardwarePoint,
-          data
-        );
-
-        if (typeof data === "string") {
-          console.log("🔹 [HW] String message:", data);
-          return;
-        }
-
-        if (data?.type === "remaining_energy" && data?.payload) {
-          console.log("🔋 [HW] Remaining energy payload:", data.payload);
-
-          const payload = data.payload as Record<string, number | undefined>;
-
-          const solarVal = payload["Solar"];
-          const gridVal = payload["Grid"];
-
-          if (typeof solarVal === "number") {
-            setSolarKwh(solarVal);
-          }
-          if (typeof gridVal === "number") {
-            setGridKwh(gridVal);
-          }
-
-          console.log("🌞 Solar remaining =", solarVal);
-          console.log("🔌 Grid remaining  =", gridVal);
-        } else {
-          console.log("ℹ️ [HW] Other hardware message:", data);
-        }
-      },
-      hardwarePoint // ⭐ subscribe ตาม HardwarePoint เช่น "hardware_888"
-    );
-
-    return () => {
-      console.log(
-        "🛑 HW WS: closing WebSocket for hardware device:",
-        hardwarePoint
-      );
-      ws.close();
-    };
+    return () => ws.close();
   }, [hardwarePoint]);
 
   // 👉 นับเวลาโดยอิงจาก sessionStartTime + สถานะ OCPP
   useEffect(() => {
     if (!sessionValid || !sessionStartTime) return;
 
-    // 🟣 เคส SuspendedEV → หยุดเวลา
     if (ocppStatus === "SuspendedEV") {
       if (sessionEndTime) {
-        const diffMs = sessionEndTime.getTime() - sessionStartTime.getTime();
-        const sec = Math.max(0, Math.floor(diffMs / 1000));
+        const sec = Math.max(
+          0,
+          Math.floor((sessionEndTime.getTime() - sessionStartTime.getTime()) / 1000)
+        );
         setTime(sec);
       }
-      // ถ้าไม่มี EndTime → ไม่ทำอะไร ปล่อย time ไว้เท่าเดิม (freeze)
       return;
     }
 
-    // 🟢 เคส Charging → เวลาต้องเดินต่อ จาก StartTime ถึงตอนนี้ (ไม่สน EndTime)
     if (ocppStatus === "Charging") {
       const updateElapsed = () => {
-        const nowMs = Date.now();
-        const diffMs = nowMs - sessionStartTime.getTime();
-        const sec = Math.max(0, Math.floor(diffMs / 1000));
+        const sec = Math.max(0, Math.floor((Date.now() - sessionStartTime.getTime()) / 1000));
         setTime(sec);
       };
 
       updateElapsed();
       const intervalId = window.setInterval(updateElapsed, 1000);
-
-      return () => {
-        window.clearInterval(intervalId);
-      };
+      return () => window.clearInterval(intervalId);
     }
 
-    // 🟡 สถานะอื่น ๆ (Available / Finishing / Preparing / ฯลฯ)
-    // ถ้ามี EndTime → ใช้ EndTime - StartTime คงที่
     if (sessionEndTime) {
-      const diffMs = sessionEndTime.getTime() - sessionStartTime.getTime();
-      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      const sec = Math.max(
+        0,
+        Math.floor((sessionEndTime.getTime() - sessionStartTime.getTime()) / 1000)
+      );
       setTime(sec);
       return;
     }
 
-    // ยังไม่มี EndTime → นับเวลาต่อจาก StartTime เหมือนเคส Charging
     const updateElapsed = () => {
-      const nowMs = Date.now();
-      const diffMs = nowMs - sessionStartTime.getTime();
-      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      const sec = Math.max(0, Math.floor((Date.now() - sessionStartTime.getTime()) / 1000));
       setTime(sec);
     };
 
     updateElapsed();
     const intervalId = window.setInterval(updateElapsed, 1000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    return () => window.clearInterval(intervalId);
   }, [sessionValid, sessionStartTime, sessionEndTime, ocppStatus]);
 
-  // ⭐ ใช้ StartEnergy, totalPurchasedKwh, currentEnergyWh มาคำนวณ %
+  // ⭐ คำนวณ % จาก MeterValues
   useEffect(() => {
-    if (
-      startEnergyWh == null ||
-      totalPurchasedKwh == null ||
-      currentEnergyWh == null
-    ) {
-      return;
-    }
+    if (startEnergyWh == null || totalPurchasedKwh == null || currentEnergyWh == null) return;
 
     const totalDeltaWh = totalPurchasedKwh * 1000;
-    if (totalDeltaWh <= 0) {
-      console.log("⚠️ totalDeltaWh <= 0, ข้ามการคำนวณเปอร์เซ็นต์", {
-        startEnergyWh,
-        totalPurchasedKwh,
-      });
-      return;
-    }
+    if (totalDeltaWh <= 0) return;
 
     const currentDeltaWh = currentEnergyWh - startEnergyWh;
     const rawPercent = (currentDeltaWh / totalDeltaWh) * 100;
@@ -611,28 +505,15 @@ const ChargingEV = () => {
     const percent2 = parseFloat(clampedPercent.toFixed(2));
     setEnergy(percent2);
 
-    console.log("📈 SoC UI percent จาก MeterValues (ChargingEV):", {
-      startEnergyWh,
-      totalPurchasedKwh,
-      totalDeltaWh,
-      currentEnergyWh,
-      currentDeltaWh,
-      rawPercent,
-      clampedPercent,
-    });
-
     if (currentDeltaWh >= totalDeltaWh * 0.999) {
       setIsComplete(true);
       setCharging(false);
-      console.log("✅ ชาร์จครบตามแพ็กเกจ (ถึงพลังงานที่ซื้อทั้งหมดแล้ว)");
     }
   }, [startEnergyWh, totalPurchasedKwh, currentEnergyWh]);
 
-  // ⭐ คำนวณ Energy ที่เติมไปแล้ว (kWh)
+  // ⭐ คำนวณ used (kWh)
   useEffect(() => {
-    if (startEnergyWh == null || currentEnergyWh == null) {
-      return;
-    }
+    if (startEnergyWh == null || currentEnergyWh == null) return;
 
     const deltaWh = currentEnergyWh - startEnergyWh;
     if (deltaWh <= 0) {
@@ -650,20 +531,10 @@ const ChargingEV = () => {
     }
 
     const kWh = effectiveDeltaWh / 1000;
-
-    console.log("⚡ Energy charged so far (kWh):", {
-      startEnergyWh,
-      currentEnergyWh,
-      deltaWh,
-      effectiveDeltaWh,
-      totalPurchasedKwh,
-      kWh,
-    });
-
     setChargedKwhVal(kWh);
   }, [startEnergyWh, currentEnergyWh, totalPurchasedKwh]);
 
-  // ⭐ ดึง state ล่าสุดจาก localStorage
+  // ⭐ restore localStorage
   useEffect(() => {
     if (!storageKey) return;
     if (typeof window === "undefined") return;
@@ -678,15 +549,9 @@ const ChargingEV = () => {
         isComplete?: boolean;
       };
 
-      if (typeof parsed.energyPercent === "number") {
-        setEnergy(parsed.energyPercent);
-      }
-      if (typeof parsed.chargedKwh === "number") {
-        setChargedKwhVal(parsed.chargedKwh);
-      }
-      if (typeof parsed.isComplete === "boolean") {
-        setIsComplete(parsed.isComplete);
-      }
+      if (typeof parsed.energyPercent === "number") setEnergy(parsed.energyPercent);
+      if (typeof parsed.chargedKwh === "number") setChargedKwhVal(parsed.chargedKwh);
+      if (typeof parsed.isComplete === "boolean") setIsComplete(parsed.isComplete);
 
       console.log("🔁 Restore from localStorage:", parsed);
     } catch (err) {
@@ -694,46 +559,42 @@ const ChargingEV = () => {
     }
   }, [storageKey]);
 
-  // ⭐ เซฟ state ลง localStorage
+  // ⭐ save localStorage
   useEffect(() => {
     if (!storageKey) return;
     if (typeof window === "undefined") return;
 
     try {
       const payload = {
-        energyPercent: energy,
+        energyPercent: energyClamped,
         chargedKwh: chargedKwhVal,
         isComplete,
       };
       localStorage.setItem(storageKey, JSON.stringify(payload));
-      console.log("💾 Save charging state to localStorage:", payload);
     } catch (err) {
-      console.error("❌ Cannot save charging state to localStorage:", err);
+      console.error("❌ Cannot save charging state from localStorage:", err);
     }
-  }, [storageKey, energy, chargedKwhVal, isComplete]);
+  }, [storageKey, energyClamped, chargedKwhVal, isComplete]);
 
-  // 👉 ฟอร์แมทเวลา
-  const formatTime = (sec: number) => {
-    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  };
-
-  // 👉 สีแบตเตอรี่ ตาม % energy
+  // ✅ สีแบตเตอรี่ ตาม % energy
   const batteryGradient = useMemo(() => {
-    if (energy < 20) return "linear-gradient(180deg, #f87171, #ef4444)";
-    if (energy < 40) return "linear-gradient(180deg, #fb923c, #f97316)";
-    if (energy < 60) return "linear-gradient(180deg, #fbbf24, #f59e0b)";
-    if (energy < 80) return "linear-gradient(180deg, #a3e635, #84cc16)";
+    if (energyClamped < 20) return "linear-gradient(180deg, #f87171, #ef4444)";
+    if (energyClamped < 40) return "linear-gradient(180deg, #fb923c, #f97316)";
+    if (energyClamped < 60) return "linear-gradient(180deg, #fbbf24, #f59e0b)";
+    if (energyClamped < 80) return "linear-gradient(180deg, #a3e635, #84cc16)";
     return "linear-gradient(180deg, #34d399, #22c55e)";
-  }, [energy]);
+  }, [energyClamped]);
 
-  // 👉 กำหนดสี badge ตามสถานะ
+  // ✅ UI STATUS OVERRIDE
+  const uiOcppStatus = useMemo(() => {
+    if (ocppStatus === "SuspendedEV") return "SuspendedEV";
+    if (isComplete) return "Finishing";
+    return ocppStatus || "Unknown";
+  }, [ocppStatus, isComplete]);
+
   const { statusLabel, statusClass } = useMemo(() => {
-    const s = ocppStatus || "Unknown";
-    let cls =
-      "bg-gray-100 text-gray-700 border border-gray-200"; // default เทา
+    const s = uiOcppStatus || "Unknown";
+    let cls = "bg-gray-100 text-gray-700 border border-gray-200";
 
     switch (s) {
       case "Available":
@@ -752,18 +613,20 @@ const ChargingEV = () => {
       case "Finishing":
         cls = "bg-purple-50 text-purple-700 border border-purple-200";
         break;
+      case "SuspendedEV":
+        cls = "bg-gray-50 text-gray-800 border border-gray-200";
+        break;
       default:
         cls = "bg-gray-50 text-gray-700 border border-gray-200";
         break;
     }
 
-    return {
-      statusLabel: s,
-      statusClass: cls,
-    };
-  }, [ocppStatus]);
+    return { statusLabel: s, statusClass: cls };
+  }, [uiOcppStatus]);
 
-  // ✅ helper สำหรับลบ state ใน localStorage
+  const showBubbles = statusLabel === "Charging";
+  const isChargingAnim = statusLabel === "Charging";
+
   const clearLocalStorageState = () => {
     if (!storageKey) return;
     if (typeof window === "undefined") return;
@@ -775,23 +638,80 @@ const ChargingEV = () => {
     }
   };
 
-  // ✅ helper สำหรับ redirect ไปหน้า /user หลังชาร์จจบ
   const goToSummary = () => {
     if (!paymentID) return;
 
     setTimeout(() => {
       navigate("/user", {
         replace: true,
-        state: {
-          fromCharging: true,
-          paymentID: Number(paymentID),
-        },
+        state: { fromCharging: true, paymentID: Number(paymentID) },
       });
     }, 750);
   };
 
   // ===========================================================
-  // ⭐ ปุ่ม "ยกเลิก"
+  // ✅ คำนวณ remaining_power จริงตามสัดส่วนที่ "ซื้อ" (ใช้ตอน Cancel เท่านั้น)
+  // ===========================================================
+  const buildCancelSolarGridPayload = (): CancelSolarGridPayload | null => {
+    const allocs = (evChargingAllocs || []).filter(
+      (a) => a.evcharging_id > 0 && Number.isFinite(a.purchased_kwh) && a.purchased_kwh > 0
+    );
+
+    if (allocs.length < 2) {
+      console.log("❌ buildPayload: allocs < 2", allocs);
+      return null;
+    }
+
+    const total = Number(totalPurchasedKwh ?? 0);
+    const used = Number(chargedKwhVal ?? 0);
+
+    if (!Number.isFinite(total) || total <= 0) {
+      console.log("❌ buildPayload: totalPurchasedKwh invalid", totalPurchasedKwh);
+      return null;
+    }
+
+    const remainingTotal = Math.max(0, total - Math.max(0, used));
+
+    const allocTotal = allocs.reduce((sum, a) => sum + (Number(a.purchased_kwh) || 0), 0);
+    const denom = allocTotal > 0 ? allocTotal : total;
+
+    let running = 0;
+
+    const items = allocs.map((a, idx) => {
+      const ratio = (Number(a.purchased_kwh) || 0) / denom;
+
+      let remaining = remainingTotal * ratio;
+      remaining = Math.max(0, parseFloat(remaining.toFixed(2)));
+
+      if (idx === allocs.length - 1) {
+        const last = Math.max(0, parseFloat((remainingTotal - running).toFixed(2)));
+        remaining = last;
+      } else {
+        running = parseFloat((running + remaining).toFixed(2));
+      }
+
+      return {
+        evcharging_id: a.evcharging_id,
+        remaining_power: remaining,
+      };
+    });
+
+    const payload: CancelSolarGridPayload = { items };
+
+    console.log("🧾 [CancelSessionSolarGrid] CALC DEBUG:", {
+      totalPurchasedKwh: total,
+      usedKwh: used,
+      remainingTotalKwh: remainingTotal,
+      allocs,
+      allocTotal,
+      payload,
+    });
+
+    return payload;
+  };
+
+  // ===========================================================
+  // ⭐ Cancel (ใช้ CancelSessionSolarGrid)
   // ===========================================================
   const confirmCancel = async () => {
     if (!paymentID) {
@@ -804,62 +724,41 @@ const ChargingEV = () => {
       return;
     }
 
-    if (!hardwarePoint) {
-      message.error("Charging cabinet HardwarePoint not found");
+    const payload = buildCancelSolarGridPayload();
+    if (!payload) {
+      message.error("ไม่พบข้อมูล Solar+Grid เพียงพอ (evcharging_id / purchased_kwh)");
       return;
     }
 
     try {
-      await remoteStopCharging({
-        chargerId: chargerId,
-      });
+      await remoteStopCharging({ chargerId });
 
-      const ok = await UpdateSessionStatusByPaymentID(paymentID);
+      await CancelSessionSolarGrid(Number(paymentID), payload);
 
-      if (ok) {
-        try {
-          const deviceIdForEnergy = hardwarePoint;
-          await requestEnergyUsage(deviceIdForEnergy, paymentID, energySources);
-          console.log(
-            "✅ requestEnergyUsage sent for device:",
-            deviceIdForEnergy,
-            "paymentID:",
-            paymentID,
-            "energySources:",
-            energySources
-          );
-        } catch (energyErr) {
-          console.error("⚠️ requestEnergyUsage error:", energyErr);
-        }
+      message.success("Canceled successfully");
 
-        message.success("Canceled successfully");
+      setCharging(false);
+      setIsComplete(false);
+      setEnergy(0);
+      setTime(0);
+      setSessionStartTime(null);
+      setCancelModalOpen(false);
 
-        setCharging(false);
-        setIsComplete(false);
-        setEnergy(0);
-        setTime(0);
-        setSessionStartTime(null);
-        setCancelModalOpen(false);
-
-        clearLocalStorageState();
-
-        setTimeout(goToSummary, 1000);
-      } else {
-        message.error("Cancellation failed in the system");
-      }
-    } catch (err) {
-      console.error(err);
-      message.error("Unable to stop charging with the cabinet");
+      clearLocalStorageState();
+      setTimeout(goToSummary, 1000);
+    } catch (err: any) {
+      console.error("❌ Cancel error:", err?.response?.data || err);
+      const msg =
+        err?.response?.data?.error || err?.response?.data?.message || "Unable to cancel charging";
+      message.error(msg);
     }
   };
 
   // ===========================================================
-  // ⭐ ปุ่ม "เริ่ม" → remoteStartCharging
+  // ⭐ Start
   // ===========================================================
   const handleStart = async () => {
-    if (hasStarted || isComplete || statusLabel !== "Preparing") {
-      return;
-    }
+    if (hasStarted || isComplete || statusLabel !== "Preparing") return;
 
     if (!chargerId) {
       message.error("ChargePoint not found in charging cabinet");
@@ -868,7 +767,7 @@ const ChargingEV = () => {
 
     try {
       await remoteStartCharging({
-        chargerId: chargerId,
+        chargerId,
         connectorId: 1,
         idTag: "EV-SIM-001",
       });
@@ -889,7 +788,7 @@ const ChargingEV = () => {
   };
 
   // ===========================================================
-  // ⭐ ปุ่ม "เสร็จสิ้น"
+  // ⭐ Finish (❌ ไม่เรียก CancelSessionSolarGrid)
   // ===========================================================
   const handleComplete = async () => {
     if (!paymentID) {
@@ -903,23 +802,21 @@ const ChargingEV = () => {
       return;
     }
 
+    if (!isComplete) {
+      message.error("You can complete only when charging reaches 100%");
+      return;
+    }
+
     if (!chargerId) {
       message.error("ChargePoint not found in charging cabinet");
       return;
     }
 
-    // ❗ ถ้า status = Charging ห้ามทำงาน finish
-    if (statusLabel === "Charging") {
-      message.error("Cannot finish while charging is in progress");
-      return;
-    }
-
-    const isSuspendedEV = statusLabel === "SuspendedEV";
-    const isFull = isComplete;
-
     try {
-      await remoteStopCharging({
-        chargerId: chargerId,
+      // ✅ จบชาร์จ: สั่งหยุดตู้พอ (ไม่ต้องคำนวณ remaining)
+      // ✅ ต้องการเก็บไว้ แต่ถ้า error "ห้ามขึ้น error และห้ามหยุด flow"
+      await remoteStopCharging({ chargerId }).catch((err: any) => {
+        console.warn("⚠️ remoteStopCharging failed (ignored):", err?.response?.data || err);
       });
 
       const ok = await UpdateSessionStatusByPaymentID(paymentID);
@@ -933,53 +830,9 @@ const ChargingEV = () => {
       setSessionStartTime(null);
       setSessionEndTime(null);
 
-      // ⭐ เคสพิเศษ SuspendedEV และยังไม่ครบ 100% → ทำเหมือน Cancel + requestEnergyUsage
-      if (isSuspendedEV && !isFull) {
-        if (!hardwarePoint) {
-          message.error("Charging cabinet HardwarePoint not found");
-        } else {
-          try {
-            const deviceIdForEnergy = hardwarePoint;
-            await requestEnergyUsage(
-              deviceIdForEnergy,
-              paymentID,
-              energySources
-            );
-            console.log(
-              "✅ [SuspendedEV Finish] requestEnergyUsage sent for device:",
-              deviceIdForEnergy,
-              "paymentID:",
-              paymentID,
-              "energySources:",
-              energySources
-            );
-          } catch (energyErr) {
-            console.error(
-              "⚠️ [SuspendedEV Finish] requestEnergyUsage error:",
-              energyErr
-            );
-          }
-        }
-
-        message.success("Charging complete");
-
-        setIsComplete(false);
-        setEnergy(0);
-        setTime(0);
-        setSessionStartTime(null);
-        setSessionEndTime(null);
-        setCancelModalOpen(false);
-
-        clearLocalStorageState();
-
-        setTimeout(goToSummary, 1000);
-        return;
-      }
-
-      // ⭐ เคสปกติ (ครบ 100% หรือสถานะอื่นที่ isComplete === true)
-      const reviews = await GetReviewByUserID(userID);
-
       clearLocalStorageState();
+
+      const reviews = await GetReviewByUserID(userID);
 
       if (reviews && reviews.length > 0) {
         message.success("Charging completed");
@@ -987,39 +840,36 @@ const ChargingEV = () => {
       } else {
         setShowReviewModal(true);
       }
-    } catch (err) {
-      console.error(err);
-      message.error("Unable to stop charging with the cabinet");
+    } catch (err: any) {
+      console.error("❌ Finish error:", err?.response?.data || err);
+      const msg =
+        err?.response?.data?.error || err?.response?.data?.message || "Unable to complete charging";
+      message.error(msg);
     }
   };
 
-  // 👉 Loading ตรวจสอบ session
-  if (isVerifying) {
-    return <Loader />;
-  }
-
+  // 👉 Loading
+  if (isVerifying) return <Loader />;
   if (!sessionValid) return null;
 
-  // ❗ เงื่อนไขปุ่ม
-  const startDisabled =
-    hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
+  // ===========================================================
+  // ✅ เงื่อนไขปุ่ม
+  // ===========================================================
+  const startDisabled = hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
 
-  // 🟢 แก้ตรงนี้: ให้ Cancel ใช้ได้ถ้าอยู่ในสถานะ Preparing / Charging / Finishing และมี chargerId
-  const cancelDisabled =
-    !chargerId ||
-    !(
-      statusLabel === "Preparing" ||
-      statusLabel === "Charging" ||
-      statusLabel === "Finishing"
-    );
+  const canCancelBase =
+    !!chargerId && !isComplete && (statusLabel === "Charging" || statusLabel === "SuspendedEV");
 
-  // ⭐ Finish: ห้ามกดตอนยัง Charging
-  const completeDisabled =
-    !chargerId ||
-    !hasStarted ||
-    statusLabel === "Charging" ||
-    (!isComplete && statusLabel !== "SuspendedEV") ||
-    (statusLabel === "SuspendedEV" && !hardwarePoint);
+  const canCompleteBase = !!hasStarted && !!isComplete;
+
+  const canCancel = canCancelBase && !canCompleteBase;
+  const canComplete = canCompleteBase && !canCancelBase;
+
+  const cancelDisabled = !canCancel;
+  const completeDisabled = !canComplete;
+
+  // ✅ ตอนใกล้เต็มมาก ๆ ให้ขอบมนบนด้วย
+  const fillRoundedClass = energyClamped >= 99.5 ? "rounded-xl" : "rounded-b-xl";
 
   return (
     <>
@@ -1042,13 +892,11 @@ const ChargingEV = () => {
       {/* ⭐ EV Premium Cancel Modal */}
       {cancelModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          {/* BACKDROP */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setCancelModalOpen(false)}
           />
 
-          {/* MODAL */}
           <div
             className="
               relative w-full max-w-[400px]
@@ -1058,7 +906,6 @@ const ChargingEV = () => {
               animate-fadeIn
             "
           >
-            {/* CLOSE (X) */}
             <button
               onClick={() => setCancelModalOpen(false)}
               className="
@@ -1080,11 +927,9 @@ const ChargingEV = () => {
               </svg>
             </button>
 
-            {/* CONTENT */}
             <div className="px-6 py-9 text-center flex flex-col items-center">
-              {/* ICON + HALO */}
               <div className="relative mb-5">
-                <div className="absolute inset-0 blur-xl bg-blue-300 opacity-40 rounded-full"></div>
+                <div className="absolute inset-0 blur-xl bg-blue-300 opacity-40 rounded-full" />
                 <div
                   className="
                     relative z-10
@@ -1116,12 +961,11 @@ const ChargingEV = () => {
               </h3>
 
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[280px]">
-                If you confirm, charging will be stopped immediately and saved
-                as a state.
+                If you confirm, charging will be stopped immediately and the remaining power will be
+                calculated &amp; saved Power
               </p>
             </div>
 
-            {/* BUTTON */}
             <div className="px-6 pb-7">
               <button
                 onClick={confirmCancel}
@@ -1144,16 +988,13 @@ const ChargingEV = () => {
               from { opacity: 0; transform: translateY(14px) scale(0.96); }
               to   { opacity: 1; transform: translateY(0px) scale(1); }
             }
-            .animate-fadeIn {
-              animation: fadeIn 0.25s ease-out;
-            }
+            .animate-fadeIn { animation: fadeIn 0.25s ease-out; }
           `}</style>
         </div>
       )}
 
       {/* MAIN SCREEN */}
       <div className="min-h-screen bg-white w-full">
-        {/* HEADER */}
         <header className="sticky top-0 z-20 bg-gradient-to-r from-blue-600 to-sky-500 text-white rounded-b-2xl shadow-md overflow-hidden">
           <div className="w-full px-4 py-3 flex items-center gap-2 justify-start">
             <button
@@ -1175,25 +1016,42 @@ const ChargingEV = () => {
             <div className="flex flex-col md:flex-row md:items-center md:gap-2">
               <div className="flex items-center gap-2">
                 <FaBolt className="h-5 w-5 text.white" />
-                <span className="text-sm md:text-base font-semibold tracking-wide">
-                  EV Charging
-                </span>
+                <span className="text-sm md:text-base font-semibold tracking-wide">EV Charging</span>
               </div>
-              {cabinetName && (
-                <span className="text-[11px] md:text-xs text-white/80 md:ml-2">
-                  Cabinet : {cabinetName}
-                </span>
-              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                {cabinetName && (
+                  <span className="text-[11px] md:text-xs text-white/80 md:ml-2">
+                    Cabinet : {cabinetName}
+                  </span>
+                )}
+
+                {sourcesInline && (
+                  <span className="text-[11px] md:text-xs text-white/85 md:ml-2">
+                    • Sources : {sourcesInline}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </header>
 
-        {/* MAIN CONTENT */}
         <main className="px-4 pt-5 pb-10">
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-md w-full">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-base font-semibold text-blue-900">
-                <FaBolt className="text-blue-600" /> Charging
+              <h2
+                className={`flex items-center gap-2 text-base font-semibold text-blue-900 ${
+                  isChargingAnim ? "charging-title" : ""
+                }`}
+                style={
+                  isChargingAnim
+                    ? ({
+                        ["--titleGlow" as any]: batteryGradient,
+                      } as React.CSSProperties)
+                    : undefined
+                }
+              >
+                <FaBolt className={`text-blue-600 ${isChargingAnim ? "bolt-pulse" : ""}`} /> Charging
               </h2>
 
               <span
@@ -1209,51 +1067,73 @@ const ChargingEV = () => {
               </span>
             </div>
 
-            {/* BATTERY + INFO */}
             <div className="w-full flex items-start justify-center gap-5">
-              {/* Battery */}
               <div className="flex flex-col items-center">
                 <div className="mx-auto mb-1 h-2 w-12 rounded-sm bg-gray-300" />
 
+                {/* ✅ BATTERY */}
                 <div className="relative h-[320px] w-[150px] rounded-2xl border-2 border-gray-300 p-2 bg-white overflow-hidden">
-                  <div className="absolute inset-2 rounded-xl bg-gray-100 border border-gray-200" />
+                  {/* ✅ INNER (สำคัญมาก): ทำให้ขอบมน + ไม่ให้ fill ตัดเหลี่ยมตอน 100% */}
+                  <div className="absolute inset-2 rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
+                    {/* ✅ เติมพลังงาน (อยู่ใน inner ที่ overflow-hidden แล้ว) */}
+                    <div
+                      className={`absolute left-0 right-0 bottom-0 transition-all duration-500 ease-out ${fillRoundedClass}`}
+                      style={{
+                        height: `${energyClamped}%`,
+                        background: batteryGradient,
+                      }}
+                    />
 
-                  <div
-                    className="absolute left-2 right-2 bottom-2 rounded-b-xl transition-all duration-500 ease-out"
-                    style={{
-                      height: `calc(${energy}% - 0px)`,
-                      background: batteryGradient,
-                    }}
-                  />
+                    {/* ✅ ฟองสบู่เฉพาะตอน Charging + สีฟองตาม batteryGradient */}
+                    {showBubbles && (
+                      <div
+                        className="absolute inset-0 pointer-events-none"
+                        style={
+                          {
+                            ["--bubbleGradient" as any]: batteryGradient,
+                          } as React.CSSProperties
+                        }
+                      >
+                        <span className="bubble bubble-1" />
+                        <span className="bubble bubble-2" />
+                        <span className="bubble bubble-3" />
+                        <span className="bubble bubble-4" />
+                        <span className="bubble bubble-5" />
+                        <span className="bubble bubble-6" />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* INFO */}
               <div className="flex-1 flex flex-col items-stretch gap-3 min-w-[160px]">
                 <div className="rounded-xl bg-blue-50 px-4 py-3">
                   <div className="text-[11px] text-blue-900/70">Percent</div>
                   <div className="text-3xl font-extrabold text-blue-700">
-                    {energy.toFixed(2)}%
+                    {energyClamped.toFixed(2)}%
                   </div>
                 </div>
 
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
                   <div className="text-[11px] text-gray-500">Time</div>
                   <div className="font-semibold text-gray-800">
-                    {formatTime(time)}
+                    {(() => {
+                      const h = String(Math.floor(time / 3600)).padStart(2, "0");
+                      const m = String(Math.floor((time % 3600) / 60)).padStart(2, "0");
+                      const s = String(time % 60).padStart(2, "0");
+                      return `${h}:${m}:${s}`;
+                    })()}
                   </div>
                 </div>
 
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
-                  <div className="text-[11px] text-gray-500">
-                    Charging (kWh)
-                  </div>
+                  <div className="text-[11px] text-gray-500">Used (kWh)</div>
                   <div className="font-semibold text-gray-800">
-                    {chargedKwhVal.toFixed(2)}
+                    {usedText} <span className="text-gray-400">/</span> {purchasedText}
                   </div>
+                  <div className="text-[11px] text-gray-400 mt-1">used / purchased</div>
                 </div>
 
-                {/* ⭐ ช่อง สถานะ OCPP */}
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
                   <div className="text-[11px] text-gray-500">status</div>
                   <div className="mt-1">
@@ -1267,10 +1147,8 @@ const ChargingEV = () => {
               </div>
             </div>
 
-            {/* BUTTONS */}
             <div className="mt-6 border-t border-gray-100 pt-4">
               <div className="grid grid-cols-3 gap-2">
-                {/* Start */}
                 <button
                   onClick={handleStart}
                   disabled={startDisabled}
@@ -1284,12 +1162,9 @@ const ChargingEV = () => {
                   Start
                 </button>
 
-                {/* Cancel */}
                 <button
                   onClick={() => {
-                    if (!cancelDisabled) {
-                      setCancelModalOpen(true);
-                    }
+                    if (!cancelDisabled) setCancelModalOpen(true);
                   }}
                   disabled={cancelDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
@@ -1302,7 +1177,6 @@ const ChargingEV = () => {
                   Cancel
                 </button>
 
-                {/* Finish */}
                 <button
                   disabled={completeDisabled}
                   onClick={handleComplete}
@@ -1320,6 +1194,88 @@ const ChargingEV = () => {
           </div>
         </main>
       </div>
+
+      {/* ✅ Bubble CSS + Title Animation CSS */}
+      <style>{`
+        /* =========================
+          Charging Title Animation
+        ========================== */
+        .charging-title {
+          position: relative;
+          transform-origin: left center;
+          animation: titleFloat 1.6s ease-in-out infinite;
+          text-shadow: 0 1px 0 rgba(255,255,255,0.25);
+        }
+
+        .charging-title::after {
+          content: "";
+          position: absolute;
+          inset: -10px -14px;
+          border-radius: 14px;
+          background: var(--titleGlow);
+          opacity: 0.18;
+          filter: blur(14px);
+          z-index: -1;
+          animation: titleGlow 1.2s ease-in-out infinite;
+        }
+
+        @keyframes titleFloat {
+          0%   { transform: translateY(0px); }
+          50%  { transform: translateY(-2px); }
+          100% { transform: translateY(0px); }
+        }
+
+        @keyframes titleGlow {
+          0%   { opacity: 0.12; filter: blur(14px); }
+          50%  { opacity: 0.22; filter: blur(18px); }
+          100% { opacity: 0.12; filter: blur(14px); }
+        }
+
+        .bolt-pulse {
+          animation: boltPulse 0.9s ease-in-out infinite;
+          transform-origin: center;
+        }
+
+        @keyframes boltPulse {
+          0%   { transform: scale(1); filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
+          50%  { transform: scale(1.12); filter: drop-shadow(0 8px 12px rgba(0,0,0,0.12)); }
+          100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
+        }
+
+        /* =========================
+          Bubble Animation
+        ========================== */
+        .bubble {
+          position: absolute;
+          bottom: -14px;
+          border-radius: 9999px;
+          background: var(--bubbleGradient);
+
+          opacity: 0;
+          filter: blur(0.15px);
+          box-shadow: 0 6px 16px rgba(0,0,0,0.10);
+          border: 1px solid rgba(255,255,255,0.28);
+
+          mix-blend-mode: screen;
+
+          animation-name: bubbleUp;
+          animation-timing-function: ease-in;
+          animation-iteration-count: infinite;
+        }
+
+        @keyframes bubbleUp {
+          0%   { transform: translateY(0) scale(0.85); opacity: 0; }
+          12%  { opacity: 0.55; }
+          100% { transform: translateY(-340px) scale(1.15); opacity: 0; }
+        }
+
+        .bubble-1 { left: 18%; width: 10px; height: 10px; animation-duration: 1.7s; animation-delay: 0.0s; }
+        .bubble-2 { left: 42%; width: 7px;  height: 7px;  animation-duration: 1.3s; animation-delay: 0.2s; }
+        .bubble-3 { left: 65%; width: 12px; height: 12px; animation-duration: 1.9s; animation-delay: 0.4s; }
+        .bubble-4 { left: 30%; width: 6px;  height: 6px;  animation-duration: 1.1s; animation-delay: 0.6s; }
+        .bubble-5 { left: 78%; width: 8px;  height: 8px;  animation-duration: 1.5s; animation-delay: 0.1s; }
+        .bubble-6 { left: 54%; width: 5px;  height: 5px;  animation-duration: 1.0s; animation-delay: 0.35s; }
+      `}</style>
     </>
   );
 };
