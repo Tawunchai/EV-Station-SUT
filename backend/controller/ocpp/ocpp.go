@@ -279,6 +279,55 @@ func HandleFrontend(c *gin.Context) {
 // 🔹 CHARGER OCPP WebSocket (ตัวหลักคุยกับตู้จริง OCPP 1.6J)
 // ============================================================================
 
+// ✅✅ NEW: เมื่อ Charger disconnect -> ส่ง status=Interruption + ปิด session (เหมือน Finishing/Faulted)
+// - อัปเดต chargerStatuses
+// - broadcast "DATA JSON" ไปหน้าเว็บ (ไม่โดนปิดด้วย log switch)
+// - ปิด session: EndTime + status=false (เรียก updateEndTimeAndCloseOnFinishingByChargePoint)
+// - clearTransactionID
+func handleDisconnectAsInterruption(chargerID string) {
+	// 1) update in-memory status
+	statusMu.Lock()
+	st, ok := chargerStatuses[chargerID]
+	if !ok {
+		st = ChargerStatus{ChargerID: chargerID}
+	}
+	st.Status = "Interruption"
+	// จะใส่ errorCode อะไรก็ได้ตามที่คุณต้องการ; ตรงนี้ตั้งให้ชัดว่าเกิด interrupt
+	st.ErrorCode = "Interruption"
+	st.Connected = false
+	st.LastHeartbeat = time.Now().UTC()
+	chargerStatuses[chargerID] = st
+	statusMu.Unlock()
+
+	// 2) broadcast DATA (ห้ามโดนปิด)
+	dataMsg := map[string]interface{}{
+		"type":      "charger_status_update",
+		"chargerId": chargerID,
+		"status":    "Interruption",
+		"errorCode": "Interruption",
+		"connected": false,
+		"timestamp": nowOcppTime(),
+	}
+	if b, err := json.Marshal(dataMsg); err == nil {
+		broadcastToFrontendRoom(chargerID, b)
+	}
+
+	// 3) close session เหมือน Finishing/Faulted
+	dbConn := config.DB()
+	if err := updateEndTimeAndCloseOnFinishingByChargePoint(dbConn, chargerID); err != nil {
+		logln("❌ disconnect->Interruption updateEndTimeAndCloseOnFinishingByChargePoint error:", err)
+	} else {
+		logln("✅ disconnect->Interruption -> session closed for", chargerID)
+		broadcastLogTextToFrontendRoom(
+			chargerID,
+			"[SESSION-CLOSED] status=Interruption -> EndTime updated & status=false\n",
+		)
+	}
+
+	// 4) เคลียร์ transaction id กันค้าง
+	clearTransactionID(chargerID)
+}
+
 // HandleOCPP: ws://host/ocpp/:chargerID
 func HandleOCPP(c *gin.Context) {
 	// ✅ ใช้ ocppUpgrader (ต้องมี subprotocol ocpp1.6)
@@ -325,6 +374,10 @@ func HandleOCPP(c *gin.Context) {
 		logln("⚠️ Charger disconnected:", chargerID)
 		broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger disconnected: "+chargerID+"\n")
 
+		// ✅✅ NEW: disconnect -> Interruption + close session (เหมือน Finishing/Faulted)
+		handleDisconnectAsInterruption(chargerID)
+
+		// (ยังคงอัปเดต connected=false ไว้ด้วย เผื่อใครอ่านจาก map ตรง ๆ)
 		statusMu.Lock()
 		st, ok := chargerStatuses[chargerID]
 		if ok {
@@ -1385,7 +1438,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 			remainingPercent = 0
 		}
 		if remainingPercent > 100 {
-			remainingPercent = 100
+					remainingPercent = 100
 		}
 
 		usedPercent = math.Round(usedPercent*100) / 100

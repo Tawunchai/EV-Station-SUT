@@ -42,7 +42,6 @@ type CancelSolarGridPayload = {
 
 const ChargingEV = () => {
   const navigate = useNavigate();
-
   const location = useLocation();
   // @ts-ignore
   const { paymentID, cabinet_id } = location.state || {};
@@ -95,6 +94,12 @@ const ChargingEV = () => {
 
   const firstMeterRef = useRef(false);
 
+  // ✅ FREEZE เฉพาะกรณี Interruption (สำคัญมาก)
+  // - เมื่อเข้า Interruption: "ห้าม" ตรวจ session/payload แล้ว navigate ออก
+  // - ให้ค้างหน้านี้ไว้จน user กด Refresh เอง (refresh แล้วค่อยตรวจใหม่ตามปกติ)
+  const [freezeInterruption, setFreezeInterruption] = useState(false);
+  const freezeInterruptionRef = useRef(false);
+
   const storageKey =
     typeof paymentID !== "undefined" && paymentID !== null
       ? `${STORAGE_KEY_PREFIX}${paymentID}`
@@ -121,7 +126,10 @@ const ChargingEV = () => {
   }, [energy]);
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
+  // ❗ แต่ถ้าอยู่ในสถานะ Interruption (freeze) → "ห้ามตรวจ" และ "ห้ามเด้งออก"
   useEffect(() => {
+    if (freezeInterruptionRef.current) return;
+
     if (!paymentID || !cabinet_id) {
       message.error("Payment information not found");
       navigate("/");
@@ -195,6 +203,13 @@ const ChargingEV = () => {
   // ⭐ ฟังก์ชันโหลด Session (ดึง StartEnergy, StartTime, EndTime, EVChargingPayments)
   // ===========================================================
   const checkSession = useCallback(async () => {
+    // ✅ ถ้าอยู่ในโหมด freeze (Interruption) → ห้ามเช็ค session และห้าม navigate
+    if (freezeInterruptionRef.current) {
+      console.log("🧊 checkSession skipped เพราะอยู่ในสถานะ Interruption (freeze)");
+      setIsVerifying(false);
+      return;
+    }
+
     if (!userID) return;
 
     const sessions = await GetChargingSessionByUserID(userID);
@@ -324,6 +339,9 @@ const ChargingEV = () => {
     console.log("📊 FinalEnergy(Wh)=StartEnergy+TotalPowerWh:", finalEnergy);
 
     const active = Boolean(targetSession?.Status);
+
+    // ✅ ปกติ: ถ้า active=false ให้เด้งออก
+    // ❗ แต่ถ้าเกิด Interruption เราจะไม่มาถึงตรงนี้เพราะถูก freeze ไว้แล้ว (checkSession ถูก skip)
     if (active) setSessionValid(true);
     else navigate("/user");
 
@@ -332,6 +350,7 @@ const ChargingEV = () => {
 
   useEffect(() => {
     if (!userID) return;
+    if (freezeInterruptionRef.current) return; // ✅ freeze แล้วห้ามตรวจ
     checkSession();
   }, [userID, checkSession]);
 
@@ -358,20 +377,59 @@ const ChargingEV = () => {
       return;
     }
 
+    const enterFreezeInterruption = (reason: string) => {
+      // ✅ เข้าสถานะ Interruption แล้ว “ค้างหน้าเดิม”
+      console.warn("⚠️ [OCPP] Interruption:", reason);
+
+      freezeInterruptionRef.current = true;
+      setFreezeInterruption(true);
+
+      setOcppStatus("Interruption");
+      setCharging(false);
+
+      // ✅ ทำให้เวลาหยุดนิ่ง (ค้างค่าเดิม) แต่ไม่เด้งออก
+      if (!sessionEndTime) setSessionEndTime(new Date());
+      setIsVerifying(false);
+
+      // ❌ ห้าม checkSession / ห้าม navigate ในจุดนี้ (ตามที่ขอ)
+    };
+
     const ws = connectOcppSocket(
       (data: any) => {
         try {
+          // ✅ รองรับ "DATA JSON" จาก backend (ไม่ใช่ OCPP frame)
           if (data && typeof data === "object" && !Array.isArray(data)) {
+            // 1) start_energy_updated (ของเดิม)
             if (data.type === "start_energy_updated") {
+              // ✅ ถ้า freeze แล้วไม่ต้องทำอะไร
+              if (freezeInterruptionRef.current) return;
+
               if (!firstMeterRef.current) {
                 firstMeterRef.current = true;
                 console.log("🔥 [OCPP] start_energy_updated → reload session in 2s");
-                setTimeout(() => checkSession(), 2000);
+                setTimeout(() => {
+                  if (!freezeInterruptionRef.current) checkSession();
+                }, 2000);
               }
+              return;
             }
+
+            // 2) ✅ charger_status_update (ของใหม่จาก backend ตอน disconnect->Interruption)
+            if (data.type === "charger_status_update") {
+              const st = String((data as any).status || "");
+              if (st) setOcppStatus(st);
+
+              if (st === "Interruption") {
+                // ✅ เข้าสู่ freeze ทันที
+                enterFreezeInterruption("charger_status_update");
+              }
+              return;
+            }
+
             return;
           }
 
+          // ✅ OCPP frame แบบ array
           if (!Array.isArray(data) || data.length < 3) return;
 
           const messageType = data[0];
@@ -383,8 +441,11 @@ const ChargingEV = () => {
               const newStatus = payload.status as string;
               setOcppStatus(newStatus);
 
+              // ✅ ถ้าเป็น SuspendedEV อาจอยาก reload session (แต่ต้องไม่ใช่ตอน freeze)
               if (newStatus === "SuspendedEV") {
-                setTimeout(() => checkSession(), 1000);
+                if (!freezeInterruptionRef.current) {
+                  setTimeout(() => checkSession(), 1000);
+                }
               }
             }
           }
@@ -418,8 +479,20 @@ const ChargingEV = () => {
       chargerId
     );
 
-    return () => ws.close();
-  }, [chargerId, checkSession]);
+    // ✅ ดักกรณี WS หลุด/พัง → เข้า Interruption และ freeze ทันที
+    const onClose = () => enterFreezeInterruption("websocket closed");
+    const onError = () => enterFreezeInterruption("websocket error");
+
+    ws.addEventListener("close", onClose);
+    ws.addEventListener("error", onError);
+
+    return () => {
+      ws.removeEventListener("close", onClose);
+      ws.removeEventListener("error", onError);
+      ws.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargerId, checkSession, sessionEndTime]);
 
   // ⭐ ฟัง WebSocket Hardware
   useEffect(() => {
@@ -449,6 +522,18 @@ const ChargingEV = () => {
   // 👉 นับเวลาโดยอิงจาก sessionStartTime + สถานะ OCPP
   useEffect(() => {
     if (!sessionValid || !sessionStartTime) return;
+
+    // ✅ ถ้า freeze แล้วให้ค้างเวลา (ไม่ต้อง setInterval)
+    if (freezeInterruptionRef.current) {
+      if (sessionEndTime) {
+        const sec = Math.max(
+          0,
+          Math.floor((sessionEndTime.getTime() - sessionStartTime.getTime()) / 1000)
+        );
+        setTime(sec);
+      }
+      return;
+    }
 
     if (ocppStatus === "SuspendedEV") {
       if (sessionEndTime) {
@@ -587,6 +672,7 @@ const ChargingEV = () => {
 
   // ✅ UI STATUS OVERRIDE
   const uiOcppStatus = useMemo(() => {
+    if (ocppStatus === "Interruption") return "Interruption";
     if (ocppStatus === "SuspendedEV") return "SuspendedEV";
     if (isComplete) return "Finishing";
     return ocppStatus || "Unknown";
@@ -615,6 +701,9 @@ const ChargingEV = () => {
         break;
       case "SuspendedEV":
         cls = "bg-gray-50 text-gray-800 border border-gray-200";
+        break;
+      case "Interruption":
+        cls = "bg-orange-900/5 text-orange-500 border border-orange-400";
         break;
       default:
         cls = "bg-gray-50 text-gray-700 border border-gray-200";
@@ -714,6 +803,9 @@ const ChargingEV = () => {
   // ⭐ Cancel (ใช้ CancelSessionSolarGrid)
   // ===========================================================
   const confirmCancel = async () => {
+    // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ทำอะไร
+    if (freezeInterruptionRef.current) return;
+
     if (!paymentID) {
       message.error("Payment ID not found");
       return;
@@ -758,6 +850,9 @@ const ChargingEV = () => {
   // ⭐ Start
   // ===========================================================
   const handleStart = async () => {
+    // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ start
+    if (freezeInterruptionRef.current) return;
+
     if (hasStarted || isComplete || statusLabel !== "Preparing") return;
 
     if (!chargerId) {
@@ -791,6 +886,9 @@ const ChargingEV = () => {
   // ⭐ Finish (❌ ไม่เรียก CancelSessionSolarGrid)
   // ===========================================================
   const handleComplete = async () => {
+    // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ finish
+    if (freezeInterruptionRef.current) return;
+
     if (!paymentID) {
       message.error("No Payment ID");
       return;
@@ -850,17 +948,24 @@ const ChargingEV = () => {
 
   // 👉 Loading
   if (isVerifying) return <Loader />;
-  if (!sessionValid) return null;
+
+  // ✅ ถ้า sessionValid=false ปกติจะ return null
+  // ❗ แต่ถ้า Interruption (freeze) ให้ “ค้างหน้าเดิม” ไว้ (ห้ามเด้ง/ห้ามหาย)
+  if (!sessionValid && !freezeInterruption) return null;
 
   // ===========================================================
   // ✅ เงื่อนไขปุ่ม
   // ===========================================================
-  const startDisabled = hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
+  const startDisabled =
+    freezeInterruption || hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
 
   const canCancelBase =
-    !!chargerId && !isComplete && (statusLabel === "Charging" || statusLabel === "SuspendedEV");
+    !freezeInterruption &&
+    !!chargerId &&
+    !isComplete &&
+    (statusLabel === "Charging" || statusLabel === "SuspendedEV");
 
-  const canCompleteBase = !!hasStarted && !!isComplete;
+  const canCompleteBase = !freezeInterruption && !!hasStarted && !!isComplete;
 
   const canCancel = canCancelBase && !canCompleteBase;
   const canComplete = canCompleteBase && !canCancelBase;
@@ -1073,9 +1178,7 @@ const ChargingEV = () => {
 
                 {/* ✅ BATTERY */}
                 <div className="relative h-[320px] w-[150px] rounded-2xl border-2 border-gray-300 p-2 bg-white overflow-hidden">
-                  {/* ✅ INNER (สำคัญมาก): ทำให้ขอบมน + ไม่ให้ fill ตัดเหลี่ยมตอน 100% */}
                   <div className="absolute inset-2 rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
-                    {/* ✅ เติมพลังงาน (อยู่ใน inner ที่ overflow-hidden แล้ว) */}
                     <div
                       className={`absolute left-0 right-0 bottom-0 transition-all duration-500 ease-out ${fillRoundedClass}`}
                       style={{
@@ -1084,7 +1187,6 @@ const ChargingEV = () => {
                       }}
                     />
 
-                    {/* ✅ ฟองสบู่เฉพาะตอน Charging + สีฟองตาม batteryGradient */}
                     {showBubbles && (
                       <div
                         className="absolute inset-0 pointer-events-none"
