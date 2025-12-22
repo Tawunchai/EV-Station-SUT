@@ -25,9 +25,7 @@ import (
 // 1 = open, 0 = close
 var logEnabled uint32 = 1
 
-func isLogEnabled() bool {
-	return atomic.LoadUint32(&logEnabled) == 1
-}
+func isLogEnabled() bool { return atomic.LoadUint32(&logEnabled) == 1 }
 
 func setLogEnabled(v bool) {
 	if v {
@@ -61,14 +59,23 @@ func broadcastLogTextToFrontendRoom(roomID, s string) {
 }
 
 // ============================================================================
-// 🔧 WebSocket Upgrader (OCPP 1.6J ใช้ subprotocol "ocpp1.6")
+// 🔧 WebSocket Upgrader (แยก Frontend vs OCPP Charger)
 // ============================================================================
-var upgrader = websocket.Upgrader{
+
+// ✅ สำหรับ OCPP Charger เท่านั้น (ต้องมี subprotocol ocpp1.6)
+var ocppUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		// อนุญาตทุก origin (ถ้า production ให้ tighten ตรงนี้)
 		return true
 	},
 	Subprotocols: []string{"ocpp1.6"},
+}
+
+// ✅ สำหรับ Frontend ดู log (Browser จะไม่ส่ง subprotocol ocpp1.6)
+var frontendUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
 }
 
 // ============================================================================
@@ -216,7 +223,8 @@ func broadcastTextToFrontendRoom(roomID, s string) {
 // ============================================================================
 // พิมพ์ "open" เพื่อเปิด log, "close" เพื่อปิด log
 func HandleFrontend(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	// ✅ ใช้ frontendUpgrader (ห้ามบังคับ subprotocol ocpp1.6)
+	conn, err := frontendUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logln("❌ Upgrade frontend error:", err)
 		return
@@ -259,9 +267,7 @@ func HandleFrontend(c *gin.Context) {
 			continue
 		case "close":
 			setLogEnabled(false)
-			// ถึงแม้ปิดแล้ว แต่ ack นี้ “ไม่ใช่ระบบหลัก” จะส่งหรือไม่ส่งก็ได้
-			// ถ้าปิด log แล้วจะไม่ส่ง ack ต่อ (ตาม requirement: ปิด log ทั้งหมด)
-			// ดังนั้นไม่ส่งอะไรเพิ่ม
+			// ปิด log ทั้งหมด → ไม่ส่ง ack เพิ่ม
 			continue
 		default:
 			// ignore ข้อความอื่น ๆ (ไม่ให้กระทบระบบ)
@@ -275,24 +281,30 @@ func HandleFrontend(c *gin.Context) {
 
 // HandleOCPP: ws://host/ocpp/:chargerID
 func HandleOCPP(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	// ✅ ใช้ ocppUpgrader (ต้องมี subprotocol ocpp1.6)
+	conn, err := ocppUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logln("❌ Upgrade OCPP error:", err)
 		return
 	}
 	defer conn.Close()
 
-	if conn.Subprotocol() != "ocpp1.6" {
-		logln("⚠️ Subprotocol mismatch, expected ocpp1.6, got:", conn.Subprotocol())
+	chargerID := c.Param("chargerID")
+	if chargerID == "" {
+		logln("❌ missing chargerID in URL")
+		return
 	}
 
-	chargerID := c.Param("chargerID")
+	if conn.Subprotocol() != "ocpp1.6" {
+		// Delta บางรุ่น strict: ถ้าไม่ใช่ ocpp1.6 จะคุยไม่ต่อ
+		logln("⚠️ Subprotocol mismatch, expected ocpp1.6, got:", conn.Subprotocol(), "chargerID:", chargerID)
+	}
 
 	chargersMu.Lock()
 	chargers[chargerID] = conn
 	chargersMu.Unlock()
 
-	logln("🚗 Charger connected:", chargerID)
+	logln("🚗 Charger connected:", chargerID, "subprotocol =", conn.Subprotocol())
 	broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger connected: "+chargerID+"\n")
 
 	statusMu.Lock()
@@ -399,13 +411,14 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		model, _ := payload["chargePointModel"].(string)
 		logf("🔌 BootNotification from %s | Vendor=%s Model=%s\n", chargerID, vendor, model)
 
+		// ✅ Delta บาง FW strict: interval ควรเป็น int ชัดๆ
 		response := []interface{}{
 			3,
 			messageID,
 			map[string]interface{}{
 				"status":      "Accepted",
 				"currentTime": nowOcppTime(),
-				"interval":    30,
+				"interval":    int(30),
 			},
 		}
 
@@ -439,12 +452,14 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		idTag, _ := payload["idTag"].(string)
 		logln("🔐 Authorize request from", chargerID, "idTag =", idTag)
 
+		// ✅ Delta บาง FW ชอบมี expiryDate (ใส่แล้ว compatible ขึ้น)
 		response := []interface{}{
 			3,
 			messageID,
 			map[string]interface{}{
 				"idTagInfo": map[string]interface{}{
-					"status": "Accepted",
+					"status":     "Accepted",
+					"expiryDate": nowOcppTime(),
 				},
 			},
 		}
@@ -481,6 +496,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			Connected:     true,
 			LastHeartbeat: time.Now().UTC(),
 		}
+		// ✅ connectorId=0 มักส่งมาตอน boot → อย่า overwrite ถ้ามีค่าเดิม
 		if old.ChargerID != "" && newSt.ConnectorID == 0 {
 			newSt.ConnectorID = old.ConnectorID
 		}
@@ -526,7 +542,10 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			3,
 			messageID,
 			map[string]interface{}{
-				"idTagInfo":     map[string]interface{}{"status": "Accepted"},
+				"idTagInfo": map[string]interface{}{
+					"status":     "Accepted",
+					"expiryDate": nowOcppTime(),
+				},
 				"transactionId": transactionID,
 			},
 		}
@@ -546,7 +565,10 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			3,
 			messageID,
 			map[string]interface{}{
-				"idTagInfo": map[string]interface{}{"status": "Accepted"},
+				"idTagInfo": map[string]interface{}{
+					"status":     "Accepted",
+					"expiryDate": nowOcppTime(),
+				},
 			},
 		}
 
@@ -827,10 +849,12 @@ func RemoteStartHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no status for this charger"})
 		return
 	}
-	if st.Status != "Preparing" {
-		logf("❌ RemoteStart: charger %s status is %s (need Preparing)\n", req.ChargerID, st.Status)
+
+	// ✅ Delta ส่วนใหญ่สั่ง start ได้ตอน Available หรือ Preparing
+	if st.Status != "Preparing" && st.Status != "Available" {
+		logf("❌ RemoteStart: charger %s status is %s (need Preparing/Available)\n", req.ChargerID, st.Status)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":  "charger must be in Preparing state to start",
+			"error":  "charger must be in Preparing or Available state to start",
 			"status": st.Status,
 		})
 		return
