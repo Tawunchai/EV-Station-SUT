@@ -25,7 +25,9 @@ import (
 // 1 = open, 0 = close
 var logEnabled uint32 = 1
 
-func isLogEnabled() bool { return atomic.LoadUint32(&logEnabled) == 1 }
+func isLogEnabled() bool {
+	return atomic.LoadUint32(&logEnabled) == 1
+}
 
 func setLogEnabled(v bool) {
 	if v {
@@ -35,48 +37,24 @@ func setLogEnabled(v bool) {
 	}
 }
 
-// ============================================================================
-// ✅ LOG FILTER: พิมพ์เฉพาะ “กลุ่ม log ที่ต้องการ” เท่านั้น
-// ============================================================================
-
-type LogKind string
-
-const (
-	LogConnect  LogKind = "connect"  // 🚗 Charger connected
-	LogCall     LogKind = "call"     // 📥 CALL action=...
-	LogBoot     LogKind = "boot"     // 🔌 Boot... / ✅ Boot...
-	LogStatus   LogKind = "status"   // 📥 StatusNotification... / ✅ stored...
-	LogMeter    LogKind = "meter"    // 📊 MeterValues from... / 📊 Acknowledged
-	LogStopTx   LogKind = "stop_tx"  // 🛑 StopTransaction... / 🧹 cleared...
-	LogHeartbeat LogKind = "hb"      // 💓 Heartbeat Answered
-)
-
-// ✅ เปิดเฉพาะ log ที่คุณยกตัวอย่างมาเท่านั้น
-func allowLogKind(k LogKind) bool {
-	switch k {
-	case LogConnect, LogCall, LogBoot, LogStatus, LogMeter, LogStopTx, LogHeartbeat:
-		return true
-	default:
-		return false
-	}
-}
-
-func loglnK(k LogKind, args ...interface{}) {
-	if !isLogEnabled() || !allowLogKind(k) {
+// ใช้แทน fmt.Println/Printf ทั้งหมด เพื่อ toggle ได้
+func logln(args ...interface{}) {
+	if !isLogEnabled() {
 		return
 	}
 	fmt.Println(args...)
 }
 
-func logfK(k LogKind, format string, args ...interface{}) {
-	if !isLogEnabled() || !allowLogKind(k) {
+func logf(format string, args ...interface{}) {
+	if !isLogEnabled() {
 		return
 	}
 	fmt.Printf(format, args...)
 }
 
-func broadcastLogTextToFrontendRoomK(k LogKind, roomID, s string) {
-	if !isLogEnabled() || !allowLogKind(k) {
+// ใช้แทน broadcastTextToFrontendRoom สำหรับ “ข้อความ log”
+func broadcastLogTextToFrontendRoom(roomID, s string) {
+	if !isLogEnabled() {
 		return
 	}
 	broadcastToFrontendRoom(roomID, []byte(s))
@@ -87,6 +65,7 @@ func broadcastLogTextToFrontendRoomK(k LogKind, roomID, s string) {
 // ============================================================================
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
+		// อนุญาตทุก origin (ถ้า production ให้ tighten ตรงนี้)
 		return true
 	},
 	Subprotocols: []string{"ocpp1.6"},
@@ -157,6 +136,7 @@ var (
 )
 
 func markAutoStopped(sessionID uint) bool {
+	// return true = ยังไม่เคย stop มาก่อน (อนุญาต), false = เคย stop แล้ว (กันยิงซ้ำ)
 	autoStoppedSessionsMu.Lock()
 	defer autoStoppedSessionsMu.Unlock()
 
@@ -225,7 +205,6 @@ func broadcastToFrontendRoom(roomID string, msg []byte) {
 	}
 }
 
-// กัน unused ได้ (ถ้าวันไหนไม่ได้เรียกใช้)
 var _ = broadcastTextToFrontendRoom
 
 func broadcastTextToFrontendRoom(roomID, s string) {
@@ -239,6 +218,7 @@ func broadcastTextToFrontendRoom(roomID, s string) {
 func HandleFrontend(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		logln("❌ Upgrade frontend error:", err)
 		return
 	}
 	defer conn.Close()
@@ -252,15 +232,25 @@ func HandleFrontend(c *gin.Context) {
 	frontendClients[conn] = roomID
 	frontendClientsMu.Unlock()
 
+	logln("🌐 Frontend connected, room =", roomID)
+
+	// แจ้งระบบ (ถือเป็น log -> obey open/close)
+	if isLogEnabled() {
+		_ = conn.WriteMessage(websocket.TextMessage,
+			[]byte("[SYSTEM] Frontend connected to room "+roomID+"\n"))
+	}
+
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			frontendClientsMu.Lock()
 			delete(frontendClients, conn)
 			frontendClientsMu.Unlock()
+			logln("❌ Frontend disconnected from room:", roomID)
 			break
 		}
 
+		// ✅ รับคำสั่ง open/close จาก frontend ได้เลย
 		cmd := strings.ToLower(strings.TrimSpace(string(msg)))
 		switch cmd {
 		case "open":
@@ -269,10 +259,12 @@ func HandleFrontend(c *gin.Context) {
 			continue
 		case "close":
 			setLogEnabled(false)
-			// ปิด log ทั้งหมด -> ไม่ส่ง ack เพิ่ม
+			// ถึงแม้ปิดแล้ว แต่ ack นี้ “ไม่ใช่ระบบหลัก” จะส่งหรือไม่ส่งก็ได้
+			// ถ้าปิด log แล้วจะไม่ส่ง ack ต่อ (ตาม requirement: ปิด log ทั้งหมด)
+			// ดังนั้นไม่ส่งอะไรเพิ่ม
 			continue
 		default:
-			// ignore
+			// ignore ข้อความอื่น ๆ (ไม่ให้กระทบระบบ)
 		}
 	}
 }
@@ -285,9 +277,14 @@ func HandleFrontend(c *gin.Context) {
 func HandleOCPP(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		logln("❌ Upgrade OCPP error:", err)
 		return
 	}
 	defer conn.Close()
+
+	if conn.Subprotocol() != "ocpp1.6" {
+		logln("⚠️ Subprotocol mismatch, expected ocpp1.6, got:", conn.Subprotocol())
+	}
 
 	chargerID := c.Param("chargerID")
 
@@ -295,9 +292,8 @@ func HandleOCPP(c *gin.Context) {
 	chargers[chargerID] = conn
 	chargersMu.Unlock()
 
-	// ✅ เอาแค่ log ที่ต้องการ
-	loglnK(LogConnect, "🚗 Charger connected:", chargerID)
-	broadcastLogTextToFrontendRoomK(LogConnect, chargerID, "[SYSTEM] Charger connected: "+chargerID+"\n")
+	logln("🚗 Charger connected:", chargerID)
+	broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger connected: "+chargerID+"\n")
 
 	statusMu.Lock()
 	st, ok := chargerStatuses[chargerID]
@@ -314,7 +310,9 @@ func HandleOCPP(c *gin.Context) {
 		delete(chargers, chargerID)
 		chargersMu.Unlock()
 
-		// ❌ ไม่พิมพ์ “disconnected” ตามที่คุณไม่ต้องการ
+		logln("⚠️ Charger disconnected:", chargerID)
+		broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger disconnected: "+chargerID+"\n")
+
 		statusMu.Lock()
 		st, ok := chargerStatuses[chargerID]
 		if ok {
@@ -327,31 +325,36 @@ func HandleOCPP(c *gin.Context) {
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
+			logln("❌ OCPP read error:", err)
 			break
 		}
 
-		// ✅ raw OCPP frame ถือเป็น log (ปิดได้) แต่ “ไม่พิมพ์อะไรเพิ่ม” นอกจากรายการที่คุณต้องการ
-		// ถ้าต้องการให้ frontend เห็น raw frame เฉพาะตอน open ก็ยังส่งได้:
+		// ✅ raw OCPP frames ถือเป็น log (ปิดได้)
 		if isLogEnabled() {
 			broadcastToFrontendRoom(chargerID, msg)
 		}
 
 		var frame []interface{}
 		if err := json.Unmarshal(msg, &frame); err != nil {
+			logln("❌ JSON parse error:", err)
 			continue
 		}
+
 		if len(frame) < 3 {
+			logln("⚠️ Invalid OCPP frame length:", len(frame))
 			continue
 		}
 
 		messageTypeFloat, ok := frame[0].(float64)
 		if !ok {
+			logln("⚠️ messageType is not number")
 			continue
 		}
 		messageType := int(messageTypeFloat)
 
 		messageID, ok := frame[1].(string)
 		if !ok {
+			logln("⚠️ messageId is not string")
 			continue
 		}
 
@@ -363,6 +366,7 @@ func HandleOCPP(c *gin.Context) {
 		case 4:
 			handleCallErrorFromCharger(chargerID, frame, messageID)
 		default:
+			logln("⚠️ Unknown messageType:", messageType)
 		}
 	}
 }
@@ -386,17 +390,14 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		payload = map[string]interface{}{}
 	}
 
-	// ✅ ต้องการ: “📥 CALL from ... action=... payload=...”
-	logfK(LogCall, "📥 CALL from %s: action=%s payload=%v\n", chargerID, action, payload)
+	logf("📥 CALL from %s: action=%s payload=%v\n", chargerID, action, payload)
 
 	switch action {
 
 	case "BootNotification":
 		vendor, _ := payload["chargePointVendor"].(string)
 		model, _ := payload["chargePointModel"].(string)
-
-		// ✅ ต้องการ: “🔌 BootNotification ...”
-		logfK(LogBoot, "🔌 BootNotification from %s | Vendor=%s Model=%s\n", chargerID, vendor, model)
+		logf("🔌 BootNotification from %s | Vendor=%s Model=%s\n", chargerID, vendor, model)
 
 		response := []interface{}{
 			3,
@@ -409,10 +410,10 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 		if err := conn.WriteJSON(response); err != nil {
-			// ❌ ไม่พิมพ์ error
+			logln("❌ Failed to send BootNotification conf:", err)
 		} else {
-			// ✅ ต้องการ: “✅ BootNotification Accepted ...”
-			loglnK(LogBoot, "✅ BootNotification Accepted for", chargerID)
+			logln("✅ BootNotification Accepted for", chargerID)
+			broadcastLogTextToFrontendRoom(chargerID, "[SENT] BootNotification.conf to "+chargerID+"\n")
 		}
 
 	case "Heartbeat":
@@ -429,14 +430,15 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		response := []interface{}{3, messageID, map[string]interface{}{"currentTime": nowOcppTime()}}
 
 		if err := conn.WriteJSON(response); err != nil {
-			// ❌ ไม่พิมพ์ error
+			logln("❌ Failed to send Heartbeat conf:", err)
 		} else {
-			// ✅ ต้องการ: “💓 Heartbeat Answered ...”
-			loglnK(LogHeartbeat, "💓 Heartbeat Answered for", chargerID)
+			logln("💓 Heartbeat Answered for", chargerID)
 		}
 
 	case "Authorize":
-		// (ไม่อยู่ใน log ที่คุณขอ) -> ไม่พิมพ์
+		idTag, _ := payload["idTag"].(string)
+		logln("🔐 Authorize request from", chargerID, "idTag =", idTag)
+
 		response := []interface{}{
 			3,
 			messageID,
@@ -446,11 +448,15 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 				},
 			},
 		}
-		_ = conn.WriteJSON(response)
+
+		if err := conn.WriteJSON(response); err != nil {
+			logln("❌ Failed to send Authorize conf:", err)
+		} else {
+			logln("✅ Authorize Accepted for", chargerID)
+		}
 
 	case "StatusNotification":
-		// ✅ ต้องการ: “📥 StatusNotification from ...”
-		loglnK(LogStatus, "📥 StatusNotification from", chargerID)
+		logln("📥 StatusNotification from", chargerID)
 
 		var connectorID int
 		var statusStr, errorCode string
@@ -482,25 +488,37 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		statusMu.Unlock()
 
 		response := []interface{}{3, messageID, map[string]interface{}{}}
-		_ = conn.WriteJSON(response)
-
-		// ✅ ต้องการ: “✅ StatusNotification stored: {...}”
-		logfK(LogStatus, "✅ StatusNotification stored: %+v\n", newSt)
-
-		// logic เดิม (ไม่พิมพ์ error)
-		if statusStr == "SuspendedEV" {
-			dbConn := config.DB()
-			_ = updateEndTimeOnSuspendedEVByChargePoint(dbConn, chargerID)
+		if err := conn.WriteJSON(response); err != nil {
+			logln("❌ Failed to send StatusNotification conf:", err)
+		} else {
+			logf("✅ StatusNotification stored: %+v\n", newSt)
 		}
 
-		// logic เดิม (ไม่พิมพ์ error)
+		if statusStr == "SuspendedEV" {
+			dbConn := config.DB()
+			if err := updateEndTimeOnSuspendedEVByChargePoint(dbConn, chargerID); err != nil {
+				logln("❌ updateEndTimeOnSuspendedEVByChargePoint error:", err)
+			}
+		}
+
+		// ✅✅ ถ้า status = Finishing หรือ Faulted -> ปิด session (status=false) + อัพเดต EndTime
 		if statusStr == "Finishing" || statusStr == "Faulted" {
 			dbConn := config.DB()
-			_ = updateEndTimeAndCloseOnFinishingByChargePoint(dbConn, chargerID)
+
+			if err := updateEndTimeAndCloseOnFinishingByChargePoint(dbConn, chargerID); err != nil {
+				logln("❌ updateEndTimeAndCloseOnFinishingByChargePoint error:", err)
+			} else {
+				logln("✅", statusStr, "-> session closed for", chargerID)
+				broadcastLogTextToFrontendRoom(
+					chargerID,
+					fmt.Sprintf("[SESSION-CLOSED] status=%s -> EndTime updated & status=false\n", statusStr),
+				)
+			}
 		}
 
 	case "StartTransaction":
-		// (ไม่อยู่ใน log ที่คุณขอ) -> ไม่พิมพ์
+		logln("🚗 StartTransaction received from", chargerID)
+
 		transactionID := generateTransactionID()
 		saveTransactionID(chargerID, transactionID)
 
@@ -512,11 +530,15 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 				"transactionId": transactionID,
 			},
 		}
-		_ = conn.WriteJSON(response)
+
+		if err := conn.WriteJSON(response); err != nil {
+			logln("❌ Failed to send StartTransaction conf:", err)
+		} else {
+			logln("🎉 StartTransaction Accepted → transactionId =", transactionID)
+		}
 
 	case "StopTransaction":
-		// ✅ ต้องการ: StopTransaction + cleared
-		loglnK(LogStopTx, "🛑 StopTransaction received — ending session for", chargerID)
+		logln("🛑 StopTransaction received — ending session for", chargerID)
 
 		clearTransactionID(chargerID)
 
@@ -529,60 +551,129 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 		if err := conn.WriteJSON(response); err != nil {
-			// ❌ ไม่พิมพ์ error
+			logln("❌ Failed to send StopTransaction conf:", err)
 		} else {
-			loglnK(LogStopTx, "🧹 Transaction cleared for", chargerID)
+			logln("🧹 Transaction cleared for", chargerID)
 		}
 
 	case "MeterValues":
-		// ✅ ต้องการ: “📊 MeterValues from ... payload = ...”
-		loglnK(LogMeter, "📊 MeterValues from", chargerID, "payload =", payload)
+		logln("📊 MeterValues from", chargerID, "payload =", payload)
 
 		energyWh := extractEnergyActiveImportRegister(payload)
+
+		logf("🟨 [METERVALUES] chargePoint=%s energyWh=%.2f tx=%d ts=%s\n",
+			chargerID,
+			energyWh,
+			extractTransactionIDFromMeterValues(payload),
+			extractTimestampFromMeterValues(payload),
+		)
 
 		if energyWh > 0 {
 			dbConn := config.DB()
 
-			// set StartEnergy ครั้งแรก
-			_ = updateStartEnergyByChargePoint(dbConn, chargerID, energyWh)
+			// (ของเดิม) set StartEnergy ครั้งแรก (StartEnergy=0)
+			if err := updateStartEnergyByChargePoint(dbConn, chargerID, energyWh); err != nil {
+				logln("❌ updateStartEnergyByChargePoint error:", err)
+			}
 
-			// ✅ คิด percent / auto stop (แต่ “ไม่ print debug ยาวๆ”)
-			_ = broadcastPaymentPowerByChargePointOnMeterValues(dbConn, chargerID, payload, energyWh)
+			// ✅ (ของใหม่) รวม Power + คิด % + ถ้า used%=100 -> remote-stop + update EndTime/Status
+			if err := broadcastPaymentPowerByChargePointOnMeterValues(dbConn, chargerID, payload, energyWh); err != nil {
+				logln("❌ broadcastPaymentPowerByChargePointOnMeterValues error:", err)
+			} else {
+				logln("✅ [METERVALUES] broadcastPaymentPowerByChargePointOnMeterValues done")
+			}
+		} else {
+			logf("⚠️ [METERVALUES] energyWh=0 -> skip db/broadcast (chargePoint=%s)\n", chargerID)
 		}
 
 		response := []interface{}{3, messageID, map[string]interface{}{}}
 		if err := conn.WriteJSON(response); err != nil {
-			// ❌ ไม่พิมพ์ error
+			logln("❌ Failed to send MeterValues conf:", err)
 		} else {
-			// ✅ ต้องการ: “📊 MeterValues Acknowledged”
-			loglnK(LogMeter, "📊 MeterValues Acknowledged")
+			logln("📊 MeterValues Acknowledged")
+		}
+
+	case "DiagnosticsStatusNotification", "FirmwareStatusNotification", "DataTransfer":
+		logf("📥 %s from %s payload=%v\n", action, chargerID, payload)
+		response := []interface{}{3, messageID, map[string]interface{}{}}
+		if err := conn.WriteJSON(response); err != nil {
+			logf("❌ Failed to send %s conf: %v\n", action, err)
+		} else {
+			logf("✅ %s Acknowledged\n", action)
 		}
 
 	default:
-		// ไม่พิมพ์
+		logf("⚠️ Unhandled CALL action=%s from %s payload=%v\n", action, chargerID, payload)
 		response := []interface{}{3, messageID, map[string]interface{}{}}
-		_ = conn.WriteJSON(response)
+		if err := conn.WriteJSON(response); err != nil {
+			logln("❌ Failed to send generic CALLRESULT:", err)
+		}
 	}
 }
 
 func handleCallResultFromCharger(chargerID string, frame []interface{}, messageID string) {
-	// ไม่อยู่ใน log ที่ขอ -> ไม่พิมพ์
+	var payload map[string]interface{}
+	if len(frame) >= 3 {
+		if p, ok := frame[2].(map[string]interface{}); ok {
+			payload = p
+		}
+	}
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+
 	pendingMu.Lock()
-	_, ok := pendingCalls[messageID]
+	pending, ok := pendingCalls[messageID]
 	if ok {
 		delete(pendingCalls, messageID)
 	}
 	pendingMu.Unlock()
+
+	if ok {
+		logf("📥 CALLRESULT for %s from %s: action=%s payload=%v\n", messageID, chargerID, pending.Action, payload)
+	} else {
+		logf("📥 CALLRESULT (unknown messageId=%s) from %s payload=%v\n", messageID, chargerID, payload)
+	}
 }
 
 func handleCallErrorFromCharger(chargerID string, frame []interface{}, messageID string) {
-	// ไม่อยู่ใน log ที่ขอ -> ไม่พิมพ์
+	errorCode := ""
+	errorDescription := ""
+	var details map[string]interface{}
+
+	if len(frame) >= 3 {
+		if s, ok := frame[2].(string); ok {
+			errorCode = s
+		}
+	}
+	if len(frame) >= 4 {
+		if s, ok := frame[3].(string); ok {
+			errorDescription = s
+		}
+	}
+	if len(frame) >= 5 {
+		if d, ok := frame[4].(map[string]interface{}); ok {
+			details = d
+		}
+	}
+	if details == nil {
+		details = map[string]interface{}{}
+	}
+
 	pendingMu.Lock()
-	_, ok := pendingCalls[messageID]
+	pending, ok := pendingCalls[messageID]
 	if ok {
 		delete(pendingCalls, messageID)
 	}
 	pendingMu.Unlock()
+
+	if ok {
+		logf("❌ CALLERROR for %s from %s: action=%s code=%s desc=%s details=%v\n",
+			messageID, chargerID, pending.Action, errorCode, errorDescription, details)
+	} else {
+		logf("❌ CALLERROR (unknown messageId=%s) from %s code=%s desc=%s details=%v\n",
+			messageID, chargerID, errorCode, errorDescription, details)
+	}
 }
 
 // ============================================================================
@@ -594,7 +685,9 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 	chargersMu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("charger %s not connected", chargerID)
+		err := fmt.Errorf("charger %s not connected", chargerID)
+		logln("❌", err)
+		return err
 	}
 
 	if connectorID <= 0 {
@@ -626,10 +719,12 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 	pendingMu.Unlock()
 
 	if err := conn.WriteJSON(frame); err != nil {
+		logln("❌ Failed to send RemoteStartTransaction:", err)
 		return err
 	}
 
-	// ไม่พิมพ์ (ไม่อยู่ใน log ที่ขอ)
+	logln("➡️ RemoteStartTransaction sent to", chargerID, "connectorId =", connectorID, "idTag =", idTag)
+	broadcastLogTextToFrontendRoom(chargerID, "[SENT] RemoteStartTransaction to "+chargerID+"\n")
 	return nil
 }
 
@@ -642,11 +737,13 @@ func SendRemoteStopTransaction(chargerID string, txID int) error {
 	chargersMu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("charger %s not connected", chargerID)
+		err := fmt.Errorf("charger %s not connected", chargerID)
+		logln("❌", err)
+		return err
 	}
 
 	if txID <= 0 {
-		return fmt.Errorf("invalid transactionId")
+		return fmt.Errorf("❌ invalid transactionId")
 	}
 
 	messageID := fmt.Sprintf("remote-stop-%s-%d", chargerID, time.Now().UnixNano())
@@ -669,10 +766,12 @@ func SendRemoteStopTransaction(chargerID string, txID int) error {
 	pendingMu.Unlock()
 
 	if err := conn.WriteJSON(frame); err != nil {
+		logln("❌ Failed to send RemoteStopTransaction:", err)
 		return err
 	}
 
-	// ไม่พิมพ์ (ไม่อยู่ใน log ที่ขอ)
+	logln("➡️ RemoteStopTransaction sent to", chargerID, "txID =", txID)
+	broadcastLogTextToFrontendRoom(chargerID, "[SENT] RemoteStopTransaction to "+chargerID+"\n")
 	return nil
 }
 
@@ -689,6 +788,7 @@ func RemoteStartHandler(c *gin.Context) {
 	var req RemoteStartRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
+		logln("❌ RemoteStart invalid body:", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":  "invalid body",
 			"detail": err.Error(),
@@ -696,10 +796,13 @@ func RemoteStartHandler(c *gin.Context) {
 		return
 	}
 
+	logf("🟦 RemoteStartHandler request: %+v\n", req)
+
 	if req.ChargerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerId is required"})
 		return
 	}
+
 	if req.ConnectorID <= 0 {
 		req.ConnectorID = 1
 	}
@@ -711,6 +814,7 @@ func RemoteStartHandler(c *gin.Context) {
 	_, connected := chargers[req.ChargerID]
 	chargersMu.Unlock()
 	if !connected {
+		logln("❌ RemoteStart: charger not connected:", req.ChargerID)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "charger not connected"})
 		return
 	}
@@ -719,10 +823,12 @@ func RemoteStartHandler(c *gin.Context) {
 	st, ok := chargerStatuses[req.ChargerID]
 	statusMu.Unlock()
 	if !ok {
+		logln("❌ RemoteStart: no status for charger:", req.ChargerID)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no status for this charger"})
 		return
 	}
 	if st.Status != "Preparing" {
+		logf("❌ RemoteStart: charger %s status is %s (need Preparing)\n", req.ChargerID, st.Status)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":  "charger must be in Preparing state to start",
 			"status": st.Status,
@@ -731,6 +837,7 @@ func RemoteStartHandler(c *gin.Context) {
 	}
 
 	if err := SendRemoteStartTransaction(req.ChargerID, req.ConnectorID, req.IdTag); err != nil {
+		logln("❌ RemoteStart error:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -748,6 +855,7 @@ type RemoteStopRequest struct {
 func RemoteStopHandler(c *gin.Context) {
 	var req RemoteStopRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		logln("❌ RemoteStop invalid body:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
@@ -822,19 +930,22 @@ func extractEnergyActiveImportRegister(payload map[string]interface{}) float64 {
 		if valStr, ok := m["value"].(string); ok && valStr != "" {
 			f, err := strconv.ParseFloat(valStr, 64)
 			if err != nil {
+				logln("⚠️ parse Energy.Active.Import.Register (string) failed:", err)
 				return 0
 			}
 			return f
 		}
+
 		if valNum, ok := m["value"].(float64); ok {
 			return valNum
 		}
 	}
+
 	return 0
 }
 
 // ============================================================================
-// 🧩 Logic: Update StartEnergy โดยใช้ ChargePoint (chargerID)
+// 🧩 Logic: Update StartEnergy โดยใช้ ChargePoint (chargerID) (ของเดิม)
 // ============================================================================
 func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy float64) error {
 	if db == nil {
@@ -864,16 +975,20 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 		}
 
 		if err := db.Preload("Payment").First(&s, s.ID).Error; err != nil {
+			logf("⚠️ preload Payment failed (sessionID=%d): %v\n", s.ID, err)
 			continue
 		}
+
 		if s.Payment.EVCabinetID == nil {
 			continue
 		}
 
 		var cab entity.EVCabinet
 		if err := db.First(&cab, *s.Payment.EVCabinetID).Error; err != nil {
+			logf("⚠️ find EVCabinet failed (paymentID=%d): %v\n", s.PaymentID, err)
 			continue
 		}
+
 		if cab.ChargePoint != chargePoint {
 			continue
 		}
@@ -887,7 +1002,10 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 			return fmt.Errorf("update StartEnergy/StartTime failed for sessionID=%d: %w", s.ID, err)
 		}
 
-		// ✅ data event (ห้ามโดนปิด)
+		logf("✅ Update StartEnergy & StartTime sessionID=%d chargePoint=%s startEnergy=%.2f StartTime=%s\n",
+			s.ID, chargePoint, startEnergy, s.StartTime.Format(time.RFC3339))
+
+		// ✅ อันนี้คือ “data event” ที่ frontend อาจใช้ -> ไม่ควรโดนปิด
 		startEnergyMsg := map[string]interface{}{
 			"type":         "start_energy_updated",
 			"chargePoint":  chargePoint,
@@ -896,7 +1014,9 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 			"start_time":   s.StartTime.Format(time.RFC3339),
 		}
 
-		if b, err := json.Marshal(startEnergyMsg); err == nil {
+		if b, err := json.Marshal(startEnergyMsg); err != nil {
+			logln("❌ marshal startEnergyMsg failed:", err)
+		} else {
 			broadcastToFrontendRoom(chargePoint, b)
 		}
 
@@ -907,7 +1027,7 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 }
 
 // ============================================================================
-// 🧩 SuspendedEV -> Update EndTime
+// 🧩 SuspendedEV -> Update EndTime (ของเดิม)
 // ============================================================================
 func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) error {
 	if db == nil {
@@ -939,14 +1059,19 @@ func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) er
 	}
 
 	session.EndTime = time.Now()
+
 	if err := db.Save(&session).Error; err != nil {
 		return fmt.Errorf("update EndTime for ChargingSessionID=%d failed: %w", session.ID, err)
 	}
+
+	logf("✅ Update EndTime on SuspendedEV: sessionID=%d paymentID=%d cabinetID=%d chargePoint=%s EndTime=%s\n",
+		session.ID, pay.ID, cab.ID, chargePoint, session.EndTime.Format(time.RFC3339))
+
 	return nil
 }
 
 // ============================================================================
-// ✅ Finishing/Faulted -> Update EndTime + session.status=false
+// ✅ NEW: Finishing/Faulted -> Update EndTime + session.status=false (ปิด session ตาม chargePoint)
 // ============================================================================
 func updateEndTimeAndCloseOnFinishingByChargePoint(db *gorm.DB, chargePoint string) error {
 	if db == nil {
@@ -956,11 +1081,13 @@ func updateEndTimeAndCloseOnFinishingByChargePoint(db *gorm.DB, chargePoint stri
 		return fmt.Errorf("chargePoint is required")
 	}
 
+	// 1) หา cabinet จาก chargePoint
 	var cab entity.EVCabinet
 	if err := db.Where("charge_point = ?", chargePoint).First(&cab).Error; err != nil {
 		return fmt.Errorf("find EVCabinet by charge_point failed: %w", err)
 	}
 
+	// 2) หา Payment ล่าสุดของ cabinet นี้
 	var pay entity.Payment
 	if err := db.
 		Where("ev_cabinet_id = ?", cab.ID).
@@ -969,6 +1096,7 @@ func updateEndTimeAndCloseOnFinishingByChargePoint(db *gorm.DB, chargePoint stri
 		return fmt.Errorf("find latest Payment by EVCabinetID failed: %w", err)
 	}
 
+	// 3) หา ChargingSession ที่ยัง active (status=true) ของ payment นี้
 	var session entity.ChargingSession
 	if err := db.
 		Where("payment_id = ? AND status = ?", pay.ID, true).
@@ -977,6 +1105,7 @@ func updateEndTimeAndCloseOnFinishingByChargePoint(db *gorm.DB, chargePoint stri
 		return fmt.Errorf("find active ChargingSession by PaymentID failed: %w", err)
 	}
 
+	// 4) ปิด session
 	session.EndTime = time.Now()
 	session.Status = false
 
@@ -984,11 +1113,14 @@ func updateEndTimeAndCloseOnFinishingByChargePoint(db *gorm.DB, chargePoint stri
 		return fmt.Errorf("close session on Finishing failed for ChargingSessionID=%d: %w", session.ID, err)
 	}
 
+	logf("✅ Finishing/Faulted -> session closed: sessionID=%d paymentID=%d cabinetID=%d chargePoint=%s EndTime=%s status=%v\n",
+		session.ID, pay.ID, cab.ID, chargePoint, session.EndTime.Format(time.RFC3339), session.Status)
+
 	return nil
 }
 
 // ============================================================================
-// ✅ Helper: หา active session (status=true) ที่ตรง chargePoint
+// ✅ Helper: หา active session (status=true) ที่ "ตรงกับ chargePoint" จริง ๆ
 // ============================================================================
 func findActiveSessionByChargePoint(db *gorm.DB, chargePoint string) (entity.ChargingSession, bool, error) {
 	if db == nil {
@@ -1038,7 +1170,7 @@ func findActiveSessionByChargePoint(db *gorm.DB, chargePoint string) (entity.Cha
 }
 
 // ============================================================================
-// ✅ Helper: ปิด session (EndTime + status=false)
+// ✅ Helper: Update session.EndTime + status=false (ปิด session)
 // ============================================================================
 func closeSessionByID(db *gorm.DB, sessionID uint) error {
 	if db == nil {
@@ -1053,6 +1185,7 @@ func closeSessionByID(db *gorm.DB, sessionID uint) error {
 		return err
 	}
 
+	// ถ้าปิดไปแล้ว ไม่ต้องทำซ้ำ
 	if !sess.EndTime.IsZero() && !sess.Status {
 		return nil
 	}
@@ -1067,50 +1200,86 @@ func closeSessionByID(db *gorm.DB, sessionID uint) error {
 }
 
 // ============================================================================
-// ✅ MeterValues -> รวม power -> คิด % -> auto stop
-// ❗ “ไม่พิมพ์ debug ยาวๆ” แล้ว (ตามที่คุณไม่ต้องการ)
+// ✅ NEW: MeterValues -> รวม power -> คิด % -> auto stop (เฉพาะ log ปิดได้)
 // ============================================================================
 func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint string, meterPayload map[string]interface{}, energyWh float64) error {
+	debugPrefix := fmt.Sprintf("🧾 [METER->PAYMENT] (%s) ", chargePoint)
+
 	if db == nil {
+		logln(debugPrefix + "db is nil")
 		return fmt.Errorf("db is nil")
 	}
 	if chargePoint == "" {
+		logln(debugPrefix + "chargePoint is empty")
 		return fmt.Errorf("chargePoint is required")
 	}
 
+	logf("%sSTART energyWh=%.2f tx=%d ts=%s\n",
+		debugPrefix,
+		energyWh,
+		extractTransactionIDFromMeterValues(meterPayload),
+		extractTimestampFromMeterValues(meterPayload),
+	)
+
+	// 1) หา ChargingSession ที่ตรงกับ chargePoint จริง ๆ
 	sess, ok, err := findActiveSessionByChargePoint(db, chargePoint)
 	if err != nil || !ok {
 		if err == gorm.ErrRecordNotFound {
+			logln(debugPrefix + "NO ChargingSession(status=true) matched this chargePoint -> skip broadcast")
 			return nil
 		}
-		return err
+		logln(debugPrefix+"findActiveSessionByChargePoint error:", err)
+		return fmt.Errorf("findActiveSessionByChargePoint failed: %w", err)
 	}
+
+	logf("%sFOUND sessionID=%d status=%v paymentID=%d startEnergy=%.2fWh\n",
+		debugPrefix, sess.ID, sess.Status, sess.PaymentID, sess.StartEnergy)
+
 	if sess.PaymentID == 0 {
+		logln(debugPrefix + "session.PaymentID=0 -> skip")
 		return nil
 	}
 
+	// 2) หา EVCabinet จาก chargePoint
 	var cab entity.EVCabinet
 	if err := db.Where("charge_point = ?", chargePoint).First(&cab).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
+			logln(debugPrefix + "NO EVCabinet with this charge_point -> skip")
 			return nil
 		}
-		return err
+		logln(debugPrefix+"find EVCabinet error:", err)
+		return fmt.Errorf("find EVCabinet by charge_point failed: %w", err)
 	}
+	logf("%sFOUND cabinetID=%d name=%s chargePoint=%s\n",
+		debugPrefix, cab.ID, cab.Name, cab.ChargePoint)
 
+	// 3) โหลด Payment ด้วย PaymentID จาก session (พร้อม EVChargingPayments)
 	var pay entity.Payment
 	if err := db.Preload("EVChargingPayments").First(&pay, sess.PaymentID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
+			logln(debugPrefix + "NO Payment by session.PaymentID -> skip")
 			return nil
 		}
-		return err
+		logln(debugPrefix+"find Payment error:", err)
+		return fmt.Errorf("find Payment by id failed: %w", err)
 	}
+
 	if pay.EVCabinetID == nil {
-		return nil
-	}
-	if *pay.EVCabinetID != cab.ID {
+		logln(debugPrefix + "Payment.EVCabinetID is nil -> skip")
 		return nil
 	}
 
+	logf("%sFOUND paymentID=%d amount=%.2f ref=%s ev_cabinet_id=%d evChargingPayments=%d\n",
+		debugPrefix, pay.ID, pay.Amount, pay.ReferenceNumber, *pay.EVCabinetID, len(pay.EVChargingPayments))
+
+	// ต้อง match กันจริง
+	if *pay.EVCabinetID != cab.ID {
+		logf("%sPayment cabinet mismatch -> payment.ev_cabinet_id=%d แต่ cabinet.id=%d -> SKIP\n",
+			debugPrefix, *pay.EVCabinetID, cab.ID)
+		return nil
+	}
+
+	// 4) สร้างรายการ power + รวม totalPowerKwh
 	type PowerItem struct {
 		EVchargingID   uint    `json:"evcharging_id"`
 		Name           string  `json:"name"`
@@ -1122,8 +1291,8 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 	}
 
 	items := make([]PowerItem, 0, len(pay.EVChargingPayments))
-	var totalPowerKwh float64
 
+	var totalPowerKwh float64
 	for _, it := range pay.EVChargingPayments {
 		name := getEVchargingNameByID(db, it.EVchargingID)
 		if name == "" {
@@ -1142,6 +1311,9 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 
 		totalPowerKwh += powerFloat
 
+		logf("%sITEM evchargingID=%d name=%s power=%s kWh remaining=%s kWh\n",
+			debugPrefix, it.EVchargingID, name, powerStr, remStr)
+
 		items = append(items, PowerItem{
 			EVchargingID:   it.EVchargingID,
 			Name:           name,
@@ -1153,6 +1325,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 		})
 	}
 
+	// 5) คิด percent
 	startEnergyWh := sess.StartEnergy
 	totalPowerWh := totalPowerKwh * 1000.0
 	endEnergyWh := startEnergyWh + totalPowerWh
@@ -1199,23 +1372,51 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 		startEnergyWh = math.Round(startEnergyWh*100) / 100
 		remainingWh = math.Round(remainingWh*100) / 100
 		totalPowerKwh = math.Round(totalPowerKwh*100) / 100
+	} else {
+		logf("%s⚠️ cannot calculate percent (startEnergyWh=%.2f totalPowerWh=%.2f)\n",
+			debugPrefix, startEnergyWh, totalPowerWh)
 	}
 
-	// auto stop (logic เดิม) แต่ไม่พิมพ์ debug
+	logf("%sCALC startEnergyWh=%.2f totalPowerKwh=%.2f(totalWh=%.2f) endEnergyWh=%.2f currentWh=%.2f usedWh=%.2f used%%=%.2f remainingWh=%.2f remaining%%=%.2f\n",
+		debugPrefix, startEnergyWh, totalPowerKwh, totalPowerWh, endEnergyWh, energyWh, usedWh, usedPercent, remainingWh, remainingPercent)
+
+	// 6) auto stop (log ปิดได้ แต่ logic ทำงานเหมือนเดิม)
 	if totalPowerWh > 0 && startEnergyWh > 0 && rawUsedPercent >= 100.0 {
 		if markAutoStopped(sess.ID) {
+			logf("%s🛑 AUTO STOP TRIGGERED (sessionID=%d usedRaw=%.4f%%)\n", debugPrefix, sess.ID, rawUsedPercent)
+
 			txID, hasTx := getTransactionID(chargePoint)
 			if !hasTx || txID <= 0 {
 				txID = extractTransactionIDFromMeterValues(meterPayload)
 			}
+
 			if txID > 0 {
-				_ = SendRemoteStopTransaction(chargePoint, txID)
+				if err := SendRemoteStopTransaction(chargePoint, txID); err != nil {
+					logln(debugPrefix+"❌ AUTO RemoteStop failed:", err)
+				} else {
+					logf("%s✅ AUTO RemoteStop sent (txID=%d)\n", debugPrefix, txID)
+					broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
+						"[AUTO-STOP] chargePoint=%s sessionID=%d txID=%d used=%.2f%% -> sent RemoteStop\n",
+						chargePoint, sess.ID, txID, usedPercent,
+					))
+				}
+			} else {
+				logln(debugPrefix + "⚠️ AUTO STOP: txID not found -> skip SendRemoteStopTransaction")
 			}
-			_ = closeSessionByID(db, sess.ID)
+
+			if err := closeSessionByID(db, sess.ID); err != nil {
+				logln(debugPrefix+"❌ closeSessionByID error:", err)
+			} else {
+				logf("%s✅ session closed (EndTime set + status=false) sessionID=%d\n", debugPrefix, sess.ID)
+				broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
+					"[SESSION-CLOSED] chargePoint=%s sessionID=%d -> EndTime updated & status=false\n",
+					chargePoint, sess.ID,
+				))
+			}
 		}
 	}
 
-	// ✅ ส่ง DATA JSON (ห้ามโดนปิด)
+	// 7) ✅ ส่ง “DATA JSON” (ห้ามโดนปิด เพราะกระทบระบบ/หน้าเว็บ)
 	msg := map[string]interface{}{
 		"type":        "meter_values_payment_info",
 		"chargePoint": chargePoint,
@@ -1263,13 +1464,17 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 
 	b, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		logln(debugPrefix+"marshal error:", err)
+		return fmt.Errorf("marshal meter_values_payment_info failed: %w", err)
 	}
 
+	logf("%sBROADCAST -> room=%s bytes=%d items=%d\n", debugPrefix, chargePoint, len(b), len(items))
+
+	// ✅ data broadcast (ห้ามโดนปิด)
 	broadcastToFrontendRoom(chargePoint, b)
 
-	// ✅ text log (ปิดได้) — ถ้าอยาก “ไม่ส่ง” ก็ลบได้ แต่ไม่กระทบระบบ
-	broadcastLogTextToFrontendRoomK(LogMeter, chargePoint, fmt.Sprintf(
+	// ✅ text log (ปิดได้)
+	broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
 		"[PERCENT] chargePoint=%s start=%.2fWh total=%.2fWh end=%.2fWh now=%.2fWh used=%.2fWh (%.2f%%) remaining=%.2fWh (%.2f%%)\n",
 		chargePoint, startEnergyWh, totalPowerWh, endEnergyWh, energyWh, usedWh, usedPercent, remainingWh, remainingPercent,
 	))
