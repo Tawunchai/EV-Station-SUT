@@ -42,8 +42,7 @@ const EVSelect: React.FC<EVSelectProps> = ({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  const selectedLabel =
-    options.find((o) => o.value === value)?.label ?? "";
+  const selectedLabel = options.find((o) => o.value === value)?.label ?? "";
 
   // ปิด dropdown เมื่อคลิกนอก component
   useEffect(() => {
@@ -74,11 +73,7 @@ const EVSelect: React.FC<EVSelectProps> = ({
               : "border-slate-300 text-slate-900 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
           }`}
       >
-        <span
-          className={
-            value ? "text-slate-900" : "text-slate-400 select-none"
-          }
-        >
+        <span className={value ? "text-slate-900" : "text-slate-400 select-none"}>
           {value ? selectedLabel : placeholder || "เลือก"}
         </span>
         <svg
@@ -97,10 +92,9 @@ const EVSelect: React.FC<EVSelectProps> = ({
       {open && !disabled && (
         <div className="absolute z-20 mt-1 w-full rounded-xl bg-white shadow-lg ring-1 ring-slate-200 max-h-60 overflow-y-auto">
           {options.length === 0 && (
-            <div className="px-3 py-2 text-sm text-slate-400">
-              ไม่มีตัวเลือก
-            </div>
+            <div className="px-3 py-2 text-sm text-slate-400">ไม่มีตัวเลือก</div>
           )}
+
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -160,83 +154,14 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
 
   // จังหวัดทั้งหมด (base)
   const baseProvinces = [
-    "กระบี่",
-    "กรุงเทพมหานคร",
-    "กาญจนบุรี",
-    "กาฬสินธุ์",
-    "กำแพงเพชร",
-    "ขอนแก่น",
-    "จันทบุรี",
-    "ฉะเชิงเทรา",
-    "ชลบุรี",
-    "ชัยนาท",
-    "ชัยภูมิ",
-    "ชุมพร",
-    "เชียงราย",
-    "เชียงใหม่",
-    "ตรัง",
-    "ตราด",
-    "ตาก",
-    "นครนายก",
-    "นครปฐม",
-    "นครพนม",
-    "นครราชสีมา",
-    "นครศรีธรรมราช",
-    "นครสวรรค์",
-    "นนทบุรี",
-    "นราธิวาส",
-    "น่าน",
-    "บึงกาฬ",
-    "บุรีรัมย์",
-    "ปทุมธานี",
-    "ประจวบคีรีขันธ์",
-    "ปราจีนบุรี",
-    "ปัตตานี",
-    "พระนครศรีอยุธยา",
-    "พะเยา",
-    "พังงา",
-    "พัทลุง",
-    "พิจิตร",
-    "พิษณุโลก",
-    "เพชรบุรี",
-    "เพชรบูรณ์",
-    "แพร่",
-    "ภูเก็ต",
-    "มหาสารคาม",
-    "มุกดาหาร",
-    "แม่ฮ่องสอน",
-    "ยโสธร",
-    "ยะลา",
-    "ร้อยเอ็ด",
-    "ระนอง",
-    "ระยอง",
-    "ราชบุรี",
-    "ลพบุรี",
-    "ลำปาง",
-    "ลำพูน",
-    "เลย",
-    "ศรีสะเกษ",
-    "สกลนคร",
-    "สงขลา",
-    "สตูล",
-    "สมุทรปราการ",
-    "สมุทรสงคราม",
-    "สมุทรสาคร",
-    "สระแก้ว",
-    "สระบุรี",
-    "สิงห์บุรี",
-    "สุโขทัย",
-    "สุพรรณบุรี",
-    "สุราษฎร์ธานี",
-    "สุรินทร์",
-    "หนองคาย",
-    "หนองบัวลำภู",
-    "อ่างทอง",
-    "อำนาจเจริญ",
-    "อุดรธานี",
-    "อุตรดิตถ์",
-    "อุทัยธานี",
-    "อุบลราชธานี",
+    "กระบี่","กรุงเทพมหานคร","กาญจนบุรี","กาฬสินธุ์","กำแพงเพชร","ขอนแก่น","จันทบุรี","ฉะเชิงเทรา","ชลบุรี",
+    "ชัยนาท","ชัยภูมิ","ชุมพร","เชียงราย","เชียงใหม่","ตรัง","ตราด","ตาก","นครนายก","นครปฐม","นครพนม",
+    "นครราชสีมา","นครศรีธรรมราช","นครสวรรค์","นนทบุรี","นราธิวาส","น่าน","บึงกาฬ","บุรีรัมย์","ปทุมธานี",
+    "ประจวบคีรีขันธ์","ปราจีนบุรี","ปัตตานี","พระนครศรีอยุธยา","พะเยา","พังงา","พัทลุง","พิจิตร","พิษณุโลก",
+    "เพชรบุรี","เพชรบูรณ์","แพร่","ภูเก็ต","มหาสารคาม","มุกดาหาร","แม่ฮ่องสอน","ยโสธร","ยะลา","ร้อยเอ็ด",
+    "ระนอง","ระยอง","ราชบุรี","ลพบุรี","ลำปาง","ลำพูน","เลย","ศรีสะเกษ","สกลนคร","สงขลา","สตูล","สมุทรปราการ",
+    "สมุทรสงคราม","สมุทรสาคร","สระแก้ว","สระบุรี","สิงห์บุรี","สุโขทัย","สุพรรณบุรี","สุราษฎร์ธานี","สุรินทร์",
+    "หนองคาย","หนองบัวลำภู","อ่างทอง","อำนาจเจริญ","อุดรธานี","อุตรดิตถ์","อุทัยธานี","อุบลราชธานี",
   ];
 
   // ✅ ชื่อเจ้าของ (หลายคนคั่นด้วย , )
@@ -244,9 +169,7 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
     const users = (car as any)?.User ?? [];
     if (!Array.isArray(users) || users.length === 0) return "-";
     return users
-      .map(
-        (u) => `${u?.FirstName ?? ""} ${u?.LastName ?? ""}`.trim()
-      )
+      .map((u) => `${u?.FirstName ?? ""} ${u?.LastName ?? ""}`.trim())
       .filter(Boolean)
       .join(", ");
   }, [car]);
@@ -256,22 +179,13 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
     const fetchData = async () => {
       if (!open) return;
       try {
-        const [resCars, resModals] = await Promise.all([
-          ListCars(),
-          ListModals(),
-        ]);
+        const [resCars, resModals] = await Promise.all([ListCars(), ListModals()]);
 
-        if (isCarsArray(resCars)) {
-          setAllCars(resCars);
-        } else {
-          setAllCars([]);
-        }
+        if (isCarsArray(resCars)) setAllCars(resCars);
+        else setAllCars([]);
 
-        if (resModals && Array.isArray(resModals)) {
-          setModals(resModals);
-        } else {
-          setModals([]);
-        }
+        if (resModals && Array.isArray(resModals)) setModals(resModals);
+        else setModals([]);
       } catch {
         setAllCars([]);
         setModals([]);
@@ -329,55 +243,71 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
     return Array.from(set);
   }, [car?.City]);
 
-  // ===== ตรวจรูปแบบ/ซ้ำของทะเบียน =====
-  const plateRegex = /^[A-Za-zก-ฮ]{2}\s?\d{4}$/;
+  // ===== ตรวจ "ซ้ำอย่างเดียว" + ห้ามว่าง (ไม่ตรวจรูปแบบ) =====
   const normalizePlate = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 
   const validatePlate = (raw: string) => {
     const v = raw.trim();
+
+    // ห้ามว่าง
     if (!v) {
-      setPlateError(null);
+      setPlateError("กรุณากรอกทะเบียนรถ");
       return;
     }
-    if (!plateRegex.test(v)) {
-      setPlateError(
-        "รูปแบบทะเบียนไม่ถูกต้อง (เช่น กข 1234 หรือ AB 1234)"
-      );
-      return;
-    }
+
+    // ตรวจซ้ำ (ข้ามคันปัจจุบัน)
     const norm = normalizePlate(v);
     const isDup = allCars.some((c) => {
       if (car?.ID !== undefined && c.ID === car.ID) return false;
       const other = normalizePlate(String((c as any).LicensePlate ?? ""));
       return other === norm;
     });
+
     setPlateError(isDup ? "ทะเบียนนี้มีอยู่ในระบบแล้ว" : null);
   };
 
   useEffect(() => {
+    if (!open) return;
     validatePlate(plate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plate, allCars, car?.ID]);
+  }, [plate, allCars, car?.ID, open]);
 
   const canSubmit =
-    Boolean(brand && model && plate && province && !plateError) &&
+    Boolean(brand && model && plate.trim() && province && !plateError) &&
     car?.ID !== undefined;
 
   const handleSubmit = async () => {
-    if (!car || car.ID === undefined || submitting || !canSubmit) return;
+    if (!car || car.ID === undefined || submitting) return;
 
-    validatePlate(plate);
-    if (plateError) {
-      message.error("กรุณาแก้ไขทะเบียนให้ถูกต้องก่อนบันทึก");
+    const v = plate.trim();
+    if (!brand || !model || !province || !v) {
+      message.warning("กรุณากรอกข้อมูลให้ครบ");
+      if (!v) setPlateError("กรุณากรอกทะเบียนรถ");
       return;
     }
+
+    // กัน state lag: เช็คซ้ำอีกรอบก่อนส่ง
+    const norm = normalizePlate(v);
+    const isDup = allCars.some((c) => {
+      if (car?.ID !== undefined && c.ID === car.ID) return false;
+      const other = normalizePlate(String((c as any).LicensePlate ?? ""));
+      return other === norm;
+    });
+
+    if (isDup) {
+      setPlateError("ทะเบียนนี้มีอยู่ในระบบแล้ว");
+      message.error("ทะเบียนซ้ำ กรุณาเปลี่ยนทะเบียน");
+      return;
+    }
+
+    setPlateError(null);
 
     setSubmitting(true);
     try {
       const payload = {
         Brand: brand,
         ModelCar: model,
-        LicensePlate: plate.trim(),
+        LicensePlate: v,
         City: province,
         SpecialNumber: isSpecialReg,
       };
@@ -435,9 +365,7 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
                 <FaCarSide className="h-4 w-4" />
               </div>
               <div>
-                <h2 className="text-base md:text-lg font-semibold">
-                  แก้ไขข้อมูลพาหนะ
-                </h2>
+                <h2 className="text-base md:text-lg font-semibold">แก้ไขข้อมูลพาหนะ</h2>
                 <p className="text-[11px] text-blue-100">
                   ปรับปรุงยี่ห้อ รุ่น ทะเบียน และจังหวัดของรถคันนี้
                 </p>
@@ -472,10 +400,7 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
               <EVSelect
                 value={brand || undefined}
                 placeholder="เลือกยี่ห้อ"
-                options={brandOptions.map((b) => ({
-                  label: b,
-                  value: b,
-                }))}
+                options={brandOptions.map((b) => ({ label: b, value: b }))}
                 disabled={brandOptions.length === 0}
                 onChange={(val) => {
                   setBrand(val || "");
@@ -492,10 +417,7 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
               <EVSelect
                 value={model || undefined}
                 placeholder={brand ? "เลือกรุ่น" : "กรุณาเลือกยี่ห้อก่อน"}
-                options={modelOptions.map((m) => ({
-                  label: m,
-                  value: m,
-                }))}
+                options={modelOptions.map((m) => ({ label: m, value: m }))}
                 disabled={!brand || modelOptions.length === 0}
                 onChange={(val) => setModel(val || "")}
               />
@@ -512,15 +434,11 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
                     ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200"
                     : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                 }`}
-                placeholder="เช่น กข 1234 หรือ AB 1234"
+                placeholder="ใส่ทะเบียนอะไรก็ได้ (ห้ามเว้นว่าง) — ระบบตรวจซ้ำ"
                 value={plate}
                 onChange={(e) => setPlate(e.target.value)}
               />
-              {plateError && (
-                <p className="text-xs text-red-500 mt-1">
-                  {plateError}
-                </p>
-              )}
+              {plateError && <p className="text-xs text-red-500 mt-1">{plateError}</p>}
             </label>
 
             {/* PROVINCE */}
@@ -531,10 +449,7 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
               <EVSelect
                 value={province || undefined}
                 placeholder="เลือกจังหวัด"
-                options={provinces.map((p) => ({
-                  label: p,
-                  value: p,
-                }))}
+                options={provinces.map((p) => ({ label: p, value: p }))}
                 disabled={provinces.length === 0}
                 onChange={(val) => setProvince(val || "")}
               />
@@ -542,22 +457,15 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
 
             {/* SPECIAL NUMBER */}
             <div className="flex items-center gap-2 mt-2 rounded-xl bg-white px-3 py-2 border border-slate-200">
-              <Checkbox
-                checked={isSpecialReg}
-                onChange={(e) => setIsSpecialReg(e.target.checked)}
-              />
-              <span className="text-sm text-gray-700">
-                ทะเบียนพิเศษ (Special Number)
-              </span>
+              <Checkbox checked={isSpecialReg} onChange={(e) => setIsSpecialReg(e.target.checked)} />
+              <span className="text-sm text-gray-700">ทะเบียนพิเศษ (Special Number)</span>
             </div>
 
             {/* OWNER */}
             <div className="pt-1">
               <p className="text-[11px] text-slate-500 text-center">
                 เจ้าของ:{" "}
-                <span className="font-medium text-slate-700">
-                  {ownerNames}
-                </span>
+                <span className="font-medium text-slate-700">{ownerNames}</span>
               </p>
             </div>
           </div>
@@ -575,9 +483,7 @@ const ModalEditCar: React.FC<ModalEditCarProps> = ({
             onClick={handleSubmit}
             disabled={!canSubmit || submitting}
             className={`px-4 h-10 rounded-xl text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] ${
-              canSubmit && !submitting
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "bg-blue-300 cursor-not-allowed"
+              canSubmit && !submitting ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300 cursor-not-allowed"
             }`}
           >
             {submitting ? "กำลังบันทึก..." : "บันทึก"}

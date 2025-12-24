@@ -1,24 +1,13 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Modal, Checkbox, Input, message } from "antd";
 import { CarsInterface } from "../../../../../../interface/ICar";
-import {
-  UpdateCarByID,
-  ListCars,
-  ListModals,
-} from "../../../../../../services";
+import { UpdateCarByID, ListCars, ListModals } from "../../../../../../services";
 import type { ModalInterface } from "../../../../../../interface/ICarCatalog";
-import {
-  FaCarSide,
-  FaCity,
-  FaTags,
-  FaBolt,
-  FaTimes,
-} from "react-icons/fa";
+import { FaCarSide, FaCity, FaTags, FaBolt, FaTimes } from "react-icons/fa";
 
 /* ===========================
    Props
    =========================== */
-
 interface EditCarModalProps {
   open: boolean;
   onClose: () => void;
@@ -29,7 +18,6 @@ interface EditCarModalProps {
 /* ===========================
    Custom Select Component
    =========================== */
-
 type Option = { label: string; value: string };
 
 interface EVSelectProps {
@@ -50,8 +38,7 @@ const EVSelect: React.FC<EVSelectProps> = ({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  const selectedLabel =
-    options.find((o) => o.value === value)?.label ?? "";
+  const selectedLabel = options.find((o) => o.value === value)?.label ?? "";
 
   // ปิด dropdown เมื่อคลิกนอก component
   useEffect(() => {
@@ -82,11 +69,7 @@ const EVSelect: React.FC<EVSelectProps> = ({
               : "border-slate-300 text-slate-900 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
           }`}
       >
-        <span
-          className={
-            value ? "text-slate-900" : "text-slate-400 select-none"
-          }
-        >
+        <span className={value ? "text-slate-900" : "text-slate-400 select-none"}>
           {value ? selectedLabel : placeholder || "Select"}
         </span>
         <svg
@@ -105,10 +88,9 @@ const EVSelect: React.FC<EVSelectProps> = ({
       {open && !disabled && (
         <div className="absolute z-20 mt-1 w-full rounded-xl bg-white shadow-lg ring-1 ring-slate-200 max-h-60 overflow-y-auto">
           {options.length === 0 && (
-            <div className="px-3 py-2 text-sm text-slate-400">
-              No options
-            </div>
+            <div className="px-3 py-2 text-sm text-slate-400">No options</div>
           )}
+
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -147,7 +129,6 @@ const EVSelect: React.FC<EVSelectProps> = ({
 /* ===========================
    MAIN MODAL COMPONENT
    =========================== */
-
 const EditCarModal: React.FC<EditCarModalProps> = ({
   open,
   onClose,
@@ -170,83 +151,15 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
   const [modals, setModals] = useState<ModalInterface[]>([]);
 
   const baseProvinces = [
-    "กระบี่",
-    "กรุงเทพมหานคร",
-    "กาญจนบุรี",
-    "กาฬสินธุ์",
-    "กำแพงเพชร",
-    "ขอนแก่น",
-    "จันทบุรี",
-    "ฉะเชิงเทรา",
-    "ชลบุรี",
-    "ชัยนาท",
-    "ชัยภูมิ",
-    "ชุมพร",
-    "เชียงราย",
-    "เชียงใหม่",
-    "ตรัง",
-    "ตราด",
-    "ตาก",
-    "นครนายก",
-    "นครปฐม",
-    "นครพนม",
-    "นครราชสีมา",
-    "นครศรีธรรมราช",
-    "นครสวรรค์",
-    "นนทบุรี",
-    "นราธิวาส",
-    "น่าน",
-    "บึงกาฬ",
-    "บุรีรัมย์",
-    "ปทุมธานี",
-    "ประจวบคีรีขันธ์",
-    "ปราจีนบุรี",
-    "ปัตตานี",
-    "พระนครศรีอยุธยา",
-    "พะเยา",
-    "พังงา",
-    "พัทลุง",
-    "พิจิตร",
-    "พิษณุโลก",
-    "เพชรบุรี",
-    "เพชรบูรณ์",
-    "แพร่",
-    "ภูเก็ต",
-    "มหาสารคาม",
-    "มุกดาหาร",
-    "แม่ฮ่องสอน",
-    "ยโสธร",
-    "ยะลา",
-    "ร้อยเอ็ด",
-    "ระนอง",
-    "ระยอง",
-    "ราชบุรี",
-    "ลพบุรี",
-    "ลำปาง",
-    "ลำพูน",
-    "เลย",
-    "ศรีสะเกษ",
-    "สกลนคร",
-    "สงขลา",
-    "สตูล",
-    "สมุทรปราการ",
-    "สมุทรสงคราม",
-    "สมุทรสาคร",
-    "สระแก้ว",
-    "สระบุรี",
-    "สิงห์บุรี",
-    "สุโขทัย",
-    "สุพรรณบุรี",
-    "สุราษฎร์ธานี",
-    "สุรินทร์",
-    "หนองคาย",
-    "หนองบัวลำภู",
-    "อ่างทอง",
-    "อำนาจเจริญ",
-    "อุดรธานี",
-    "อุตรดิตถ์",
-    "อุทัยธานี",
-    "อุบลราชธานี",
+    "กระบี่","กรุงเทพมหานคร","กาญจนบุรี","กาฬสินธุ์","กำแพงเพชร","ขอนแก่น","จันทบุรี","ฉะเชิงเทรา",
+    "ชลบุรี","ชัยนาท","ชัยภูมิ","ชุมพร","เชียงราย","เชียงใหม่","ตรัง","ตราด","ตาก","นครนายก","นครปฐม",
+    "นครพนม","นครราชสีมา","นครศรีธรรมราช","นครสวรรค์","นนทบุรี","นราธิวาส","น่าน","บึงกาฬ","บุรีรัมย์",
+    "ปทุมธานี","ประจวบคีรีขันธ์","ปราจีนบุรี","ปัตตานี","พระนครศรีอยุธยา","พะเยา","พังงา","พัทลุง",
+    "พิจิตร","พิษณุโลก","เพชรบุรี","เพชรบูรณ์","แพร่","ภูเก็ต","มหาสารคาม","มุกดาหาร","แม่ฮ่องสอน",
+    "ยโสธร","ยะลา","ร้อยเอ็ด","ระนอง","ระยอง","ราชบุรี","ลพบุรี","ลำปาง","ลำพูน","เลย","ศรีสะเกษ",
+    "สกลนคร","สงขลา","สตูล","สมุทรปราการ","สมุทรสงคราม","สมุทรสาคร","สระแก้ว","สระบุรี","สิงห์บุรี",
+    "สุโขทัย","สุพรรณบุรี","สุราษฎร์ธานี","สุรินทร์","หนองคาย","หนองบัวลำภู","อ่างทอง","อำนาจเจริญ",
+    "อุดรธานี","อุตรดิตถ์","อุทัยธานี","อุบลราชธานี",
   ];
 
   // โหลดรถทั้งหมด + Catalog ยี่ห้อ/รุ่น ตอน modal เปิด
@@ -255,18 +168,10 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
       try {
         if (!open) return;
 
-        const [carsRes, modsRes] = await Promise.all([
-          ListCars(),
-          ListModals(),
-        ]);
+        const [carsRes, modsRes] = await Promise.all([ListCars(), ListModals()]);
 
-        if (Array.isArray(carsRes)) {
-          setAllCars(carsRes);
-        }
-
-        if (modsRes && Array.isArray(modsRes)) {
-          setModals(modsRes);
-        }
+        if (Array.isArray(carsRes)) setAllCars(carsRes);
+        if (modsRes && Array.isArray(modsRes)) setModals(modsRes);
       } catch {
         // ไม่บล็อก UI
       }
@@ -300,6 +205,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
   // รวม model ตาม brand ที่เลือก + model เดิมของรถ (กันหาย)
   const modelOptions = useMemo(() => {
     const set = new Set<string>();
+
     if (!brand) {
       if (car?.ModelCar) set.add(car.ModelCar);
       return Array.from(set);
@@ -323,28 +229,27 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
     return Array.from(set);
   }, [car?.City]);
 
-  // ===== ตรวจรูปแบบและซ้ำของทะเบียน =====
-  // รูปแบบที่อนุญาต: อักษรไทย/อังกฤษ 2 ตัว + ช่องว่าง "0 หรือ 1 ช่อง" + เลข 4 ตัว เช่น "กข 1234", "AB 1234"
-  const plateRegex = /^[A-Za-zก-ฮ]{2}\s?\d{4}$/;
-
+  // ===== ตรวจ "ซ้ำ" อย่างเดียว (ไม่ตรวจรูปแบบ) =====
+  // normalize: ตัดช่องว่างทั้งหมด + upper เพื่อเทียบซ้ำแบบไม่สน spacing/ตัวเล็กใหญ่
   const normalizePlate = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 
   const validatePlate = (raw: string) => {
     const v = raw.trim();
+
+    // ห้ามว่าง
     if (!v) {
-      setPlateError(null);
+      setPlateError("Please enter a registration.");
       return;
     }
-    if (!plateRegex.test(v)) {
-      setPlateError("The registration form is invalid e.g. กข 1234 ");
-      return;
-    }
+
+    // ตรวจซ้ำอย่างเดียว
     const norm = normalizePlate(v);
     const isDup = allCars.some((c) => {
       if (car?.ID && c.ID === car.ID) return false; // ข้ามคันปัจจุบัน
       const other = normalizePlate(String(c?.LicensePlate ?? ""));
       return other === norm;
     });
+
     if (isDup) {
       setPlateError("Already registered");
     } else {
@@ -352,35 +257,51 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
     }
   };
 
-  // ตรวจทุกครั้งที่ plate เปลี่ยน
+  // ตรวจทุกครั้งที่ plate เปลี่ยน / รายการรถเปลี่ยน / เปลี่ยนรถที่แก้ไข
   useEffect(() => {
+    if (!open) return;
     validatePlate(plate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plate, allCars, car?.ID]);
+  }, [plate, allCars, car?.ID, open]);
 
-  const canSubmit = Boolean(
-    brand && model && plate && province && !plateError
-  );
+  const canSubmit = Boolean(brand && model && plate.trim() && province && !plateError);
 
   const handleSubmit = async () => {
-    if (!car?.ID || submitting || !canSubmit) return;
+    if (!car?.ID || submitting) return;
 
-    // ตรวจซ้ำอีกครั้งกัน state lag
-    validatePlate(plate);
-    if (plateError) {
-      messageApi.error("Please correct the license plate before saving");
+    // กัน state lag: validate แล้วใช้ผล "จาก return" ไม่ใช่จาก state เก่า
+    const v = plate.trim();
+    if (!brand || !model || !province || !v) {
+      messageApi.warning("Please fill in all information.");
       return;
     }
+
+    // validate ซ้ำอีกครั้งก่อนส่ง
+    const norm = normalizePlate(v);
+    const isDup = allCars.some((c) => {
+      if (car?.ID && c.ID === car.ID) return false;
+      const other = normalizePlate(String(c?.LicensePlate ?? ""));
+      return other === norm;
+    });
+
+    if (isDup) {
+      setPlateError("Already registered");
+      messageApi.error("This registration is already in the system.");
+      return;
+    }
+
+    setPlateError(null);
 
     setSubmitting(true);
     try {
       const payload = {
         Brand: brand,
         ModelCar: model,
-        LicensePlate: plate.trim(),
+        LicensePlate: v,
         City: province,
         SpecialNumber: isSpecialReg,
       };
+
       const res = await UpdateCarByID(car.ID, payload);
       if (res) {
         messageApi.success("Car updated successfully");
@@ -408,9 +329,9 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
         onCancel={onClose}
         centered
         width={560}
-        closable={false} // ใช้ปุ่ม X แบบ custom
+        closable={false}
         bodyStyle={{ padding: 0, background: "transparent" }}
-        // @ts-ignore - ถ้าใช้ antd v4 สามารถแก้ผ่าน CSS แทนได้
+        // @ts-ignore
         styles={{
           content: {
             background: "transparent",
@@ -420,9 +341,8 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
         }}
         destroyOnClose
       >
-        {/* การ์ดหลักแบบเดียวกับ BillModal (ปรับให้เข้ากับฟอร์มรถ) */}
         <div className="w-full max-w-xl mx-auto rounded-[26px] bg-white shadow-xl overflow-hidden">
-          {/* HEADER GRADIENT */}
+          {/* HEADER */}
           <div className="bg-gradient-to-r from-blue-600 to-sky-500 px-5 sm:px-6 py-4 flex items-center justify-between text-white">
             <div className="flex items-center gap-3 min-w-0">
               <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15">
@@ -462,10 +382,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
                 <EVSelect
                   value={brand || undefined}
                   placeholder="Select brand"
-                  options={brandOptions.map((b) => ({
-                    label: b,
-                    value: b,
-                  }))}
+                  options={brandOptions.map((b) => ({ label: b, value: b }))}
                   disabled={brandOptions.length === 0}
                   onChange={(val) => {
                     setBrand(val || "");
@@ -481,13 +398,8 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
                 </span>
                 <EVSelect
                   value={model || undefined}
-                  placeholder={
-                    brand ? "Select model" : "Please select a brand first"
-                  }
-                  options={modelOptions.map((m) => ({
-                    label: m,
-                    value: m,
-                  }))}
+                  placeholder={brand ? "Select model" : "Please select a brand first"}
+                  options={modelOptions.map((m) => ({ label: m, value: m }))}
                   disabled={!brand || modelOptions.length === 0}
                   onChange={(val) => setModel(val || "")}
                 />
@@ -498,21 +410,19 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
                 <span className="text-xs text-slate-600 flex items-center gap-2">
                   <FaTags className="text-blue-500" /> Vehicle registration
                 </span>
+
                 <Input
                   className={`mt-1 rounded-xl border p-2.5 outline-none ${
                     plateError
                       ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200"
                       : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   }`}
-                  placeholder="For example, กข 1234"
+                  placeholder="Enter registration (any format)"
                   value={plate}
                   onChange={(e) => setPlate(e.target.value)}
                 />
-                {plateError && (
-                  <p className="text-xs text-red-500 mt-1">
-                    {plateError}
-                  </p>
-                )}
+
+                {plateError && <p className="text-xs text-red-500 mt-1">{plateError}</p>}
               </label>
 
               {/* PROVINCE */}
@@ -523,10 +433,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
                 <EVSelect
                   value={province || undefined}
                   placeholder="Select a province"
-                  options={provinces.map((p) => ({
-                    label: p,
-                    value: p,
-                  }))}
+                  options={provinces.map((p) => ({ label: p, value: p }))}
                   disabled={provinces.length === 0}
                   onChange={(val) => setProvince(val || "")}
                 />
@@ -534,13 +441,8 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
 
               {/* SPECIAL NUMBER */}
               <div className="flex items-center gap-2 mt-2">
-                <Checkbox
-                  checked={isSpecialReg}
-                  onChange={(e) => setIsSpecialReg(e.target.checked)}
-                />
-                <span className="text-sm text-gray-700">
-                  It is a special registration.
-                </span>
+                <Checkbox checked={isSpecialReg} onChange={(e) => setIsSpecialReg(e.target.checked)} />
+                <span className="text-sm text-gray-700">It is a special registration.</span>
               </div>
             </div>
           </div>
@@ -553,6 +455,7 @@ const EditCarModal: React.FC<EditCarModalProps> = ({
             >
               Cancel
             </button>
+
             <button
               onClick={handleSubmit}
               disabled={!canSubmit || submitting}
