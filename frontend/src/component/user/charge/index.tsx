@@ -1,4 +1,4 @@
-/* ==== FULL FILE: src/pages/user/ev/ChargingEV.tsx ==== */
+// src/pages/user/ev/ChargingEV.tsx
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { FaBolt } from "react-icons/fa";
@@ -40,7 +40,7 @@ type CancelSolarGridPayload = {
   }>;
 };
 
-const ChargingEV: React.FC = () => {
+const ChargingEV = () => {
   const navigate = useNavigate();
   const location = useLocation();
   // @ts-ignore
@@ -99,12 +99,6 @@ const ChargingEV: React.FC = () => {
   // - ให้ค้างหน้านี้ไว้จน user กด Refresh เอง (refresh แล้วค่อยตรวจใหม่ตามปกติ)
   const [freezeInterruption, setFreezeInterruption] = useState(false);
   const freezeInterruptionRef = useRef(false);
-
-  // ✅ ใช้ ref กัน effect rerun จาก sessionEndTime
-  const sessionEndTimeRef = useRef<Date | null>(null);
-  useEffect(() => {
-    sessionEndTimeRef.current = sessionEndTime;
-  }, [sessionEndTime]);
 
   const storageKey =
     typeof paymentID !== "undefined" && paymentID !== null
@@ -378,12 +372,6 @@ const ChargingEV: React.FC = () => {
 
   // 👉 ฟัง WebSocket OCPP
   useEffect(() => {
-    // ✅ freeze แล้ว "ไม่ reconnect" อีก
-    if (freezeInterruptionRef.current) {
-      console.log("🧊 OCPP WS skipped เพราะ freezeInterruption=true");
-      return;
-    }
-
     if (!chargerId) {
       console.log("ℹ️ OCPP WS: chargerId ยังไม่มา → ยังไม่ต่อ WebSocket");
       return;
@@ -399,15 +387,11 @@ const ChargingEV: React.FC = () => {
       setOcppStatus("Interruption");
       setCharging(false);
 
-      // ✅ set end time ครั้งเดียว (กัน effect rerun)
-      if (!sessionEndTimeRef.current) {
-        const end = new Date();
-        sessionEndTimeRef.current = end;
-        setSessionEndTime(end);
-      }
-
+      // ✅ ทำให้เวลาหยุดนิ่ง (ค้างค่าเดิม) แต่ไม่เด้งออก
+      if (!sessionEndTime) setSessionEndTime(new Date());
       setIsVerifying(false);
-      // ❌ ห้าม checkSession / ห้าม navigate ในจุดนี้
+
+      // ❌ ห้าม checkSession / ห้าม navigate ในจุดนี้ (ตามที่ขอ)
     };
 
     const ws = connectOcppSocket(
@@ -415,8 +399,9 @@ const ChargingEV: React.FC = () => {
         try {
           // ✅ รองรับ "DATA JSON" จาก backend (ไม่ใช่ OCPP frame)
           if (data && typeof data === "object" && !Array.isArray(data)) {
-            // 1) start_energy_updated
+            // 1) start_energy_updated (ของเดิม)
             if (data.type === "start_energy_updated") {
+              // ✅ ถ้า freeze แล้วไม่ต้องทำอะไร
               if (freezeInterruptionRef.current) return;
 
               if (!firstMeterRef.current) {
@@ -429,12 +414,13 @@ const ChargingEV: React.FC = () => {
               return;
             }
 
-            // 2) charger_status_update
+            // 2) ✅ charger_status_update (ของใหม่จาก backend ตอน disconnect->Interruption)
             if (data.type === "charger_status_update") {
               const st = String((data as any).status || "");
               if (st) setOcppStatus(st);
 
               if (st === "Interruption") {
+                // ✅ เข้าสู่ freeze ทันที
                 enterFreezeInterruption("charger_status_update");
               }
               return;
@@ -506,7 +492,7 @@ const ChargingEV: React.FC = () => {
       ws.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chargerId, checkSession]);
+  }, [chargerId, checkSession, sessionEndTime]);
 
   // ⭐ ฟัง WebSocket Hardware
   useEffect(() => {
@@ -753,17 +739,15 @@ const ChargingEV: React.FC = () => {
   };
 
   // ===========================================================
-  // ✅ คำนวณ remaining_power จริงตามสัดส่วนที่ "ซื้อ"
-  // ✅ อนุญาตให้เลือกไฟ type เดียวได้ (allocs >= 1)
+  // ✅ คำนวณ remaining_power จริงตามสัดส่วนที่ "ซื้อ" (ใช้ตอน Cancel เท่านั้น)
   // ===========================================================
   const buildCancelSolarGridPayload = (): CancelSolarGridPayload | null => {
     const allocs = (evChargingAllocs || []).filter(
       (a) => a.evcharging_id > 0 && Number.isFinite(a.purchased_kwh) && a.purchased_kwh > 0
     );
 
-    // ✅ จากเดิม <2 → แก้เป็น <1 เพื่อรองรับเลือก type เดียว
-    if (allocs.length < 1) {
-      console.log("❌ buildPayload: allocs < 1", allocs);
+    if (allocs.length < 2) {
+      console.log("❌ buildPayload: allocs < 2", allocs);
       return null;
     }
 
@@ -788,7 +772,6 @@ const ChargingEV: React.FC = () => {
       let remaining = remainingTotal * ratio;
       remaining = Math.max(0, parseFloat(remaining.toFixed(2)));
 
-      // ✅ ให้ตัวสุดท้ายรับเศษที่เหลือทั้งหมด กันปัญหาปัดเศษ
       if (idx === allocs.length - 1) {
         const last = Math.max(0, parseFloat((remainingTotal - running).toFixed(2)));
         remaining = last;
@@ -818,7 +801,6 @@ const ChargingEV: React.FC = () => {
 
   // ===========================================================
   // ⭐ Cancel (ใช้ CancelSessionSolarGrid)
-  // ✅ แก้ให้: กดแล้วปิด modal + ไป /user ได้แน่นอน (เมื่อ success)
   // ===========================================================
   const confirmCancel = async () => {
     // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ทำอะไร
@@ -836,7 +818,7 @@ const ChargingEV: React.FC = () => {
 
     const payload = buildCancelSolarGridPayload();
     if (!payload) {
-      message.error("ไม่พบข้อมูลเพียงพอสำหรับการยกเลิก (evcharging_id / purchased_kwh)");
+      message.error("ไม่พบข้อมูล Solar+Grid เพียงพอ (evcharging_id / purchased_kwh)");
       return;
     }
 
@@ -852,20 +834,15 @@ const ChargingEV: React.FC = () => {
       setEnergy(0);
       setTime(0);
       setSessionStartTime(null);
+      setCancelModalOpen(false);
 
       clearLocalStorageState();
-
-      // ✅ ปิด modal ก่อน แล้วค่อยไป /user
-      setCancelModalOpen(false);
-      setTimeout(goToSummary, 800);
+      setTimeout(goToSummary, 1000);
     } catch (err: any) {
       console.error("❌ Cancel error:", err?.response?.data || err);
       const msg =
         err?.response?.data?.error || err?.response?.data?.message || "Unable to cancel charging";
       message.error(msg);
-
-      // ถ้าต้องการ “กดแล้วปิด modal เสมอแม้ error” ให้เปิดบรรทัดนี้
-      // setCancelModalOpen(false);
     }
   };
 
@@ -935,7 +912,7 @@ const ChargingEV: React.FC = () => {
 
     try {
       // ✅ จบชาร์จ: สั่งหยุดตู้พอ (ไม่ต้องคำนวณ remaining)
-      // ✅ ถ้า error "ห้ามขึ้น error และห้ามหยุด flow"
+      // ✅ ต้องการเก็บไว้ แต่ถ้า error "ห้ามขึ้น error และห้ามหยุด flow"
       await remoteStopCharging({ chargerId }).catch((err: any) => {
         console.warn("⚠️ remoteStopCharging failed (ignored):", err?.response?.data || err);
       });
