@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Checkbox, message, Spin } from "antd";
-import { CreateCar, CarInterface, ListModals, ListCars } from "../../../../services";
+import { CreateCar, CarInterface, ListModals } from "../../../../services";
 import type { ModalInterface } from "../../../../interface/ICarCatalog";
 import { getCurrentUser, initUserProfile } from "../../../../services/httpLogin";
 
@@ -19,13 +19,7 @@ const EVHeader: React.FC<{ title?: string; onBack?: () => void }> = ({
           aria-label="ย้อนกลับ"
           className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15 transition-colors"
         >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
@@ -81,13 +75,7 @@ const BottomSheet: React.FC<{
         </div>
         <div className="px-4 pb-2">
           <div className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5 text-slate-500"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
+            <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.3-4.3" />
             </svg>
@@ -103,10 +91,7 @@ const BottomSheet: React.FC<{
           <ul className="divide-y divide-slate-100">
             {filtered.map((it) => (
               <li key={it.key}>
-                <button
-                  className="w-full text-left px-4 py-3 active:bg-slate-50"
-                  onClick={() => onSelect(it)}
-                >
+                <button className="w-full text-left px-4 py-3 active:bg-slate-50" onClick={() => onSelect(it)}>
                   {it.label}
                 </button>
               </li>
@@ -122,41 +107,26 @@ const BottomSheet: React.FC<{
    PROVINCES
 --------------------------------------------------- */
 const TH_PROVINCES = [
-  'กระบี่', 'กรุงเทพมหานคร', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร',
-    'ขอนแก่น',
-    'จันทบุรี',
-    'ฉะเชิงเทรา',
-    'ชลบุรี', 'ชัยนาท', 'ชัยภูมิ', 'ชุมพร', 'เชียงราย', 'เชียงใหม่',
-    'ตรัง', 'ตราด', 'ตาก',
-    'นครนายก', 'นครปฐม', 'นครพนม', 'นครราชสีมา', 'นครศรีธรรมราช', 'นครสวรรค์', 'นนทบุรี', 'นราธิวาส', 'น่าน',
-    'บึงกาฬ', 'บุรีรัมย์',
-    'ปทุมธานี', 'ประจวบคีรีขันธ์', 'ปราจีนบุรี', 'ปัตตานี',
-    'พระนครศรีอยุธยา', 'พะเยา', 'พังงา', 'พัทลุง', 'พิจิตร', 'พิษณุโลก', 'เพชรบุรี', 'เพชรบูรณ์', 'แพร่',
-    'ภูเก็ต',
-    'มหาสารคาม', 'มุกดาหาร', 'แม่ฮ่องสอน',
-    'ยโสธร', 'ยะลา',
-    'ร้อยเอ็ด', 'ระนอง', 'ระยอง', 'ราชบุรี',
-    'ลพบุรี', 'ลำปาง', 'ลำพูน', 'เลย',
-    'ศรีสะเกษ',
-    'สกลนคร', 'สงขลา', 'สตูล', 'สมุทรปราการ', 'สมุทรสงคราม', 'สมุทรสาคร', 'สระแก้ว', 'สระบุรี', 'สิงห์บุรี', 'สุโขทัย', 'สุพรรณบุรี', 'สุราษฎร์ธานี', 'สุรินทร์',
-    'หนองคาย', 'หนองบัวลำภู',
-    'อ่างทอง', 'อำนาจเจริญ', 'อุดรธานี', 'อุตรดิตถ์', 'อุทัยธานี', 'อุบลราชธานี'
+  "กระบี่","กรุงเทพมหานคร","กาญจนบุรี","กาฬสินธุ์","กำแพงเพชร","ขอนแก่น","จันทบุรี","ฉะเชิงเทรา",
+  "ชลบุรี","ชัยนาท","ชัยภูมิ","ชุมพร","เชียงราย","เชียงใหม่","ตรัง","ตราด","ตาก","นครนายก","นครปฐม",
+  "นครพนม","นครราชสีมา","นครศรีธรรมราช","นครสวรรค์","นนทบุรี","นราธิวาส","น่าน","บึงกาฬ","บุรีรัมย์",
+  "ปทุมธานี","ประจวบคีรีขันธ์","ปราจีนบุรี","ปัตตานี","พระนครศรีอยุธยา","พะเยา","พังงา","พัทลุง",
+  "พิจิตร","พิษณุโลก","เพชรบุรี","เพชรบูรณ์","แพร่","ภูเก็ต","มหาสารคาม","มุกดาหาร","แม่ฮ่องสอน",
+  "ยโสธร","ยะลา","ร้อยเอ็ด","ระนอง","ระยอง","ราชบุรี","ลพบุรี","ลำปาง","ลำพูน","เลย","ศรีสะเกษ",
+  "สกลนคร","สงขลา","สตูล","สมุทรปราการ","สมุทรสงคราม","สมุทรสาคร","สระแก้ว","สระบุรี","สิงห์บุรี",
+  "สุโขทัย","สุพรรณบุรี","สุราษฎร์ธานี","สุรินทร์","หนองคาย","หนองบัวลำภู","อ่างทอง","อำนาจเจริญ",
+  "อุดรธานี","อุตรดิตถ์","อุทัยธานี","อุบลราชธานี",
 ];
-
-
 
 /* ---------------------------------------------------
    MAIN COMPONENT
 --------------------------------------------------- */
-type CarRowForCheck = { LicensePlate?: string | null }; // <-- ใช้แค่ field ที่ต้องการเช็กซ้ำ
-
 const AddCarPage: React.FC = () => {
   const navigate = useNavigate();
   const [messageApi, contextHolder] = message.useMessage();
 
   const [userID, setUserID] = useState<number | undefined>(undefined);
 
-  // ✅ โหลด userID จาก JWT
   useEffect(() => {
     const loadUser = async () => {
       let current = getCurrentUser();
@@ -167,7 +137,6 @@ const AddCarPage: React.FC = () => {
         message.error("User information not found. Please log in again.");
         return;
       }
-
       setUserID(uid);
     };
     loadUser();
@@ -182,13 +151,17 @@ const AddCarPage: React.FC = () => {
 
   const [modals, setModals] = useState<ModalInterface[]>([]);
   const [loadingMods, setLoadingMods] = useState(true);
+
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
   const [otherBrand, setOtherBrand] = useState("");
   const [otherModel, setOtherModel] = useState("");
+
   const [isSpecialReg, setIsSpecialReg] = useState(false);
+
+  // ✅ ทะเบียน: ห้ามว่าง แต่ "ไม่ validate รูปแบบ"
   const [plate, setPlate] = useState("");
-  const [plateError, setPlateError] = useState<string | null>(null); // <-- error message
+
   const [province, setProvince] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -196,7 +169,6 @@ const AddCarPage: React.FC = () => {
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [provinceSheetOpen, setProvinceSheetOpen] = useState(false);
 
-  // 📥 โหลดยี่ห้อ/รุ่น
   useEffect(() => {
     const load = async () => {
       setLoadingMods(true);
@@ -205,23 +177,6 @@ const AddCarPage: React.FC = () => {
       setLoadingMods(false);
     };
     load();
-  }, []);
-
-  // 📥 โหลดรถทั้งหมดเพื่อตรวจทะเบียนซ้ำ
-  const [allCars, setAllCars] = useState<CarRowForCheck[]>([]);
-  useEffect(() => {
-    const fetchCars = async () => {
-      try {
-        const res = await ListCars();
-        if (res && Array.isArray(res)) {
-          // เก็บเฉพาะ field ที่ต้องใช้
-          setAllCars(res.map((r: any) => ({ LicensePlate: r?.LicensePlate ?? null })));
-        }
-      } catch (e) {
-        // เงียบ ๆ ก็ได้ ไม่บล็อคการใช้งาน
-      }
-    };
-    fetchCars();
   }, []);
 
   const brandOptions = useMemo(() => {
@@ -235,54 +190,21 @@ const AddCarPage: React.FC = () => {
 
   const modelOptions = useMemo(() => {
     if (!brand || brand === "other") return ["other"];
-    const list = modals
-      .filter((m) => m.Brand?.BrandName === brand)
-      .map((m) => m.ModalName);
+    const list = modals.filter((m) => m.Brand?.BrandName === brand).map((m) => m.ModalName);
     return [...new Set(list), "other"];
   }, [brand, modals]);
 
-  // ================== Validation ทะเบียน ==================
-  // รูปแบบ: ตัวอักษรไทยหรืออังกฤษ 2 ตัว + เว้นวรรค (มี/ไม่มีได้) + ตัวเลข 4 ตัว
-  const plateRegex = /^[A-Za-zก-ฮ]{2}\s?\d{4}$/;
-
-  const normalizePlate = (s: string) => s.replace(/\s+/g, "").toUpperCase();
-
-  const checkPlate = (value: string) => {
-    const v = value.trim();
-    if (!v) {
-      setPlateError(null);
-      return;
-    }
-    if (!plateRegex.test(v)) {
-      setPlateError("The registration form is invalid (e.g. กข 1234 or AB 1234).");
-      return;
-    }
-    const norm = normalizePlate(v);
-    const duplicated = allCars.some((c) => normalizePlate(String(c.LicensePlate ?? "")) === norm);
-    if (duplicated) {
-      setPlateError("This registration is already in the system.");
-    } else {
-      setPlateError(null);
-    }
-  };
-
-  // ================== Submit ==================
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!userID) {
       messageApi.error("User information not found");
       return;
     }
 
-    if (!brand || !model || !plate || !province) {
+    // ✅ plate ห้ามว่าง (แต่ไม่เช็ครูปแบบ)
+    if (!brand || !model || !province || !plate.trim()) {
       messageApi.warning("Please fill in all information.");
-      return;
-    }
-
-    // ตรวจอีกรอบก่อนส่ง
-    checkPlate(plate);
-    if (plateError) {
-      messageApi.error("Please edit your registration information before saving.");
       return;
     }
 
@@ -345,6 +267,7 @@ const AddCarPage: React.FC = () => {
                     </>
                   )}
                 </button>
+
                 {brand === "other" && (
                   <input
                     className="mt-3 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
@@ -372,6 +295,7 @@ const AddCarPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
+
                 {brand === "other" && (
                   <input
                     className="rounded-xl border border-slate-300 p-3 bg-white outline-none"
@@ -402,6 +326,7 @@ const AddCarPage: React.FC = () => {
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </button>
+
                 {(brand === "other" || model === "other") && (
                   <input
                     className="mt-3 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
@@ -426,6 +351,7 @@ const AddCarPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
+
                 {(brand === "other" || model === "other") && (
                   <input
                     className="rounded-xl border border-slate-300 p-3 bg-white outline-none"
@@ -444,22 +370,15 @@ const AddCarPage: React.FC = () => {
             <span>Your vehicle has a special registration.</span>
           </div>
 
-          {/* ===== ทะเบียน ===== */}
+          {/* ===== ทะเบียน (ห้ามว่าง แต่ใส่อะไรก็ได้) ===== */}
           <div>
             <span className="text-sm text-gray-700">register *</span>
             <input
-              className={`mt-2 w-full rounded-xl border p-3 bg-white outline-none ${
-                plateError ? "border-red-400" : "border-slate-300"
-              }`}
-              placeholder="For example, กข 1234"
+              className="mt-2 w-full rounded-xl border border-slate-300 p-3 bg-white outline-none"
+              placeholder=""
               value={plate}
-              onChange={(e) => {
-                const v = e.target.value;
-                setPlate(v);
-                checkPlate(v);
-              }}
+              onChange={(e) => setPlate(e.target.value)}
             />
-            {plateError && <p className="text-xs text-red-500 mt-1">{plateError}</p>}
           </div>
 
           {/* ===== จังหวัด ===== */}

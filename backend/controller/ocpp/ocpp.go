@@ -121,6 +121,36 @@ var (
 )
 
 // ============================================================================
+// ✅ NEW: เก็บ “สถานะจริงล่าสุดก่อนหลุด” เพื่อ restore ตอน reconnect
+// - ตอน HOLD เราจะส่ง status=Interruption ไปหน้าเว็บ (UI)
+// - แต่เราจะไม่ทับ lastRealStatus เพื่อให้เอากลับมาได้เมื่อ reconnect
+// ============================================================================
+var (
+	lastRealStatuses = make(map[string]ChargerStatus) // chargerID -> last real status
+	lastRealMu       sync.Mutex
+)
+
+func saveLastRealStatus(chargerID string, st ChargerStatus) {
+	if chargerID == "" {
+		return
+	}
+	// ไม่เก็บ Interruption เป็นสถานะจริง
+	if st.Status == "Interruption" {
+		return
+	}
+	lastRealMu.Lock()
+	lastRealStatuses[chargerID] = st
+	lastRealMu.Unlock()
+}
+
+func getLastRealStatus(chargerID string) (ChargerStatus, bool) {
+	lastRealMu.Lock()
+	defer lastRealMu.Unlock()
+	st, ok := lastRealStatuses[chargerID]
+	return st, ok
+}
+
+// ============================================================================
 // 🧾 Pending Calls (สำหรับจับคู่ CALLRESULT / CALLERROR จากตู้)
 // ============================================================================
 type PendingCall struct {
@@ -155,6 +185,112 @@ func markAutoStopped(sessionID uint) bool {
 	}
 	autoStoppedSessions[sessionID] = true
 	return true
+}
+
+// ============================================================================
+// ✅ NEW: HOLD DISCONNECT 10 นาที (ถ้า reconnect ทัน -> ไม่ปิด session)
+// - ✅ ระหว่าง HOLD ให้ส่ง status=Interruption ไปหน้าเว็บทันที
+// - ✅ ถ้า reconnect ภายใน HOLD ให้ restore status ล่าสุด (lastRealStatus)
+// ============================================================================
+const disconnectHoldDuration = 10 * time.Minute
+
+var (
+	disconnectHoldTimers   = make(map[string]*time.Timer) // chargerID -> timer
+	disconnectHoldTimersMu sync.Mutex
+)
+
+func cancelDisconnectHold(chargerID string) {
+	disconnectHoldTimersMu.Lock()
+	t, ok := disconnectHoldTimers[chargerID]
+	if ok && t != nil {
+		// Stop timer และ drain channel กัน goroutine ตื่นช้า
+		stopped := t.Stop()
+		if !stopped {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+		delete(disconnectHoldTimers, chargerID)
+	}
+	disconnectHoldTimersMu.Unlock()
+}
+
+func scheduleDisconnectHold(chargerID string) {
+	if chargerID == "" {
+		return
+	}
+
+	// 1) ถ้ามี timer ค้างอยู่ (disconnect ซ้อน) -> ยกเลิกก่อน
+	cancelDisconnectHold(chargerID)
+
+	// 2) เก็บ “สถานะจริงล่าสุดก่อนหลุด” ไว้ (เพื่อ restore ตอน reconnect)
+	statusMu.Lock()
+	st, ok := chargerStatuses[chargerID]
+	if !ok {
+		st = ChargerStatus{ChargerID: chargerID}
+	}
+	// save ก่อนจะ overwrite เป็น Interruption
+	saveLastRealStatus(chargerID, st)
+
+	// 3) ✅ ระหว่าง HOLD ให้โชว์ Interruption ทันที (แต่ยังไม่ปิด session)
+	st.Connected = false
+	st.Status = "Interruption"
+	st.ErrorCode = "Interruption"
+	st.LastHeartbeat = time.Now().UTC()
+	chargerStatuses[chargerID] = st
+	statusMu.Unlock()
+
+	// 4) broadcast DATA (ห้ามโดนปิด) แจ้งว่า disconnected + HOLD + status=Interruption
+	dataMsg := map[string]interface{}{
+		"type":      "charger_connection_hold",
+		"chargerId": chargerID,
+		"connected": false,
+		"hold_sec":  int(disconnectHoldDuration.Seconds()),
+		"status":    "Interruption",
+		"errorCode": "Interruption",
+		"timestamp": nowOcppTime(),
+	}
+	if b, err := json.Marshal(dataMsg); err == nil {
+		broadcastToFrontendRoom(chargerID, b)
+	}
+
+	// 5) ทำ timer hold 10 นาที
+	t := time.NewTimer(disconnectHoldDuration)
+
+	disconnectHoldTimersMu.Lock()
+	disconnectHoldTimers[chargerID] = t
+	disconnectHoldTimersMu.Unlock()
+
+	// 6) รอครบเวลา แล้วค่อยตรวจว่ากลับมาไหม
+	go func(id string, timer *time.Timer) {
+		<-timer.C
+
+		// ลบ timer ออกจาก map
+		disconnectHoldTimersMu.Lock()
+		// กันกรณี timer ถูก cancel แล้วมีตัวใหม่มาแทน
+		if cur, ok := disconnectHoldTimers[id]; ok && cur == timer {
+			delete(disconnectHoldTimers, id)
+		}
+		disconnectHoldTimersMu.Unlock()
+
+		// ถ้ากลับมา connect แล้ว -> ไม่ทำอะไร
+		chargersMu.Lock()
+		_, connected := chargers[id]
+		chargersMu.Unlock()
+		if connected {
+			return
+		}
+
+		// ถ้ายังไม่กลับมา -> ค่อยทำ interruption + close session
+		handleDisconnectAsInterruption(id)
+	}(chargerID, t)
+
+	// log (ปิดได้)
+	broadcastLogTextToFrontendRoom(chargerID, fmt.Sprintf(
+		"[HOLD] charger=%s disconnected -> send status=Interruption + hold %d minutes; if reconnect within hold, session will NOT be closed and status will be restored\n",
+		chargerID, int(disconnectHoldDuration.Minutes()),
+	))
 }
 
 // ============================================================================
@@ -279,20 +415,23 @@ func HandleFrontend(c *gin.Context) {
 // 🔹 CHARGER OCPP WebSocket (ตัวหลักคุยกับตู้จริง OCPP 1.6J)
 // ============================================================================
 
-// ✅✅ NEW: เมื่อ Charger disconnect -> ส่ง status=Interruption + ปิด session (เหมือน Finishing/Faulted)
-// - อัปเดต chargerStatuses
-// - broadcast "DATA JSON" ไปหน้าเว็บ (ไม่โดนปิดด้วย log switch)
-// - ปิด session: EndTime + status=false (เรียก updateEndTimeAndCloseOnFinishingByChargePoint)
-// - clearTransactionID
+// ✅✅ NEW: เมื่อ Charger disconnect แล้ว "ครบ HOLD" -> ส่ง status=Interruption + ปิด session
 func handleDisconnectAsInterruption(chargerID string) {
-	// 1) update in-memory status
+	// ✅ Guard: ถ้ากลับมาเชื่อมแล้ว (race) -> อย่าปิด session
+	chargersMu.Lock()
+	_, connected := chargers[chargerID]
+	chargersMu.Unlock()
+	if connected {
+		return
+	}
+
+	// 1) update in-memory status (คงเป็น Interruption)
 	statusMu.Lock()
 	st, ok := chargerStatuses[chargerID]
 	if !ok {
 		st = ChargerStatus{ChargerID: chargerID}
 	}
 	st.Status = "Interruption"
-	// จะใส่ errorCode อะไรก็ได้ตามที่คุณต้องการ; ตรงนี้ตั้งให้ชัดว่าเกิด interrupt
 	st.ErrorCode = "Interruption"
 	st.Connected = false
 	st.LastHeartbeat = time.Now().UTC()
@@ -349,6 +488,9 @@ func HandleOCPP(c *gin.Context) {
 		logln("⚠️ Subprotocol mismatch, expected ocpp1.6, got:", conn.Subprotocol(), "chargerID:", chargerID)
 	}
 
+	// ✅ ถ้าเคย disconnect แล้วมี hold timer ค้างอยู่ -> cancel ทันที (เพราะ reconnect แล้ว)
+	cancelDisconnectHold(chargerID)
+
 	chargersMu.Lock()
 	chargers[chargerID] = conn
 	chargersMu.Unlock()
@@ -356,15 +498,50 @@ func HandleOCPP(c *gin.Context) {
 	logln("🚗 Charger connected:", chargerID, "subprotocol =", conn.Subprotocol())
 	broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger connected: "+chargerID+"\n")
 
+	// ✅✅ เมื่อ reconnect ให้ restore “สถานะจริงล่าสุด” (ก่อนหลุด)
 	statusMu.Lock()
 	st, ok := chargerStatuses[chargerID]
 	if !ok {
 		st = ChargerStatus{ChargerID: chargerID}
 	}
+
+	if last, hasLast := getLastRealStatus(chargerID); hasLast {
+		// restore status/errorCode/connectorId จาก last real
+		st.ConnectorID = last.ConnectorID
+		st.Status = last.Status
+		st.ErrorCode = last.ErrorCode
+	}
+
 	st.Connected = true
 	st.LastHeartbeat = time.Now().UTC()
 	chargerStatuses[chargerID] = st
 	statusMu.Unlock()
+
+	// broadcast DATA: connected=true (ห้ามโดนปิด)
+	connectedMsg := map[string]interface{}{
+		"type":      "charger_connection_update",
+		"chargerId": chargerID,
+		"connected": true,
+		"status":    st.Status,
+		"errorCode": st.ErrorCode,
+		"timestamp": nowOcppTime(),
+	}
+	if b, err := json.Marshal(connectedMsg); err == nil {
+		broadcastToFrontendRoom(chargerID, b)
+	}
+
+	// ✅ ส่ง status ล่าสุดอีกรอบ (กัน UI บางหน้าอาศัย event status_update)
+	statusMsg := map[string]interface{}{
+		"type":      "charger_status_update",
+		"chargerId": chargerID,
+		"status":    st.Status,
+		"errorCode": st.ErrorCode,
+		"connected": true,
+		"timestamp": nowOcppTime(),
+	}
+	if b, err := json.Marshal(statusMsg); err == nil {
+		broadcastToFrontendRoom(chargerID, b)
+	}
 
 	defer func() {
 		chargersMu.Lock()
@@ -374,17 +551,9 @@ func HandleOCPP(c *gin.Context) {
 		logln("⚠️ Charger disconnected:", chargerID)
 		broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger disconnected: "+chargerID+"\n")
 
-		// ✅✅ NEW: disconnect -> Interruption + close session (เหมือน Finishing/Faulted)
-		handleDisconnectAsInterruption(chargerID)
-
-		// (ยังคงอัปเดต connected=false ไว้ด้วย เผื่อใครอ่านจาก map ตรง ๆ)
-		statusMu.Lock()
-		st, ok := chargerStatuses[chargerID]
-		if ok {
-			st.Connected = false
-			chargerStatuses[chargerID] = st
-		}
-		statusMu.Unlock()
+		// ✅✅ เปลี่ยนจาก “ปิด session ทันที” เป็น “HOLD 10 นาที”
+		// และระหว่าง HOLD จะส่ง status=Interruption ทันที
+		scheduleDisconnectHold(chargerID)
 	}()
 
 	for {
@@ -555,6 +724,9 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 		chargerStatuses[chargerID] = newSt
 		statusMu.Unlock()
+
+		// ✅✅ อัปเดต lastRealStatus (สถานะจริง) เพื่อเอาไว้ restore ตอน reconnect
+		saveLastRealStatus(chargerID, newSt)
 
 		response := []interface{}{3, messageID, map[string]interface{}{}}
 		if err := conn.WriteJSON(response); err != nil {
@@ -1438,7 +1610,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 			remainingPercent = 0
 		}
 		if remainingPercent > 100 {
-					remainingPercent = 100
+			remainingPercent = 100
 		}
 
 		usedPercent = math.Round(usedPercent*100) / 100
