@@ -746,8 +746,8 @@ const ChargingEV = () => {
       (a) => a.evcharging_id > 0 && Number.isFinite(a.purchased_kwh) && a.purchased_kwh > 0
     );
 
-    if (allocs.length < 2) {
-      console.log("❌ buildPayload: allocs < 2", allocs);
+    if (allocs.length < 1) {
+      console.log("❌ buildPayload: allocs < 1", allocs);
       return null;
     }
 
