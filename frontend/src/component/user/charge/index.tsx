@@ -1,4 +1,4 @@
-// src/pages/user/ev/ChargingEV.tsx
+/* ==== FULL FILE: src/pages/user/ev/ChargingEV.tsx ==== */
 
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { FaBolt } from "react-icons/fa";
@@ -40,25 +40,14 @@ type CancelSolarGridPayload = {
   }>;
 };
 
-const ChargingEV = () => {
+const ChargingEV: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   // @ts-ignore
   const { paymentID, cabinet_id } = location.state || {};
 
-  // ✅ normalize payment/cabinet id ให้ชัวร์
-  const paymentIdNum = useMemo(() => {
-    const n = Number(paymentID);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }, [paymentID]);
-
-  const cabinetIdNum = useMemo(() => {
-    const n = Number(cabinet_id);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }, [cabinet_id]);
-
-  console.log("🟦 PAYMENT ID:", paymentID, "=>", paymentIdNum);
-  console.log("🟩 CABINET ID:", cabinet_id, "=>", cabinetIdNum);
+  console.log("🟦 PAYMENT ID:", paymentID);
+  console.log("🟩 CABINET ID:", cabinet_id);
 
   const [charging, setCharging] = useState(false);
   const [energy, setEnergy] = useState(0); // % จาก MeterValues จริง
@@ -106,17 +95,21 @@ const ChargingEV = () => {
   const firstMeterRef = useRef(false);
 
   // ✅ FREEZE เฉพาะกรณี Interruption (สำคัญมาก)
+  // - เมื่อเข้า Interruption: "ห้าม" ตรวจ session/payload แล้ว navigate ออก
+  // - ให้ค้างหน้านี้ไว้จน user กด Refresh เอง (refresh แล้วค่อยตรวจใหม่ตามปกติ)
   const [freezeInterruption, setFreezeInterruption] = useState(false);
   const freezeInterruptionRef = useRef(false);
 
-  // ✅ ใช้ ref กัน OCPP WS effect rerun จาก sessionEndTime
+  // ✅ ใช้ ref กัน effect rerun จาก sessionEndTime
   const sessionEndTimeRef = useRef<Date | null>(null);
   useEffect(() => {
     sessionEndTimeRef.current = sessionEndTime;
   }, [sessionEndTime]);
 
   const storageKey =
-    paymentIdNum !== null ? `${STORAGE_KEY_PREFIX}${paymentIdNum}` : null;
+    typeof paymentID !== "undefined" && paymentID !== null
+      ? `${STORAGE_KEY_PREFIX}${paymentID}`
+      : null;
 
   const fmt2 = useCallback((v: any) => {
     const n = typeof v === "number" ? v : Number(v);
@@ -124,17 +117,14 @@ const ChargingEV = () => {
     return n.toFixed(2);
   }, []);
 
-  const purchasedText = useMemo(
-    () => fmt2(totalPurchasedKwh ?? 0),
-    [totalPurchasedKwh, fmt2]
-  );
+  const purchasedText = useMemo(() => fmt2(totalPurchasedKwh ?? 0), [totalPurchasedKwh, fmt2]);
   const usedText = useMemo(() => fmt2(chargedKwhVal ?? 0), [chargedKwhVal, fmt2]);
 
   const sourcesInline = useMemo(() => {
     return energySources?.length ? energySources.join(", ") : "";
   }, [energySources]);
 
-  // ✅ clamp % ให้ชัวร์ ๆ
+  // ✅ clamp % ให้ชัวร์ ๆ (กันกรณีแสดงผลทะลุ 100)
   const energyClamped = useMemo(() => {
     const n = Number(energy);
     if (!Number.isFinite(n)) return 0;
@@ -142,15 +132,15 @@ const ChargingEV = () => {
   }, [energy]);
 
   // ✅ ถ้าไม่มี paymentID หรือ cabinet_id → กลับหน้าแรก
-  // ❗ แต่ถ้า freeze → ห้ามเด้งออก
+  // ❗ แต่ถ้าอยู่ในสถานะ Interruption (freeze) → "ห้ามตรวจ" และ "ห้ามเด้งออก"
   useEffect(() => {
     if (freezeInterruptionRef.current) return;
 
-    if (paymentIdNum === null || cabinetIdNum === null) {
+    if (!paymentID || !cabinet_id) {
       message.error("Payment information not found");
       navigate("/");
     }
-  }, [paymentIdNum, cabinetIdNum, navigate]);
+  }, [paymentID, cabinet_id, navigate]);
 
   // 👉 โหลด User จาก JWT
   useEffect(() => {
@@ -170,10 +160,16 @@ const ChargingEV = () => {
   // ⭐ โหลดข้อมูลตู้จาก cabinet_id → เอา ChargePoint + HardwarePoint มาใช้
   useEffect(() => {
     const loadCabinet = async () => {
-      if (cabinetIdNum === null) return;
+      if (!cabinet_id) return;
 
       try {
-        const cabinet = await GetCabinetByID(cabinetIdNum);
+        const idNum = Number(cabinet_id);
+        if (Number.isNaN(idNum)) {
+          message.error("Invalid cabinet code");
+          return;
+        }
+
+        const cabinet = await GetCabinetByID(idNum);
         console.log("cabinetById : ", cabinet);
 
         if (!cabinet) {
@@ -207,12 +203,13 @@ const ChargingEV = () => {
     };
 
     loadCabinet();
-  }, [cabinetIdNum]);
+  }, [cabinet_id]);
 
   // ===========================================================
-  // ⭐ ฟังก์ชันโหลด Session
+  // ⭐ ฟังก์ชันโหลด Session (ดึง StartEnergy, StartTime, EndTime, EVChargingPayments)
   // ===========================================================
   const checkSession = useCallback(async () => {
+    // ✅ ถ้าอยู่ในโหมด freeze (Interruption) → ห้ามเช็ค session และห้าม navigate
     if (freezeInterruptionRef.current) {
       console.log("🧊 checkSession skipped เพราะอยู่ในสถานะ Interruption (freeze)");
       setIsVerifying(false);
@@ -235,8 +232,7 @@ const ChargingEV = () => {
     if (sessions.length > 2 && chargerId) {
       targetSession = sessions.find(
         (s: any) =>
-          s?.Payment?.EVCabinet?.ChargePoint &&
-          s.Payment.EVCabinet.ChargePoint === chargerId
+          s?.Payment?.EVCabinet?.ChargePoint && s.Payment.EVCabinet.ChargePoint === chargerId
       );
     }
 
@@ -318,10 +314,7 @@ const ChargingEV = () => {
         };
       })
       .filter(
-        (x: any) =>
-          Number.isFinite(x.evcharging_id) &&
-          x.evcharging_id > 0 &&
-          x.purchased_kwh > 0
+        (x: any) => Number.isFinite(x.evcharging_id) && x.evcharging_id > 0 && x.purchased_kwh > 0
       );
 
     const mergedMap = new Map<number, EvChargingAlloc>();
@@ -353,6 +346,8 @@ const ChargingEV = () => {
 
     const active = Boolean(targetSession?.Status);
 
+    // ✅ ปกติ: ถ้า active=false ให้เด้งออก
+    // ❗ แต่ถ้าเกิด Interruption เราจะไม่มาถึงตรงนี้เพราะถูก freeze ไว้แล้ว (checkSession ถูก skip)
     if (active) setSessionValid(true);
     else navigate("/user");
 
@@ -361,7 +356,7 @@ const ChargingEV = () => {
 
   useEffect(() => {
     if (!userID) return;
-    if (freezeInterruptionRef.current) return;
+    if (freezeInterruptionRef.current) return; // ✅ freeze แล้วห้ามตรวจ
     checkSession();
   }, [userID, checkSession]);
 
@@ -395,6 +390,7 @@ const ChargingEV = () => {
     }
 
     const enterFreezeInterruption = (reason: string) => {
+      // ✅ เข้าสถานะ Interruption แล้ว “ค้างหน้าเดิม”
       console.warn("⚠️ [OCPP] Interruption:", reason);
 
       freezeInterruptionRef.current = true;
@@ -403,7 +399,7 @@ const ChargingEV = () => {
       setOcppStatus("Interruption");
       setCharging(false);
 
-      // ✅ set end time ครั้งเดียว
+      // ✅ set end time ครั้งเดียว (กัน effect rerun)
       if (!sessionEndTimeRef.current) {
         const end = new Date();
         sessionEndTimeRef.current = end;
@@ -411,13 +407,15 @@ const ChargingEV = () => {
       }
 
       setIsVerifying(false);
+      // ❌ ห้าม checkSession / ห้าม navigate ในจุดนี้
     };
 
     const ws = connectOcppSocket(
       (data: any) => {
         try {
-          // ✅ รองรับ "DATA JSON" จาก backend
+          // ✅ รองรับ "DATA JSON" จาก backend (ไม่ใช่ OCPP frame)
           if (data && typeof data === "object" && !Array.isArray(data)) {
+            // 1) start_energy_updated
             if (data.type === "start_energy_updated") {
               if (freezeInterruptionRef.current) return;
 
@@ -431,6 +429,7 @@ const ChargingEV = () => {
               return;
             }
 
+            // 2) charger_status_update
             if (data.type === "charger_status_update") {
               const st = String((data as any).status || "");
               if (st) setOcppStatus(st);
@@ -456,6 +455,7 @@ const ChargingEV = () => {
               const newStatus = payload.status as string;
               setOcppStatus(newStatus);
 
+              // ✅ ถ้าเป็น SuspendedEV อาจอยาก reload session (แต่ต้องไม่ใช่ตอน freeze)
               if (newStatus === "SuspendedEV") {
                 if (!freezeInterruptionRef.current) {
                   setTimeout(() => checkSession(), 1000);
@@ -476,8 +476,7 @@ const ChargingEV = () => {
 
             const energySample = sampled.find(
               (s: any) =>
-                s?.measurand === "Energy.Active.Import.Register" &&
-                (s?.unit === "Wh" || !s?.unit)
+                s?.measurand === "Energy.Active.Import.Register" && (s?.unit === "Wh" || !s?.unit)
             );
 
             if (!energySample || energySample.value == null) return;
@@ -494,6 +493,7 @@ const ChargingEV = () => {
       chargerId
     );
 
+    // ✅ ดักกรณี WS หลุด/พัง → เข้า Interruption และ freeze ทันที
     const onClose = () => enterFreezeInterruption("websocket closed");
     const onError = () => enterFreezeInterruption("websocket error");
 
@@ -537,6 +537,7 @@ const ChargingEV = () => {
   useEffect(() => {
     if (!sessionValid || !sessionStartTime) return;
 
+    // ✅ ถ้า freeze แล้วให้ค้างเวลา (ไม่ต้อง setInterval)
     if (freezeInterruptionRef.current) {
       if (sessionEndTime) {
         const sec = Math.max(
@@ -741,24 +742,26 @@ const ChargingEV = () => {
   };
 
   const goToSummary = () => {
-    if (paymentIdNum === null) return;
+    if (!paymentID) return;
 
     setTimeout(() => {
       navigate("/user", {
         replace: true,
-        state: { fromCharging: true, paymentID: paymentIdNum },
+        state: { fromCharging: true, paymentID: Number(paymentID) },
       });
     }, 750);
   };
 
   // ===========================================================
-  // ✅ คำนวณ remaining_power จริงตามสัดส่วนที่ "ซื้อ" (ใช้ตอน Cancel เท่านั้น)
+  // ✅ คำนวณ remaining_power จริงตามสัดส่วนที่ "ซื้อ"
+  // ✅ อนุญาตให้เลือกไฟ type เดียวได้ (allocs >= 1)
   // ===========================================================
   const buildCancelSolarGridPayload = (): CancelSolarGridPayload | null => {
     const allocs = (evChargingAllocs || []).filter(
       (a) => a.evcharging_id > 0 && Number.isFinite(a.purchased_kwh) && a.purchased_kwh > 0
     );
 
+    // ✅ จากเดิม <2 → แก้เป็น <1 เพื่อรองรับเลือก type เดียว
     if (allocs.length < 1) {
       console.log("❌ buildPayload: allocs < 1", allocs);
       return null;
@@ -785,6 +788,7 @@ const ChargingEV = () => {
       let remaining = remainingTotal * ratio;
       remaining = Math.max(0, parseFloat(remaining.toFixed(2)));
 
+      // ✅ ให้ตัวสุดท้ายรับเศษที่เหลือทั้งหมด กันปัญหาปัดเศษ
       if (idx === allocs.length - 1) {
         const last = Math.max(0, parseFloat((remainingTotal - running).toFixed(2)));
         remaining = last;
@@ -814,11 +818,13 @@ const ChargingEV = () => {
 
   // ===========================================================
   // ⭐ Cancel (ใช้ CancelSessionSolarGrid)
+  // ✅ แก้ให้: กดแล้วปิด modal + ไป /user ได้แน่นอน (เมื่อ success)
   // ===========================================================
   const confirmCancel = async () => {
+    // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ทำอะไร
     if (freezeInterruptionRef.current) return;
 
-    if (paymentIdNum === null) {
+    if (!paymentID) {
       message.error("Payment ID not found");
       return;
     }
@@ -830,13 +836,14 @@ const ChargingEV = () => {
 
     const payload = buildCancelSolarGridPayload();
     if (!payload) {
-      message.error("ไม่พบข้อมูล Solar+Grid เพียงพอ (evcharging_id / purchased_kwh)");
+      message.error("ไม่พบข้อมูลเพียงพอสำหรับการยกเลิก (evcharging_id / purchased_kwh)");
       return;
     }
 
     try {
       await remoteStopCharging({ chargerId });
-      await CancelSessionSolarGrid(paymentIdNum, payload);
+
+      await CancelSessionSolarGrid(Number(paymentID), payload);
 
       message.success("Canceled successfully");
 
@@ -845,12 +852,20 @@ const ChargingEV = () => {
       setEnergy(0);
       setTime(0);
       setSessionStartTime(null);
-      setCancelModalOpen(false);
 
       clearLocalStorageState();
-      setTimeout(goToSummary, 1000);
+
+      // ✅ ปิด modal ก่อน แล้วค่อยไป /user
+      setCancelModalOpen(false);
+      setTimeout(goToSummary, 800);
     } catch (err: any) {
       console.error("❌ Cancel error:", err?.response?.data || err);
+      const msg =
+        err?.response?.data?.error || err?.response?.data?.message || "Unable to cancel charging";
+      message.error(msg);
+
+      // ถ้าต้องการ “กดแล้วปิด modal เสมอแม้ error” ให้เปิดบรรทัดนี้
+      // setCancelModalOpen(false);
     }
   };
 
@@ -858,6 +873,7 @@ const ChargingEV = () => {
   // ⭐ Start
   // ===========================================================
   const handleStart = async () => {
+    // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ start
     if (freezeInterruptionRef.current) return;
 
     if (hasStarted || isComplete || statusLabel !== "Preparing") return;
@@ -890,12 +906,13 @@ const ChargingEV = () => {
   };
 
   // ===========================================================
-  // ⭐ Finish (ไม่เรียก CancelSessionSolarGrid)
+  // ⭐ Finish (❌ ไม่เรียก CancelSessionSolarGrid)
   // ===========================================================
   const handleComplete = async () => {
+    // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ finish
     if (freezeInterruptionRef.current) return;
 
-    if (paymentIdNum === null) {
+    if (!paymentID) {
       message.error("No Payment ID");
       return;
     }
@@ -917,11 +934,13 @@ const ChargingEV = () => {
     }
 
     try {
+      // ✅ จบชาร์จ: สั่งหยุดตู้พอ (ไม่ต้องคำนวณ remaining)
+      // ✅ ถ้า error "ห้ามขึ้น error และห้ามหยุด flow"
       await remoteStopCharging({ chargerId }).catch((err: any) => {
         console.warn("⚠️ remoteStopCharging failed (ignored):", err?.response?.data || err);
       });
 
-      const ok = await UpdateSessionStatusByPaymentID(paymentIdNum);
+      const ok = await UpdateSessionStatusByPaymentID(paymentID);
 
       if (!ok) {
         message.error("Status update failed");
@@ -945,9 +964,7 @@ const ChargingEV = () => {
     } catch (err: any) {
       console.error("❌ Finish error:", err?.response?.data || err);
       const msg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        "Unable to complete charging";
+        err?.response?.data?.error || err?.response?.data?.message || "Unable to complete charging";
       message.error(msg);
     }
   };
@@ -956,14 +973,14 @@ const ChargingEV = () => {
   if (isVerifying) return <Loader />;
 
   // ✅ ถ้า sessionValid=false ปกติจะ return null
-  // ❗ แต่ถ้า Interruption (freeze) ให้ “ค้างหน้าเดิม” ไว้
+  // ❗ แต่ถ้า Interruption (freeze) ให้ “ค้างหน้าเดิม” ไว้ (ห้ามเด้ง/ห้ามหาย)
   if (!sessionValid && !freezeInterruption) return null;
 
   // ===========================================================
   // ✅ เงื่อนไขปุ่ม
   // ===========================================================
   const startDisabled =
-    freezeInterruption || charging || isComplete || statusLabel !== "Preparing" || !chargerId;
+    freezeInterruption || hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
 
   const canCancelBase =
     !freezeInterruption &&
@@ -979,10 +996,12 @@ const ChargingEV = () => {
   const cancelDisabled = !canCancel;
   const completeDisabled = !canComplete;
 
+  // ✅ ตอนใกล้เต็มมาก ๆ ให้ขอบมนบนด้วย
   const fillRoundedClass = energyClamped >= 99.5 ? "rounded-xl" : "rounded-b-xl";
 
   return (
     <>
+      {/* ⭐ Modal รีวิว */}
       <ModalCreate
         open={showReviewModal}
         onClose={() => setShowReviewModal(false)}
@@ -992,7 +1011,7 @@ const ChargingEV = () => {
             replace: true,
             state: {
               fromCharging: true,
-              paymentID: paymentIdNum ?? undefined,
+              paymentID: Number(paymentID),
             },
           })
         }
@@ -1111,7 +1130,13 @@ const ChargingEV = () => {
               aria-label="ย้อนกลับ"
               className="h-9 w-9 flex items-center justify-center rounded-xl active:bg-white/15"
             >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" stroke="currentColor" fill="none" strokeWidth="2">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="2"
+              >
                 <path d="M15 18l-6-6 6-6" />
               </svg>
             </button>
@@ -1148,7 +1173,9 @@ const ChargingEV = () => {
                 }`}
                 style={
                   isChargingAnim
-                    ? ({ ["--titleGlow" as any]: batteryGradient } as React.CSSProperties)
+                    ? ({
+                        ["--titleGlow" as any]: batteryGradient,
+                      } as React.CSSProperties)
                     : undefined
                 }
               >
@@ -1172,6 +1199,7 @@ const ChargingEV = () => {
               <div className="flex flex-col items-center">
                 <div className="mx-auto mb-1 h-2 w-12 rounded-sm bg-gray-300" />
 
+                {/* ✅ BATTERY */}
                 <div className="relative h-[320px] w-[150px] rounded-2xl border-2 border-gray-300 p-2 bg-white overflow-hidden">
                   <div className="absolute inset-2 rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
                     <div
@@ -1186,7 +1214,9 @@ const ChargingEV = () => {
                       <div
                         className="absolute inset-0 pointer-events-none"
                         style={
-                          { ["--bubbleGradient" as any]: batteryGradient } as React.CSSProperties
+                          {
+                            ["--bubbleGradient" as any]: batteryGradient,
+                          } as React.CSSProperties
                         }
                       >
                         <span className="bubble bubble-1" />
@@ -1232,7 +1262,9 @@ const ChargingEV = () => {
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
                   <div className="text-[11px] text-gray-500">status</div>
                   <div className="mt-1">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusClass}`}
+                    >
                       {statusLabel}
                     </span>
                   </div>
@@ -1246,7 +1278,11 @@ const ChargingEV = () => {
                   onClick={handleStart}
                   disabled={startDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold text-white
-                    ${startDisabled ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`}
+                    ${
+                      startDisabled
+                        ? "bg-blue-300 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
                 >
                   Start
                 </button>
@@ -1257,7 +1293,11 @@ const ChargingEV = () => {
                   }}
                   disabled={cancelDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${cancelDisabled ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-red-500 text-white hover:bg-red-600"}`}
+                    ${
+                      cancelDisabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : "bg-red-500 text-white hover:bg-red-600"
+                    }`}
                 >
                   Cancel
                 </button>
@@ -1266,7 +1306,11 @@ const ChargingEV = () => {
                   disabled={completeDisabled}
                   onClick={handleComplete}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${completeDisabled ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"}`}
+                    ${
+                      completeDisabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : "bg-green-600 text-white hover:bg-green-700"
+                    }`}
                 >
                   Finish
                 </button>
@@ -1276,7 +1320,11 @@ const ChargingEV = () => {
         </main>
       </div>
 
+      {/* ✅ Bubble CSS + Title Animation CSS */}
       <style>{`
+        /* =========================
+          Charging Title Animation
+        ========================== */
         .charging-title {
           position: relative;
           transform-origin: left center;
@@ -1319,16 +1367,22 @@ const ChargingEV = () => {
           100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
         }
 
+        /* =========================
+          Bubble Animation
+        ========================== */
         .bubble {
           position: absolute;
           bottom: -14px;
           border-radius: 9999px;
           background: var(--bubbleGradient);
+
           opacity: 0;
           filter: blur(0.15px);
           box-shadow: 0 6px 16px rgba(0,0,0,0.10);
           border: 1px solid rgba(255,255,255,0.28);
+
           mix-blend-mode: screen;
+
           animation-name: bubbleUp;
           animation-timing-function: ease-in;
           animation-iteration-count: infinite;
