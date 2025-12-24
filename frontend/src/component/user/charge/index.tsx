@@ -840,9 +840,6 @@ const ChargingEV = () => {
       setTimeout(goToSummary, 1000);
     } catch (err: any) {
       console.error("❌ Cancel error:", err?.response?.data || err);
-      const msg =
-        err?.response?.data?.error || err?.response?.data?.message || "Unable to cancel charging";
-      message.error(msg);
     }
   };
 
@@ -957,7 +954,7 @@ const ChargingEV = () => {
   // ✅ เงื่อนไขปุ่ม
   // ===========================================================
   const startDisabled =
-    freezeInterruption || hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
+    freezeInterruption || isComplete || statusLabel !== "Preparing" || !chargerId;
 
   const canCancelBase =
     !freezeInterruption &&
