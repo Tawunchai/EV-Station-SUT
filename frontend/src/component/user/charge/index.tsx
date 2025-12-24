@@ -954,7 +954,7 @@ const ChargingEV = () => {
   // ✅ เงื่อนไขปุ่ม
   // ===========================================================
   const startDisabled =
-    freezeInterruption || isComplete || statusLabel !== "Preparing" || !chargerId;
+    freezeInterruption || charging || isComplete || statusLabel !== "Preparing" || !chargerId;
 
   const canCancelBase =
     !freezeInterruption &&
