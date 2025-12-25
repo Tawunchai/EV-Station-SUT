@@ -251,6 +251,20 @@ func scheduleDisconnectHold(chargerID string) {
 		"errorCode": "Interruption",
 		"timestamp": nowOcppTime(),
 	}
+
+	// ✅ ส่งเพิ่ม: charger_status_update (ให้ UI ที่ฟังตัวนี้ขึ้น Interruption ทันที)
+	statusMsg := map[string]interface{}{
+		"type":      "charger_status_update",
+		"chargerId": chargerID,
+		"status":    "Interruption",
+		"errorCode": "Interruption",
+		"connected": false,
+		"timestamp": nowOcppTime(),
+	}
+	if b2, err := json.Marshal(statusMsg); err == nil {
+		broadcastToFrontendRoom(chargerID, b2)
+	}
+
 	if b, err := json.Marshal(dataMsg); err == nil {
 		broadcastToFrontendRoom(chargerID, b)
 	}

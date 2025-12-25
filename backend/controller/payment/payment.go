@@ -58,7 +58,7 @@ func UpdateBank(c *gin.Context) {
 		PromptPay string `json:"promptpay"`
 		Manager   string `json:"manager"`
 		Banking   string `json:"banking"`
-		Minimum   uint   `json:"minimum"`  // <-- เพิ่ม Minimum
+		Minimum   uint   `json:"minimum"` // <-- เพิ่ม Minimum
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -68,7 +68,7 @@ func UpdateBank(c *gin.Context) {
 	bank.PromptPay = input.PromptPay
 	bank.Manager = input.Manager
 	bank.Banking = input.Banking
-	bank.Minimum = input.Minimum    // <-- กำหนด Minimum
+	bank.Minimum = input.Minimum // <-- กำหนด Minimum
 
 	if err := db.Save(&bank).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "อัปเดตข้อมูลไม่สำเร็จ"})
@@ -93,8 +93,8 @@ func ListPayment(c *gin.Context) {
 
 // ใช้ struct นี้เป็น response ออกไปให้ frontend
 type PaymentWithEVCharging struct {
-	Payment            entity.Payment              `json:"payment"`
-	EVChargingPayments []entity.EVChargingPayment  `json:"ev_charging_payments"`
+	Payment            entity.Payment             `json:"payment"`
+	EVChargingPayments []entity.EVChargingPayment `json:"ev_charging_payments"`
 }
 
 // GET /payments/user/:user_id
@@ -356,11 +356,11 @@ func CreateEVChargingPayment(c *gin.Context) {
 
 	// ✅ สร้างข้อมูลใหม่ตาม struct entity.EVChargingPayment
 	evPayment := entity.EVChargingPayment{
-		EVchargingID: input.EVchargingID,
-		PaymentID:    input.PaymentID,
-		Price:        input.Price,
-		Percent:      input.Percent, // ✅ ใช้ Percent แทน Quantity
-		Power:        input.Power,   // ✅ เพิ่ม Power
+		EVchargingID:   input.EVchargingID,
+		PaymentID:      input.PaymentID,
+		Price:          input.Price,
+		Percent:        input.Percent, // ✅ ใช้ Percent แทน Quantity
+		Power:          input.Power,   // ✅ เพิ่ม Power
 		RemainingPower: 0,
 	}
 
@@ -420,100 +420,100 @@ func ListPaymentCoinsByUserID(c *gin.Context) {
 }
 
 func CreatePaymentCoin(c *gin.Context) {
-    var filePath string
+	var filePath string
 
-    // 1. จัดการรูปภาพ
-    file, err := c.FormFile("Picture")
-    if err == nil && file != nil {
-        // ตรวจสอบ type ไฟล์
-        validTypes := []string{"image/jpeg", "image/png", "image/gif"}
-        isValid := false
-        for _, t := range validTypes {
-            if file.Header.Get("Content-Type") == t {
-                isValid = true
-                break
-            }
-        }
-        if !isValid {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "รูปภาพต้องเป็นไฟล์ .jpg, .png, .gif เท่านั้น"})
-            return
-        }
+	// 1. จัดการรูปภาพ
+	file, err := c.FormFile("Picture")
+	if err == nil && file != nil {
+		// ตรวจสอบ type ไฟล์
+		validTypes := []string{"image/jpeg", "image/png", "image/gif"}
+		isValid := false
+		for _, t := range validTypes {
+			if file.Header.Get("Content-Type") == t {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รูปภาพต้องเป็นไฟล์ .jpg, .png, .gif เท่านั้น"})
+			return
+		}
 
-        uploadDir := "uploads/paymentcoin"
-        if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างโฟลเดอร์เก็บไฟล์ได้"})
-            return
-        }
+		uploadDir := "uploads/paymentcoin"
+		if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างโฟลเดอร์เก็บไฟล์ได้"})
+			return
+		}
 
-        ext := filepath.Ext(file.Filename)
-        newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-        filePath = filepath.Join(uploadDir, newFileName)
+		ext := filepath.Ext(file.Filename)
+		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+		filePath = filepath.Join(uploadDir, newFileName)
 
-        if err := c.SaveUploadedFile(file, filePath); err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-            return
-        }
-    } else {
-        filePath = ""
-    }
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		filePath = ""
+	}
 
-    // 2. รับข้อมูลอื่นจาก form
-    dateStr := c.PostForm("Date")                    // ตัว D ใหญ่ตรงกับ key ที่ส่งมาจาก frontend
-    amountStr := c.PostForm("Amount")
-    referenceNumber := c.PostForm("ReferenceNumber")
-    userIDStr := c.PostForm("UserID")
+	// 2. รับข้อมูลอื่นจาก form
+	dateStr := c.PostForm("Date") // ตัว D ใหญ่ตรงกับ key ที่ส่งมาจาก frontend
+	amountStr := c.PostForm("Amount")
+	referenceNumber := c.PostForm("ReferenceNumber")
+	userIDStr := c.PostForm("UserID")
 
-    // 3. แปลงค่าที่จำเป็น
-    // กรณี Date ใน react เป็น ISO string ใช้ time.Parse(time.RFC3339, ...)
-    var date time.Time
-    if dateStr != "" {
-        date, err = time.Parse(time.RFC3339, dateStr)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น ISO 8601)"})
-            return
-        }
-    } else {
-        date = time.Now()
-    }
+	// 3. แปลงค่าที่จำเป็น
+	// กรณี Date ใน react เป็น ISO string ใช้ time.Parse(time.RFC3339, ...)
+	var date time.Time
+	if dateStr != "" {
+		date, err = time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น ISO 8601)"})
+			return
+		}
+	} else {
+		date = time.Now()
+	}
 
-    amount, err := strconv.ParseFloat(amountStr, 64)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนเงินไม่ถูกต้อง"})
-        return
-    }
+	amount, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "จำนวนเงินไม่ถูกต้อง"})
+		return
+	}
 
-    userID64, err := strconv.ParseUint(userIDStr, 10, 32)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "UserID ไม่ถูกต้อง"})
-        return
-    }
-    userID := uint(userID64)
+	userID64, err := strconv.ParseUint(userIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "UserID ไม่ถูกต้อง"})
+		return
+	}
+	userID := uint(userID64)
 
-    // 4. ตรวจสอบ user
-    db := config.DB()
-    var user entity.User
-    if err := db.First(&user, userID).Error; err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "User not found"})
-        return
-    }
+	// 4. ตรวจสอบ user
+	db := config.DB()
+	var user entity.User
+	if err := db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "User not found"})
+		return
+	}
 
-    // 5. สร้างข้อมูล PaymentCoin
-    paymentCoin := entity.PaymentCoin{
-        Date:            date,
-        Amount:          amount,
-        ReferenceNumber: referenceNumber,
-        Picture:         filePath, // string (อาจเป็น path ว่าง)
-        UserID:          userID,
-    }
+	// 5. สร้างข้อมูล PaymentCoin
+	paymentCoin := entity.PaymentCoin{
+		Date:            date,
+		Amount:          amount,
+		ReferenceNumber: referenceNumber,
+		Picture:         filePath, // string (อาจเป็น path ว่าง)
+		UserID:          userID,
+	}
 
-    if err := db.Create(&paymentCoin).Error; err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
+	if err := db.Create(&paymentCoin).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-    db.Preload("User").First(&paymentCoin, paymentCoin.ID)
+	db.Preload("User").First(&paymentCoin, paymentCoin.ID)
 
-    c.JSON(http.StatusCreated, paymentCoin)
+	c.JSON(http.StatusCreated, paymentCoin)
 }
 
 // DELETE /payment-coins
@@ -693,10 +693,10 @@ func UpdateSessionAfterCancelSolarGrid(c *gin.Context) {
 		return
 	}
 
-	// ✅ ต้องการ Solar+Grid => 2 รายการเท่านั้น
-	if len(payload.Items) != 2 {
+	// ✅ อนุญาต items ได้ 1 หรือ 2 รายการ (Solar / Grid)
+	if len(payload.Items) < 1 || len(payload.Items) > 2 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "ต้องส่ง items จำนวน 2 รายการเท่านั้น (Solar และ Grid)",
+			"error": "ต้องส่ง items 1-2 รายการ (Solar หรือ Grid หรือทั้งคู่)",
 		})
 		return
 	}
@@ -954,15 +954,15 @@ func UpdateSessionAfterCancelSolarGrid(c *gin.Context) {
 
 	// 11) response
 	c.JSON(http.StatusOK, gin.H{
-		"message":              "Cancel สำเร็จ: ปิด Session + อัปเดต RemainingPower (Solar+Grid) + คืนเงินเข้า Coin แล้ว",
-		"payment_id":           paymentID,
-		"user_id":              user.ID,
-		"refund_amount":         refund,
-		"coin_before":          round2(coinBefore),
-		"coin_after":           coinAfter,
-		"updated_sessions":     len(sessions),
-		"updated_ev_payments":  updatedEvPays,
-		"end_time":             now,
-		"items":                payload.Items,
+		"message":             "Cancel สำเร็จ: ปิด Session + อัปเดต RemainingPower (Solar+Grid) + คืนเงินเข้า Coin แล้ว",
+		"payment_id":          paymentID,
+		"user_id":             user.ID,
+		"refund_amount":       refund,
+		"coin_before":         round2(coinBefore),
+		"coin_after":          coinAfter,
+		"updated_sessions":    len(sessions),
+		"updated_ev_payments": updatedEvPays,
+		"end_time":            now,
+		"items":               payload.Items,
 	})
 }
