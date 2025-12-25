@@ -46,13 +46,12 @@ const ChargingEV = () => {
   // @ts-ignore
   const { paymentID, cabinet_id } = location.state || {};
 
-  console.log("🟦 PAYMENT ID:", paymentID);
-  console.log("🟩 CABINET ID:", cabinet_id);
-
   const [charging, setCharging] = useState(false);
   const [energy, setEnergy] = useState(0); // % จาก MeterValues จริง
   const [time, setTime] = useState(0);
   const [showReviewModal, setShowReviewModal] = useState(false);
+
+  const [persistEnabled, setPersistEnabled] = useState(true);
 
   const [userID, setUserID] = useState<number | null>(null);
   const [isVerifying, setIsVerifying] = useState(true);
@@ -426,6 +425,32 @@ const ChargingEV = () => {
               return;
             }
 
+            // ✅ NEW: รองรับ event ตอนตู้หลุด (HOLD) จาก backend
+            if (data.type === "charger_connection_hold") {
+              const st = String((data as any).status || "Interruption");
+              const connected = Boolean((data as any).connected);
+
+              if (st) setOcppStatus(st);
+
+              // ตอน HOLD = connected:false และ status:Interruption
+              if (!connected || st === "Interruption") {
+                enterFreezeInterruption("charger_connection_hold");
+              }
+              return;
+            }
+
+            // ✅ (แถม) รองรับ connection_update ที่ connected=false (ถ้าคุณใช้ในอนาคต)
+            if (data.type === "charger_connection_update") {
+              const st = String((data as any).status || "");
+              const connected = Boolean((data as any).connected);
+
+              if (st) setOcppStatus(st);
+              if (!connected) {
+                enterFreezeInterruption("charger_connection_update");
+              }
+              return;
+            }
+
             return;
           }
 
@@ -648,6 +673,7 @@ const ChargingEV = () => {
   useEffect(() => {
     if (!storageKey) return;
     if (typeof window === "undefined") return;
+    if (!persistEnabled) return; // ✅ เพิ่มบรรทัดนี้
 
     try {
       const payload = {
@@ -829,14 +855,18 @@ const ChargingEV = () => {
 
       message.success("Canceled successfully");
 
+      setPersistEnabled(false);
+
       setCharging(false);
       setIsComplete(false);
       setEnergy(0);
       setTime(0);
+      setChargedKwhVal(0);          // ✅ เพิ่มบรรทัดนี้
       setSessionStartTime(null);
       setCancelModalOpen(false);
 
       clearLocalStorageState();
+
       setTimeout(goToSummary, 1000);
     } catch (err: any) {
       console.error("❌ Cancel error:", err?.response?.data || err);
@@ -928,6 +958,7 @@ const ChargingEV = () => {
       setSessionStartTime(null);
       setSessionEndTime(null);
 
+      setPersistEnabled(false);
       clearLocalStorageState();
 
       const reviews = await GetReviewByUserID(userID);
@@ -1145,14 +1176,13 @@ const ChargingEV = () => {
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-md w-full">
             <div className="mb-4 flex items-center justify-between">
               <h2
-                className={`flex items-center gap-2 text-base font-semibold text-blue-900 ${
-                  isChargingAnim ? "charging-title" : ""
-                }`}
+                className={`flex items-center gap-2 text-base font-semibold text-blue-900 ${isChargingAnim ? "charging-title" : ""
+                  }`}
                 style={
                   isChargingAnim
                     ? ({
-                        ["--titleGlow" as any]: batteryGradient,
-                      } as React.CSSProperties)
+                      ["--titleGlow" as any]: batteryGradient,
+                    } as React.CSSProperties)
                     : undefined
                 }
               >
@@ -1160,13 +1190,12 @@ const ChargingEV = () => {
               </h2>
 
               <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  charging
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${charging
                     ? "bg-green-50 text-green-700 ring-1 ring-green-200"
                     : isComplete
-                    ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                    : "bg-gray-50 text-gray-600 ring-1 ring-gray-200"
-                }`}
+                      ? "bg-green-50 text-green-700 ring-1 ring-green-200"
+                      : "bg-gray-50 text-gray-600 ring-1 ring-gray-200"
+                  }`}
               >
                 {charging ? "CHARGING" : isComplete ? "COMPLETE" : "IDLE"}
               </span>
@@ -1255,10 +1284,9 @@ const ChargingEV = () => {
                   onClick={handleStart}
                   disabled={startDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold text-white
-                    ${
-                      startDisabled
-                        ? "bg-blue-300 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700"
+                    ${startDisabled
+                      ? "bg-blue-300 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700"
                     }`}
                 >
                   Start
@@ -1270,10 +1298,9 @@ const ChargingEV = () => {
                   }}
                   disabled={cancelDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${
-                      cancelDisabled
-                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                        : "bg-red-500 text-white hover:bg-red-600"
+                    ${cancelDisabled
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-red-500 text-white hover:bg-red-600"
                     }`}
                 >
                   Cancel
@@ -1283,10 +1310,9 @@ const ChargingEV = () => {
                   disabled={completeDisabled}
                   onClick={handleComplete}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${
-                      completeDisabled
-                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                        : "bg-green-600 text-white hover:bg-green-700"
+                    ${completeDisabled
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-green-600 text-white hover:bg-green-700"
                     }`}
                 >
                   Finish

@@ -3052,8 +3052,9 @@ const validatePayload = (payload: CancelSolarGridPayload): void => {
     throw new Error("payload.items ต้องเป็น array");
   }
 
-  if (payload.items.length !== 2) {
-    throw new Error("ต้องส่ง items จำนวน 2 รายการเท่านั้น (Solar และ Grid)");
+  // ✅ แค่บังคับอย่างน้อย 1 รายการ
+  if (payload.items.length < 1) {
+    throw new Error("ต้องส่ง items อย่างน้อย 1 รายการ");
   }
 
   const seen = new Set<number>();

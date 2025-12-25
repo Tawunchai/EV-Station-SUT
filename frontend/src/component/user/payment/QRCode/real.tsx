@@ -66,6 +66,8 @@ const PayPalCard: React.FC = () => {
   console.log("📦 CABINET ID (Slip Page):", cabinet_id);
   console.log("🟩 Chargers:", chargers);
 
+  const STORAGE_KEY_PREFIX = "ev_charging_state_";
+
   const amountNumber = Number(totalAmount) || 0;
 
   const [userID, setUserID] = useState<number | null>(null);
@@ -334,13 +336,17 @@ const PayPalCard: React.FC = () => {
         ev_cabinet_id: cabinet_id ?? 1, // ✅ number | undefined
       };
 
-      console.log(paymentData);
-
       const paymentResult = await CreatePayment(paymentData);
 
-      console.log(paymentResult);
-
       if (paymentResult && paymentResult.ID) {
+
+        try {
+          const key = `${STORAGE_KEY_PREFIX}${paymentResult.ID}`;
+          localStorage.removeItem(key);
+        } catch (e) {
+          console.warn("⚠️ Clear localStorage failed:", e);
+        }
+
         // ผูก EV Charging Payment
         if (Array.isArray(chargers)) {
           for (const charger of chargers) {
@@ -563,7 +569,7 @@ const PayPalCard: React.FC = () => {
             onClick={handleUploadClick}
             className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text.white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition"
           >
-           <FaUpload className="text-white" />
+            <FaUpload className="text-white" />
             <span className="text-sm font-semibold text-white">Upload slip</span>
           </button>
 

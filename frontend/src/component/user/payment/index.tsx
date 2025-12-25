@@ -1,6 +1,6 @@
 // src/component/user/payment/index.tsx
 
-import React, { useEffect, useState, memo } from "react";
+import React, { useEffect, useState, memo, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import qrpayment from "../../../assets/PromptPay-logo.png";
 import { Divider, message } from "antd";
@@ -19,6 +19,8 @@ import {
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { UsersInterface } from "../../../interface/IUser";
 import { MethodInterface } from "../../../interface/IMethod";
+
+const STORAGE_KEY_PREFIX = "ev_charging_state_";
 
 // ================== UI helpers ==================
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -48,11 +50,10 @@ const PaymentRadio = memo(
     <label
       htmlFor={id}
       className={`flex items-center justify-between gap-3 rounded-xl border p-3 cursor-pointer transition
-    ${
-      checked
-        ? "border-blue-500 ring-1 ring-blue-500/50 bg-blue-50"
-        : "border-gray-200 hover:border-gray-300"
-    }`}
+    ${checked
+          ? "border-blue-500 ring-1 ring-blue-500/50 bg-blue-50"
+          : "border-gray-200 hover:border-gray-300"
+        }`}
     >
       <div className="flex items-center gap-3">
         <span
@@ -60,9 +61,8 @@ const PaymentRadio = memo(
         ${checked ? "border-blue-600" : "border-gray-300"}`}
         >
           <span
-            className={`h-2 w-2 rounded-full ${
-              checked ? "bg-blue-600" : "bg-transparent"
-            }`}
+            className={`h-2 w-2 rounded-full ${checked ? "bg-blue-600" : "bg-transparent"
+              }`}
           />
         </span>
         <div className="text-sm">{label}</div>
@@ -102,6 +102,9 @@ const Index: React.FC = () => {
 
   // ⭐ HardwarePoint จาก Hardware ของ Cabinet (เช่น "hardware_888")
   const [hardwarePoint, setHardwarePoint] = useState<string | null>(null);
+
+  // ✅ กันกดปุ่มซ้ำแบบชัวร์ (แม้กดรัว ๆ ก่อน state จะอัปเดต)
+  const paymentLockRef = useRef(false);
 
   const totalAmount = chargers.reduce(
     (sum: number, item: any) => sum + (item?.total || 0),
@@ -182,62 +185,92 @@ const Index: React.FC = () => {
   }, [cabinet_id]);
 
   // ฟังก์ชันส่งข้อมูลไป Hardware (ส่ง kWh + เปอร์เซ็นต์)
-  const sendToHardware = (
-    solar_kwh: number,
-    grid_kwh: number,
-    solar_percent: number,
-    grid_percent: number
-  ) => {
-    try {
-      // 💡 ต้องมี hardwarePoint ก่อนถึงจะส่งคำสั่งได้
-      if (!hardwarePoint) {
-        console.warn(
-          "⚠️ ไม่มี HardwarePoint จาก Cabinet, ยกเลิกการส่งคำสั่งไป hardware"
-        );
+  const sendToHardware = useCallback(
+    (
+      solar_kwh: number,
+      grid_kwh: number,
+      solar_percent: number,
+      grid_percent: number
+    ) => {
+      try {
+        // 💡 ต้องมี hardwarePoint ก่อนถึงจะส่งคำสั่งได้
+        if (!hardwarePoint) {
+          console.warn(
+            "⚠️ ไม่มี HardwarePoint จาก Cabinet, ยกเลิกการส่งคำสั่งไป hardware"
+          );
+          return;
+        }
+
+        // 🔗 ส่ง hardwarePoint ไปให้ connectHardwareSocket → /hardware/frontend?deviceID=hardware_001
+        const ws = connectHardwareSocket(() => { }, hardwarePoint);
+
+        ws.onopen = () => {
+          console.log(
+            "Connected to Hardware WebSocket for device:",
+            hardwarePoint
+          );
+
+          const command = {
+            solar_kwh,
+            grid_kwh,
+            solar_percent,
+            grid_percent,
+          };
+
+          // ⭐ ใช้ HardwarePoint จาก Cabinet แทน "hardware_001"
+          sendHardwareCommand(ws, hardwarePoint, command);
+
+          // ✅ ปิดหลังส่ง (กันค้าง connection)
+          setTimeout(() => {
+            try {
+              ws.close();
+            } catch (_) { }
+          }, 300);
+        };
+
+        ws.onclose = () =>
+          console.warn(
+            "Hardware WebSocket disconnected for device:",
+            hardwarePoint
+          );
+        ws.onerror = (err) =>
+          console.error(
+            "Hardware WebSocket error for device:",
+            hardwarePoint,
+            err
+          );
+      } catch (err) {
+        console.error("Failed to send to hardware:", err);
+      }
+    },
+    [hardwarePoint]
+  );
+
+  // ================== กดชำระเงิน ==================
+  const handlePayment = useCallback(async () => {
+    // ✅ กันกดซ้ำทันที
+    if (paymentLockRef.current || isProcessing) return;
+
+    if (!user) return;
+
+    // โหลดวิธีชำระเงินที่เลือก
+    const selectedMethod = paymentMethod === "qr" ? qrMethod : coinMethod;
+
+    // ---------- Validate ก่อนล็อก (เพื่อให้แก้แล้วกดใหม่ได้) ----------
+    if (chargers.length === 0) {
+      message.error("No order items");
+      return;
+    }
+
+    if (paymentMethod === "qr") {
+      if (!selectedMethod?.ID) {
+        message.error("No Method found for QR");
         return;
       }
 
-      // 🔗 ส่ง hardwarePoint ไปให้ connectHardwareSocket → /hardware/frontend?deviceID=hardware_001
-      const ws = connectHardwareSocket(() => {}, hardwarePoint);
-
-      ws.onopen = () => {
-        console.log(
-          "Connected to Hardware WebSocket for device:",
-          hardwarePoint
-        );
-
-        const command = {
-          solar_kwh,
-          grid_kwh,
-          solar_percent,
-          grid_percent,
-        };
-
-        // ⭐ ใช้ HardwarePoint จาก Cabinet แทน "hardware_001"
-        sendHardwareCommand(ws, hardwarePoint, command);
-      };
-
-      ws.onclose = () =>
-        console.warn(
-          "Hardware WebSocket disconnected for device:",
-          hardwarePoint
-        );
-      ws.onerror = (err) =>
-        console.error("Hardware WebSocket error for device:", hardwarePoint, err);
-    } catch (err) {
-      console.error("Failed to send to hardware:", err);
-    }
-  };
-
-  // ================== กดชำระเงิน ==================
-  const handlePayment = async () => {
-    if (!user) return;
-    const selectedMethod = paymentMethod === "qr" ? qrMethod : coinMethod;
-
-    // =============== QR Payment ===============
-    if (paymentMethod === "qr") {
-      if (!selectedMethod?.ID)
-        return message.error("No Method found for QR");
+      // ✅ ล็อกปุ่ม (กันกดซ้ำตอนกำลังเปลี่ยนหน้า)
+      paymentLockRef.current = true;
+      setIsProcessing(true);
 
       navigate("/user/payment-by-qrcode", {
         state: {
@@ -252,22 +285,30 @@ const Index: React.FC = () => {
     }
 
     // =============== Coin Payment ===============
-    if (!coinMethod?.ID) return message.error("No Method found for Coin");
-
-    if ((user.Coin || 0) < totalAmount) {
-      return message.error("Insufficient Coins");
+    if (!coinMethod?.ID) {
+      message.error("No Method found for Coin");
+      return;
     }
 
-    try {
-      setIsProcessing(true);
+    if ((user.Coin || 0) < totalAmount) {
+      message.error("Insufficient Coins");
+      return;
+    }
 
+    // ✅ ล็อกปุ่มทันที ก่อนเริ่มทำงานจริง (กัน double click / double request)
+    paymentLockRef.current = true;
+    setIsProcessing(true);
+
+    let success = false;
+
+    try {
       // หัก coin
       const updatedCoin = (user.Coin || 0) - totalAmount;
       const result = await UpdateCoin({ user_id: user.ID!, coin: updatedCoin });
 
       if (!result) {
-        setIsProcessing(false);
-        return message.error("Coin deduction failed");
+        message.error("Coin deduction failed");
+        return;
       }
 
       message.success("Coin payment successful");
@@ -286,8 +327,17 @@ const Index: React.FC = () => {
       const paymentResult = await CreatePayment(paymentData);
 
       if (!paymentResult || !paymentResult.ID) {
-        setIsProcessing(false);
-        return message.error("Payment creation failed");
+        message.error("Payment creation failed");
+        return;
+      }
+
+      // ✅ ล้าง state ที่ค้างของ PaymentID นี้
+      try {
+        const key = `${STORAGE_KEY_PREFIX}${paymentResult.ID}`;
+        localStorage.removeItem(key);
+        console.log("🧹 Cleared localStorage:", key);
+      } catch (e) {
+        console.warn("⚠️ Clear localStorage failed:", e);
       }
 
       // ผูก EVChargingPayment
@@ -307,20 +357,20 @@ const Index: React.FC = () => {
       // สร้าง Token
       const token = await CreateChargingToken(user.ID!, paymentResult.ID);
       if (!token) {
-        setIsProcessing(false);
+        message.error("Token creation failed");
         return;
       }
 
       // ส่งข้อมูล solar + grid + เปอร์เซ็นต์ ไป hardware
       const solarCharger = Array.isArray(chargers)
         ? chargers.find((c: any) =>
-            String(c.name || "").toLowerCase().includes("solar")
-          )
+          String(c.name || "").toLowerCase().includes("solar")
+        )
         : null;
       const gridCharger = Array.isArray(chargers)
         ? chargers.find((c: any) =>
-            String(c.name || "").toLowerCase().includes("grid")
-          )
+          String(c.name || "").toLowerCase().includes("grid")
+        )
         : null;
 
       const solarKwh = solarCharger?.power || 0;
@@ -332,6 +382,8 @@ const Index: React.FC = () => {
 
       localStorage.setItem("charging_token", token);
 
+      success = true;
+
       // ⭐⭐⭐ ไปหน้าหลังชำระเงิน (ดีเลย์ 2 วิ)
       setTimeout(() => {
         navigate("/user/after-payment", {
@@ -340,15 +392,31 @@ const Index: React.FC = () => {
             cabinet_id,
           },
         });
+        // ✅ ไม่ต้อง setIsProcessing(false) เพราะกำลังเปลี่ยนหน้าอยู่
+        // และเราตั้งใจให้กดได้ครั้งเดียวจนสำเร็จ
       }, 2000);
-
-      setIsProcessing(false);
     } catch (err) {
       console.error(err);
       message.error("An error occurred during payment");
-      setIsProcessing(false);
+    } finally {
+      // ✅ ถ้าไม่สำเร็จเท่านั้น ถึงปลดล็อกให้กดใหม่ได้
+      if (!success) {
+        paymentLockRef.current = false;
+        setIsProcessing(false);
+      }
     }
-  };
+  }, [
+    user,
+    isProcessing,
+    paymentMethod,
+    qrMethod,
+    coinMethod,
+    chargers,
+    cabinet_id,
+    navigate,
+    totalAmount,
+    sendToHardware,
+  ]);
 
   // ================== UI ==================
   return (
@@ -498,12 +566,13 @@ const Index: React.FC = () => {
 
           <button
             onClick={handlePayment}
-            disabled={isProcessing || isLoadingMethod || chargers.length === 0}
-            className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${
+            disabled={
               isProcessing || isLoadingMethod || chargers.length === 0
-                ? "bg-blue-300"
+            }
+            className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${isProcessing || isLoadingMethod || chargers.length === 0
+                ? "bg-blue-300 cursor-not-allowed"
                 : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
-            }`}
+              }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />
             <span className="text-sm font-semibold">
