@@ -41,7 +41,7 @@ func PaymentSuccess(c *gin.Context) {
 	session := entity.ChargingSession{
 		UserID:      req.UserID,
 		Token:       token,
-		ExpiresAt:   time.Now().Add(300 * time.Minute),
+		ExpiresAt:   time.Now().Add(180 * time.Minute),
 		Status:      true,
 		StartEnergy: 0,
 		PaymentID:   req.PaymentID,

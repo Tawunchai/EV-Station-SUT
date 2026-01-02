@@ -286,7 +286,7 @@ func main() {
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.0.14.228:5173") // frontend origin 10.167.17.128 10.0.14.228 192.168.1.141
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://10.144.53.128:5173") // frontend origin 10.167.17.128 10.0.14.228 192.168.1.141
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
