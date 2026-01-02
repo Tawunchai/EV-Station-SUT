@@ -5,7 +5,7 @@ import {
   FiPower,
   FiWifi,
   FiArrowDown,
-  FiRefreshCw, // ⭐ ปุ่มรีเฟรช
+  FiRefreshCw,
 } from "react-icons/fi";
 import { BsLightningChargeFill } from "react-icons/bs";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -23,14 +23,14 @@ type ConnectorStatus =
 
 type ConnectorState = {
   status: ConnectorStatus;
-  soc: number; // battery %
+  soc: number; // fallback SoC from MeterValues (0..100)
   isPluggedIn: boolean;
   isLocked: boolean;
-  powerKw: number;
-  energyKWh: number; // พลังงานที่ชาร์จไปแล้ว (kWh)
-  startedAt: number | null;
+  powerKw: number; // instant power
+  energyKWh: number; // delivered energy (computed)
+  startedAt: number | null; // from MeterValues timestamp
   transactionId: number | null;
-  meterWh: number;
+  meterWh: number; // current meter reading (Wh)
 };
 
 type CabinetType = {
@@ -61,17 +61,16 @@ const initialConnectorState: ConnectorState = {
 
 const ZERO_TIME_STR = "0001-01-01T00:00:00Z";
 
-// แปลงเป็น number แบบปลอดภัย
+// ------------------ utils ------------------
 const toNumber = (v: unknown): number | undefined => {
-  if (typeof v === "number" && !isNaN(v)) return v;
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
   if (typeof v === "string") {
     const n = parseFloat(v);
-    if (!isNaN(n)) return n;
+    if (!Number.isNaN(n)) return n;
   }
   return undefined;
 };
 
-// ฟอร์แมตเวลาเป็น HH:MM:SS
 const formatTime = (sec: number) => {
   const h = String(Math.floor(sec / 3600)).padStart(2, "0");
   const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
@@ -79,6 +78,26 @@ const formatTime = (sec: number) => {
   return `${h}:${m}:${s}`;
 };
 
+const parseDateFlexible = (v: any): Date | null => {
+  if (!v) return null;
+  if (typeof v === "string") {
+    if (v === ZERO_TIME_STR) return null;
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return d;
+    return null;
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  return null;
+};
+
+const pickFirst = <T,>(...values: T[]): T | undefined => {
+  for (const v of values) {
+    if (v !== undefined && v !== null) return v;
+  }
+  return undefined;
+};
+
+// ------------------ component ------------------
 const EVCalibet: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -90,29 +109,27 @@ const EVCalibet: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
-  // เก็บ message ล่าสุดจาก OCPP (เพื่อโชว์ทุก field)
   const [lastRawMessage, setLastRawMessage] = useState<string | null>(null);
   const [lastJsonMessage, setLastJsonMessage] = useState<any | null>(null);
 
-  /** ---------- Connector State (Port 1) ---------- */
-  const [connector, setConnector] =
-    useState<ConnectorState>(initialConnectorState);
+  /** ---------- Connector State ---------- */
+  const [connector, setConnector] = useState<ConnectorState>(initialConnectorState);
   const connectorRef = useRef<ConnectorState>(initialConnectorState);
 
-  /** ---------- Session Monitor จาก GetChargingSessionMonitor ---------- */
+  /** ---------- Session Monitor ---------- */
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null); // ⭐ ใช้คำนวณเวลาตอนรีเฟรช
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
 
-  // ⭐ Start / Final / Current Energy (Wh)
+  // energy bases
   const [startEnergyWh, setStartEnergyWh] = useState<number | null>(null);
   const [finalEnergyWh, setFinalEnergyWh] = useState<number | null>(null);
   const [currentEnergyWh, setCurrentEnergyWh] = useState<number | null>(null);
 
-  // ⭐ SoC ที่ใช้แสดงในวงกลม (%)
+  // display SoC
   const [socPercent, setSocPercent] = useState<number>(0);
 
-  // ⭐ พลังงานที่ “ซื้อทั้งหมด” จาก EVChargingPayments (หน่วย kWh)
+  // purchased energy (kWh)
   const [totalPurchasedKwh, setTotalPurchasedKwh] = useState<number>(0);
 
   /** ---------- Helpers ---------- */
@@ -120,7 +137,7 @@ const EVCalibet: React.FC = () => {
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => {
       const next = [...prev, `${time} ${msg}`];
-      if (next.length > 150) next.shift();
+      if (next.length > 200) next.shift();
       return next;
     });
   };
@@ -131,6 +148,14 @@ const EVCalibet: React.FC = () => {
       connectorRef.current = next;
       return next;
     });
+  };
+
+  const setSessionStartIfMissing = (d: Date) => {
+    setSessionStartTime((prev) => (prev ? prev : d));
+  };
+
+  const setStartEnergyIfMissing = (wh: number) => {
+    setStartEnergyWh((prev) => (prev == null ? wh : prev));
   };
 
   /** ---------- Apply StatusNotification ---------- */
@@ -157,31 +182,36 @@ const EVCalibet: React.FC = () => {
           next.status = statusStr as ConnectorStatus;
         }
 
-        // เดาว่าถ้าอยู่สถานะเหล่านี้คือเสียบปลั๊กอยู่
-        next.isPluggedIn = [
-          "Preparing",
-          "Charging",
-          "SuspendedEV",
-          "Finishing",
-        ].includes(statusStr);
+        next.isPluggedIn = ["Preparing", "Charging", "SuspendedEV", "Finishing"].includes(
+          statusStr
+        );
       }
 
-      // 🧹 ถ้าได้รับสถานะจบการชาร์จ → รีเซ็ต Energy / Power + เวลา + state session
+      // ถ้าเริ่ม Charging/Preparing แล้ว sessionStartTime ยังไม่มี → set now
+      if (
+        (statusStr === "Preparing" || statusStr === "Charging") &&
+        !sessionStartTime
+      ) {
+        const now = new Date();
+        setSessionStartIfMissing(now);
+        appendLog(`[SYSTEM] Auto set sessionStartTime = now (${now.toISOString()})`);
+      }
+
+      // reset เมื่อจบ
       if (statusStr === "Finishing" || statusStr === "Finish") {
         next.energyKWh = 0;
         next.meterWh = 0;
         next.powerKw = 0;
         next.soc = 0;
 
-        // ⭐ รีเซ็ต timer + session energy ให้หมด เหมือนจบ session
         setSessionStartTime(null);
         setSessionEndTime(null);
         setElapsedSec(0);
+
         setStartEnergyWh(null);
         setFinalEnergyWh(null);
         setCurrentEnergyWh(null);
 
-        // ⭐⭐ รีเซ็ต Energy Use (kWh) ที่แสดงในกล่อง Energy Use ด้วย
         setTotalPurchasedKwh(0);
         setSocPercent(0);
 
@@ -192,132 +222,133 @@ const EVCalibet: React.FC = () => {
     });
   };
 
-  /** ---------- Apply MeterValues (SoC / Power / Energy) ---------- */
+  /** ---------- Apply MeterValues ---------- */
   const applyMeterValues = (payload: any) => {
     if (!payload || typeof payload !== "object") return;
 
-    const meterValues = payload.meterValue;
+    // บาง backend ส่ง meterValue / meterValues
+    const meterValues = payload.meterValue ?? payload.meterValues;
     if (!Array.isArray(meterValues) || meterValues.length === 0) return;
 
     const firstMeter = meterValues[0];
-    const sampled = firstMeter?.sampledValue;
+    const sampled = firstMeter?.sampledValue ?? firstMeter?.sampledValues;
     if (!Array.isArray(sampled)) return;
+
+    // timestamp ของ meter values
+    const tsStr: string | undefined = firstMeter?.timestamp;
+    if (tsStr) {
+      const ts = Date.parse(tsStr);
+      if (!Number.isNaN(ts)) {
+        setSessionStartIfMissing(new Date(ts));
+      }
+    }
 
     updateConnector((prev) => {
       const next: ConnectorState = { ...prev };
 
-      // SoC (Percent) จาก measurand ตรง ๆ (ใช้เป็น fallback ถ้าไม่มี start/final)
-      const socSample = sampled.find(
-        (s: any) => s?.measurand === "SoC" && s?.unit === "Percent"
-      );
+      // SoC: unit อาจเป็น Percent หรือ "%" หรือไม่มี unit
+      const socSample = sampled.find((s: any) => s?.measurand === "SoC");
       if (socSample && socSample.value != null) {
         const socVal = toNumber(socSample.value);
         if (socVal !== undefined) {
           const rawSoc = Math.max(0, Math.min(100, socVal));
           next.soc = rawSoc;
-          setSocPercent(parseFloat(rawSoc.toFixed(2)));
+          // ไม่ set socPercent ทับถ้าเราคำนวณแบบซื้อทั้งหมดได้แล้ว (กันแกว่ง)
+          // แต่ถ้า socPercent ยัง 0 อยู่ ให้โชว์จาก SoC ก่อน
+          setSocPercent((p) => (p > 0 ? p : parseFloat(rawSoc.toFixed(2))));
         }
       }
 
-      // Power.Active.Import (kW)
-      const powerSample = sampled.find(
-        (s: any) => s?.measurand === "Power.Active.Import"
-      );
+      // Power.Active.Import: unit อาจเป็น W/kW หรือไม่มี unit
+      const powerSample = sampled.find((s: any) => s?.measurand === "Power.Active.Import");
       if (powerSample && powerSample.value != null) {
         const pVal = toNumber(powerSample.value);
         if (pVal !== undefined) {
-          if (powerSample.unit === "W") {
-            next.powerKw = pVal / 1000;
-          } else {
-            next.powerKw = pVal;
-          }
+          const unit = (powerSample.unit ?? "").toString();
+          if (unit === "W") next.powerKw = pVal / 1000;
+          else next.powerKw = pVal; // assume kW
         }
       }
 
-      // Energy.Active.Import.Register (Wh)
+      // Energy.Active.Import.Register: unit อาจเป็น Wh / kWh
       const energySample = sampled.find(
         (s: any) => s?.measurand === "Energy.Active.Import.Register"
       );
       if (energySample && energySample.value != null) {
-        const eValWh = toNumber(energySample.value);
-        if (eValWh !== undefined) {
-          next.meterWh = eValWh; // หน่วย Wh
-          // ไม่เซ็ต energyKWh ตรง ๆ ให้ไปคำนวณจาก StartEnergy อีกที
-          setCurrentEnergyWh(eValWh);
+        const eVal = toNumber(energySample.value);
+        if (eVal !== undefined) {
+          const unit = (energySample.unit ?? "Wh").toString();
+          const wh = unit === "kWh" ? eVal * 1000 : eVal;
+          next.meterWh = wh;
+          setCurrentEnergyWh(wh);
+
+          // ถ้า startEnergyWh ยังไม่มี ให้ set จาก meterWh ตัวแรกเลย
+          setStartEnergyIfMissing(wh);
         }
       }
 
       // transactionId
-      if (
-        typeof payload.transactionId === "number" ||
-        payload.transactionId === null
-      ) {
+      if (typeof payload.transactionId === "number" || payload.transactionId === null) {
         next.transactionId = payload.transactionId;
       }
 
-      // startedAt จาก timestamp ของ meterValue แรก (optional)
-      const tsStr: string | undefined = firstMeter?.timestamp;
+      // startedAt
       if (tsStr) {
         const ts = Date.parse(tsStr);
-        if (!isNaN(ts)) {
-          next.startedAt = ts;
-        }
+        if (!Number.isNaN(ts)) next.startedAt = ts;
       }
 
       return next;
     });
   };
 
-  /** ---------- คำนวณ SoC (%) + Energy จาก Start/Final/Current Energy ---------- */
+  /** ---------- คำนวณ SoC (%) + Energy Delivered จาก Start/Final/Current ---------- */
   useEffect(() => {
-    if (startEnergyWh == null || finalEnergyWh == null) {
-      return;
+    // ถ้าเรารู้ totalPurchasedKwh แล้ว แต่ finalEnergyWh ยังไม่รู้ และ startEnergyWh มาแล้ว → สร้าง finalWh
+    if (startEnergyWh != null && totalPurchasedKwh > 0 && finalEnergyWh == null) {
+      const fw = startEnergyWh + totalPurchasedKwh * 1000;
+      setFinalEnergyWh(fw);
+      appendLog(`[SYSTEM] Auto set finalEnergyWh = ${fw} (start + purchased)`);
     }
 
-    // ถ้ามี currentEnergyWh → ใช้อันนี้
-    // แต่ถ้า session จบแล้ว (มี EndTime) และไม่มี current → ใช้ finalEnergyWh แทน (กรณีรีเฟรช)
-    const effectiveCurrentWh =
-      currentEnergyWh != null
-        ? currentEnergyWh
-        : sessionEndTime && finalEnergyWh != null
-        ? finalEnergyWh
-        : null;
+    // ===== 1) ถ้ามี start & final & current → คำนวณแบบ “ซื้อทั้งหมด” =====
+    if (startEnergyWh != null && finalEnergyWh != null) {
+      const effectiveCurrentWh =
+        currentEnergyWh != null
+          ? currentEnergyWh
+          : sessionEndTime && finalEnergyWh != null
+          ? finalEnergyWh
+          : null;
 
-    if (effectiveCurrentWh == null) {
-      return;
+      if (effectiveCurrentWh != null) {
+        const totalDeltaWh = finalEnergyWh - startEnergyWh;
+        if (totalDeltaWh > 0) {
+          const currentDeltaWh = effectiveCurrentWh - startEnergyWh;
+
+          const rawPercent = (currentDeltaWh / totalDeltaWh) * 100;
+          const clampedPercent = Math.max(0, Math.min(100, rawPercent));
+          const percent2 = parseFloat(clampedPercent.toFixed(2));
+          setSocPercent(percent2);
+
+          // energy delivered (kWh) clamp ไม่เกินที่ซื้อ
+          let deltaWh = currentDeltaWh;
+          const maxWh = totalPurchasedKwh > 0 ? totalPurchasedKwh * 1000 : undefined;
+          if (maxWh != null && deltaWh > maxWh) deltaWh = maxWh;
+
+          const kWh = deltaWh > 0 ? deltaWh / 1000 : 0;
+          updateConnector((prev) => ({ ...prev, energyKWh: kWh, soc: percent2 }));
+          return;
+        }
+      }
     }
 
-    const totalDeltaWh = finalEnergyWh - startEnergyWh;
-    if (totalDeltaWh <= 0) {
-      return;
+    // ===== 2) fallback: ถ้ามี energyDelivered & totalPurchased → คิด % =====
+    if (totalPurchasedKwh > 0 && connectorRef.current.energyKWh > 0) {
+      const rawPercent = (connectorRef.current.energyKWh / totalPurchasedKwh) * 100;
+      const percent2 = parseFloat(Math.max(0, Math.min(100, rawPercent)).toFixed(2));
+      setSocPercent((p) => (p > 0 ? p : percent2));
     }
-
-    const currentDeltaWh = effectiveCurrentWh - startEnergyWh;
-    const rawPercent = (currentDeltaWh / totalDeltaWh) * 100;
-
-    // จำกัด 0–100%
-    const clampedPercent = Math.max(0, Math.min(100, rawPercent));
-    const percent2 = parseFloat(clampedPercent.toFixed(2));
-    setSocPercent(percent2);
-
-    // อัปเดตเข้า connector.soc ด้วย (เผื่อไปใช้ที่อื่นในอนาคต)
-    updateConnector((prev) => ({
-      ...prev,
-      soc: percent2,
-    }));
-
-    // ⭐ คำนวณ Energy delivered (kWh) จาก deltaWh
-    let deltaWh = currentDeltaWh;
-    if (totalPurchasedKwh != null && totalPurchasedKwh > 0) {
-      const maxWh = totalPurchasedKwh * 1000;
-      if (deltaWh > maxWh) deltaWh = maxWh;
-    }
-    const kWh = deltaWh > 0 ? deltaWh / 1000 : 0;
-
-    updateConnector((prev) => ({
-      ...prev,
-      energyKWh: kWh, // ใช้ตรงนี้เป็น source ของ Energy delivered
-    }));
+    // ===== 3) fallback สุดท้าย: SoC จาก MeterValues อยู่ใน connector.soc แล้ว =====
   }, [
     startEnergyWh,
     finalEnergyWh,
@@ -326,7 +357,37 @@ const EVCalibet: React.FC = () => {
     totalPurchasedKwh,
   ]);
 
-  /** ---------- Handle OCPP frame ---------- */
+  /** ---------- Handle OCPP payload (string/object/array) ---------- */
+  const handleIncoming = (data: any) => {
+    // 1) string
+    if (typeof data === "string") {
+      setLastRawMessage(data);
+      setLastJsonMessage(null);
+      appendLog(data.trim());
+      return;
+    }
+
+    // 2) object wrapper (เช่น {type, status} หรือ {frame:[...]} )
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      setLastRawMessage(JSON.stringify(data));
+      setLastJsonMessage(data);
+      appendLog(`[SYSTEM] ${JSON.stringify(data)}`);
+
+      if (data.type === "charger_status_update" && data.status) {
+        applyStatusNotification({ status: data.status });
+      }
+
+      if (Array.isArray(data.frame)) {
+        handleOcppFrame(data.frame);
+      }
+      return;
+    }
+
+    // 3) OCPP frame array
+    handleOcppFrame(data);
+  };
+
+  /** ---------- Handle OCPP frame array ---------- */
   const handleOcppFrame = (frame: any) => {
     let raw = "";
     try {
@@ -339,30 +400,28 @@ const EVCalibet: React.FC = () => {
     setLastJsonMessage(frame);
     appendLog(`[OCPP] ${raw}`);
 
-    if (!Array.isArray(frame) || frame.length < 3) return;
+    if (!Array.isArray(frame) || frame.length < 4) return;
 
-    const messageType = frame[0]; // 2 = CALL
+    // OCPP 1.6: [2, uniqueId, action, payload]  CALL
+    const messageType = frame[0];
     const action = frame[2];
     const payload = frame[3];
 
     if (messageType !== 2) return;
 
-    if (action === "StatusNotification") {
-      applyStatusNotification(payload);
-    }
-
-    if (action === "MeterValues") {
-      applyMeterValues(payload);
-    }
+    if (action === "StatusNotification") applyStatusNotification(payload);
+    if (action === "MeterValues") applyMeterValues(payload);
   };
 
-  /** ---------- Connect OCPP monitor socket ---------- */ //
+  /** ---------- Connect OCPP monitor socket ---------- */
   useEffect(() => {
-    appendLog("[SYSTEM] Connecting to OCPP monitor socket ...");
+    if (!cabinet?.ChargePoint) return;
+
+    appendLog(`[SYSTEM] Connecting to OCPP monitor room=${cabinet.ChargePoint} ...`);
 
     const ws = connectOcppSocket((data: any) => {
-      handleOcppFrame(data);
-    });
+      handleIncoming(data);
+    }, cabinet.ChargePoint);
 
     return () => {
       try {
@@ -372,17 +431,15 @@ const EVCalibet: React.FC = () => {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cabinet?.ChargePoint]);
 
-  /** ---------- ถามสถานะล่าสุดจาก getChargerStatus ตอนเข้าแรก ---------- */
+  /** ---------- getChargerStatus initial ---------- */
   useEffect(() => {
     const fetchInitialStatus = async () => {
       try {
         if (!cabinet?.ChargePoint) return;
 
-        appendLog(
-          `[SYSTEM] Fetch initial charger status for ${cabinet.ChargePoint} ...`
-        );
+        appendLog(`[SYSTEM] Fetch initial charger status for ${cabinet.ChargePoint} ...`);
 
         const res = await getChargerStatus(cabinet.ChargePoint);
         const statusStr = (res as any)?.status as string | undefined;
@@ -406,21 +463,23 @@ const EVCalibet: React.FC = () => {
             next.status = statusStr as ConnectorStatus;
           }
 
-          next.isPluggedIn = [
-            "Preparing",
-            "Charging",
-            "SuspendedEV",
-            "Finishing",
-          ].includes(statusStr);
+          next.isPluggedIn = ["Preparing", "Charging", "SuspendedEV", "Finishing"].includes(
+            statusStr
+          );
 
           return next;
         });
 
         appendLog(
-          `[SYSTEM] getChargerStatus: ${
-            typeof res === "object" ? JSON.stringify(res) : String(res)
-          }`
+          `[SYSTEM] getChargerStatus: ${typeof res === "object" ? JSON.stringify(res) : String(res)}`
         );
+
+        // ถ้าเข้ามาแล้วสถานะเป็น Charging/Preparing ให้ set sessionStartTime เลย (กัน Time = "-")
+        if ((statusStr === "Charging" || statusStr === "Preparing") && !sessionStartTime) {
+          const now = new Date();
+          setSessionStartIfMissing(now);
+          appendLog(`[SYSTEM] Auto set sessionStartTime from getChargerStatus (${now.toISOString()})`);
+        }
       } catch (err: any) {
         console.error("getChargerStatus error:", err);
         appendLog(`[ERROR] getChargerStatus: ${String(err)}`);
@@ -431,107 +490,97 @@ const EVCalibet: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cabinet?.ChargePoint]);
 
-  /** ---------- โหลด Session จาก GetChargingSessionMonitor เพื่อ Time + Energy Use ---------- */
+  /** ---------- GetChargingSessionMonitor ---------- */
   useEffect(() => {
     const fetchSession = async () => {
       try {
         if (!cabinet?.ChargePoint) return;
 
-        appendLog(
-          `[SYSTEM] Fetch session monitor for ChargePoint=${cabinet.ChargePoint} ...`
-        );
+        appendLog(`[SYSTEM] Fetch session monitor for ChargePoint=${cabinet.ChargePoint} ...`);
 
         const res: any = await GetChargingSessionMonitor(cabinet.ChargePoint);
 
-        // ให้รองรับหลายรูปแบบ response
+        // normalize sessions array
         let sessions: any[] = [];
-
-        if (Array.isArray(res)) {
-          sessions = res;
-        } else if (res && Array.isArray(res.data)) {
-          sessions = res.data;
-        } else if (res && Array.isArray(res.Data)) {
-          sessions = res.Data;
-        } else if (res && Array.isArray(res.data?.data)) {
-          sessions = res.data.data;
-        }
+        if (Array.isArray(res)) sessions = res;
+        else if (res && Array.isArray(res.data)) sessions = res.data;
+        else if (res && Array.isArray(res.Data)) sessions = res.Data;
+        else if (res && Array.isArray(res.data?.data)) sessions = res.data.data;
+        else if (res && Array.isArray(res?.data?.Data)) sessions = res.data.Data;
 
         if (!sessions || sessions.length === 0) {
           appendLog("[SYSTEM] No sessions from GetChargingSessionMonitor");
           return;
         }
 
-        // เลือก session ที่ Status = true ถ้ามี ไม่งั้นเอาตัวแรก
         const session =
-          sessions.find(
-            (s: any) => s?.Status === true || s?.Status === 1
-          ) ?? sessions[0];
+          sessions.find((s: any) => s?.Status === true || s?.Status === 1) ?? sessions[0];
 
-        // StartTime / EndTime → ไว้คำนวณ Time ตอนเข้าใหม่
-        const startTimeStr: string | undefined = session?.StartTime;
-        const endTimeStr: string | undefined = session?.EndTime;
+        // flexible keys
+        const startTimeRaw = pickFirst(session?.StartTime, session?.start_time, session?.startTime);
+        const endTimeRaw = pickFirst(session?.EndTime, session?.end_time, session?.endTime);
+        const startEnergyRaw = pickFirst(session?.StartEnergy, session?.start_energy, session?.StartEnergyWh);
 
-        if (startTimeStr && startTimeStr !== ZERO_TIME_STR) {
-          const d = new Date(startTimeStr);
-          if (!Number.isNaN(d.getTime())) {
-            setSessionStartTime(d);
+        const localStart = parseDateFlexible(startTimeRaw);
+        const localEnd = parseDateFlexible(endTimeRaw);
 
-            // ถ้ายังไม่มี EndTime → ใช้เวลาปัจจุบัน
-            if (!endTimeStr || endTimeStr === ZERO_TIME_STR) {
-              const nowMs = Date.now();
-              const diffMs = nowMs - d.getTime();
-              const sec = Math.max(0, Math.floor(diffMs / 1000));
-              setElapsedSec(sec);
+        if (localStart) {
+          setSessionStartTime(localStart);
 
-              appendLog(
-                `[SYSTEM] Restore session StartTime=${startTimeStr}, elapsed(now)=${sec}s`
-              );
-            }
-          }
-        }
-
-        if (endTimeStr && endTimeStr !== ZERO_TIME_STR) {
-          const e = new Date(endTimeStr);
-          if (!Number.isNaN(e.getTime()) && sessionStartTime) {
-            setSessionEndTime(e);
-
-            const diffMs = e.getTime() - sessionStartTime.getTime();
-            const sec = Math.max(0, Math.floor(diffMs / 1000));
+          // set elapsed ณ ตอน fetch (ถ้ายังไม่จบ)
+          if (!localEnd) {
+            const nowMs = Date.now();
+            const sec = Math.max(0, Math.floor((nowMs - localStart.getTime()) / 1000));
             setElapsedSec(sec);
-
-            appendLog(
-              `[SYSTEM] Restore session EndTime=${endTimeStr}, elapsed=${sec}s`
-            );
-          } else if (!Number.isNaN(e.getTime())) {
-            setSessionEndTime(e);
+            appendLog(`[SYSTEM] Restore StartTime=${String(startTimeRaw)}, elapsed(now)=${sec}s`);
           }
         }
 
-        // StartEnergy (Wh)
-        const startEnergy = Number(session?.StartEnergy ?? 0);
-        if (!Number.isNaN(startEnergy)) {
-          setStartEnergyWh(startEnergy);
+        if (localEnd) {
+          setSessionEndTime(localEnd);
+          if (localStart) {
+            const sec = Math.max(0, Math.floor((localEnd.getTime() - localStart.getTime()) / 1000));
+            setElapsedSec(sec);
+            appendLog(`[SYSTEM] Restore EndTime=${String(endTimeRaw)}, elapsed=${sec}s`);
+          }
         }
 
-        // Power จาก EVChargingPayments (หน่วย kWh) → ใช้รวมกันทั้ง Solar + Grid
-        const evPays = session?.Payment?.EVChargingPayments ?? [];
-        const totalPowerKwh = evPays.reduce(
-          (sum: number, p: any) => sum + (Number(p?.Power) || 0),
-          0
-        );
+        // start energy (Wh)
+        const startEnergy = Number(startEnergyRaw ?? 0);
+        if (!Number.isNaN(startEnergy) && startEnergy > 0) {
+          setStartEnergyWh(startEnergy);
+          appendLog(`[SYSTEM] StartEnergyWh=${startEnergy}`);
+        }
 
-        // ⭐ เก็บค่าพลังงานที่ “ซื้อทั้งหมด” ไว้แสดงตรง Energy Use
+        // EVChargingPayments (power kWh) flexible
+        const payment = session?.Payment ?? session?.payment;
+        const evPays =
+          payment?.EVChargingPayments ??
+          payment?.evChargingPayments ??
+          payment?.ev_charging_payments ??
+          session?.EVChargingPayments ??
+          session?.evChargingPayments ??
+          [];
+
+        const totalPowerKwh = Array.isArray(evPays)
+          ? evPays.reduce((sum: number, p: any) => sum + (Number(p?.Power ?? p?.power) || 0), 0)
+          : 0;
+
         setTotalPurchasedKwh(totalPowerKwh);
 
-        // finalEnergyWh = StartEnergy(Wh) + ∑Power(kWh)*1000
-        const finalWh = startEnergy + totalPowerKwh * 1000;
-        if (!Number.isNaN(finalWh)) {
-          setFinalEnergyWh(finalWh);
+        // final energy = start + purchased
+        if (startEnergyWh != null || startEnergy > 0) {
+          const base = startEnergyWh != null ? startEnergyWh : startEnergy;
+          const finalWh = base + totalPowerKwh * 1000;
+          if (!Number.isNaN(finalWh) && finalWh > 0) setFinalEnergyWh(finalWh);
+          appendLog(
+            `[SYSTEM] TotalPurchased=${totalPowerKwh} kWh, FinalEnergyWh=${base + totalPowerKwh * 1000}`
+          );
+        } else {
+          appendLog(
+            `[SYSTEM] TotalPurchased=${totalPowerKwh} kWh (waiting StartEnergyWh from MeterValues...)`
+          );
         }
-
-        appendLog(
-          `[SYSTEM] Session StartEnergy=${startEnergy} Wh, TotalPower=${totalPowerKwh} kWh, FinalEnergyWh=${finalWh}`
-        );
       } catch (err: any) {
         console.error("GetChargingSessionMonitor error:", err);
         appendLog(`[ERROR] GetChargingSessionMonitor: ${String(err)}`);
@@ -542,78 +591,72 @@ const EVCalibet: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cabinet?.ChargePoint]);
 
-  /** ---------- นับเวลา Time ----------
-   *  - ถ้ามี EndTime → ใช้ EndTime - StartTime ตายตัว (ไม่เดินต่อ)
-   *  - ถ้าไม่มี EndTime แต่สถานะ = SuspendedEV → แช่เวลาตอนนั้น (ไม่เดินต่อ)
-   *  - ถ้าไม่มีทั้งคู่ → นับเวลาปกติแบบ real-time
-   ----------------------------------- */
+  /** ---------- Timer ---------- */
   useEffect(() => {
-    if (!sessionStartTime) return;
+    // fallback: ถ้า sessionStartTime ไม่มี แต่ connector.startedAt มี → ใช้อันนั้น
+    const fallbackStart = connector.startedAt ? new Date(connector.startedAt) : null;
 
-    const startMs = sessionStartTime.getTime();
+    const start = sessionStartTime ?? fallbackStart;
+    if (!start) return;
 
-    // เคสมี EndTime แล้ว → ใช้เวลาตายตัว
+    const startMs = start.getTime();
+
+    // มี EndTime → คงที่
     if (sessionEndTime) {
-      const diffMs = sessionEndTime.getTime() - startMs;
-      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      const sec = Math.max(0, Math.floor((sessionEndTime.getTime() - startMs) / 1000));
       setElapsedSec(sec);
       return;
     }
 
-    // ถ้าสถานะ SuspendedEV → แช่เวลา ณ ตอนที่เข้ามา/เปลี่ยนเป็น SuspendedEV
+    // SuspendedEV → แช่เวลา (คงที่ ณ ตอนนี้)
     if (connector.status === "SuspendedEV") {
-      const nowMs = Date.now();
-      const diffMs = nowMs - startMs;
-      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      const sec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
       setElapsedSec(sec);
       return;
     }
 
-    // ปกติ: เดินเวลาตามปกติ
     const updateElapsed = () => {
-      const nowMs = Date.now();
-      const diffMs = nowMs - startMs;
-      const sec = Math.max(0, Math.floor(diffMs / 1000));
+      const sec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
       setElapsedSec(sec);
     };
 
     updateElapsed();
     const id = window.setInterval(updateElapsed, 1000);
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [sessionStartTime, sessionEndTime, connector.status]);
+    return () => window.clearInterval(id);
+  }, [sessionStartTime, sessionEndTime, connector.status, connector.startedAt]);
 
-  /** ---------- Energy Use = พลังงานทั้งหมดที่ “ซื้อ” จาก EVChargingPayments (kWh) ---------- */
+  /** ---------- UI computed ---------- */
   const energyUseKWh = useMemo(() => {
-    if (!Number.isFinite(totalPurchasedKwh)) return "0.00";
+    if (!Number.isFinite(totalPurchasedKwh) || totalPurchasedKwh <= 0) return "0.00";
     return totalPurchasedKwh.toFixed(2);
   }, [totalPurchasedKwh]);
 
-  /** ---------- Output Power (kW) = Energy delivered (kWh) / Time(h) ---------- */
-  const energyDeliveredKWh = connector.energyKWh; //@ts-ignore
-  const outputPowerKw = useMemo(() => {
-    if (!Number.isFinite(energyDeliveredKWh) || energyDeliveredKWh <= 0) {
-      return 0;
-    }
-    if (elapsedSec <= 0) return 0;
+  const energyDeliveredKWh = connector.energyKWh;
 
+  // Avg Power = delivered / time
+  const avgPowerKw = useMemo(() => {
+    if (!Number.isFinite(energyDeliveredKWh) || energyDeliveredKWh <= 0) return 0;
+    if (elapsedSec <= 0) return 0;
     const hours = elapsedSec / 3600;
     if (hours <= 0) return 0;
-
-    const kw = energyDeliveredKWh / hours;
-    return parseFloat(kw.toFixed(2));
+    return parseFloat((energyDeliveredKWh / hours).toFixed(2));
   }, [energyDeliveredKWh, elapsedSec]);
 
-  // วงกลมสองชั้น: Grid (วงนอก) / Solar (วงใน)
+  // Output power: prefer instant power (MeterValues) else avg
+  const outputPowerKw = useMemo(() => {
+    if (connector.powerKw > 0) return parseFloat(connector.powerKw.toFixed(2));
+    return avgPowerKw;
+  }, [connector.powerKw, avgPowerKw]);
+
+  // gauge
   const outerRadius = 80;
   const innerRadius = 66;
   const outerCircumference = 2 * Math.PI * outerRadius;
   const innerCircumference = 2 * Math.PI * innerRadius;
-  const outerOffset =
-    outerCircumference - (socPercent / 100) * outerCircumference || 0;
-  const innerOffset =
-    innerCircumference - (socPercent / 100) * innerCircumference || 0;
+
+  const safeSoc = Number.isFinite(socPercent) ? socPercent : 0;
+  const outerOffset = outerCircumference - (safeSoc / 100) * outerCircumference || 0;
+  const innerOffset = innerCircumference - (safeSoc / 100) * innerCircumference || 0;
 
   const evseStatusColor =
     connector.status === "Charging"
@@ -636,10 +679,8 @@ const EVCalibet: React.FC = () => {
     Unavailable: "ไม่พร้อมใช้งาน",
   };
 
-  // ใช้ flag ง่าย ๆ ว่ามี message เข้ามาแล้วหรือยัง
   const hasData = lastRawMessage !== null || lastJsonMessage !== null;
 
-  // ถ้าไม่มี cabinet (เข้าหน้านี้ตรง ๆ)
   if (!cabinet) {
     return (
       <div className="min-h-screen w-full bg-white mt-14 sm:mt-0">
@@ -666,7 +707,6 @@ const EVCalibet: React.FC = () => {
     );
   }
 
-  /** ---------- Render ---------- */
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-sky-50 via-white to-sky-100 text-slate-900 mt-14 sm:mt-0">
       {/* Header */}
@@ -690,16 +730,12 @@ const EVCalibet: React.FC = () => {
             </div>
           </div>
 
-          {/* ขวา: สถานะ + ปุ่ม Refresh */}
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs text-blue-50">
-              <FiWifi
-                className={hasData ? "text-emerald-300" : "text-blue-200"}
-              />
+              <FiWifi className={hasData ? "text-emerald-300" : "text-blue-200"} />
               {hasData ? "Receiving OCPP data" : "Waiting OCPP data"}
             </span>
 
-            {/* ⭐ Refresh Button */}
             <button
               onClick={() => window.location.reload()}
               className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-[11px] sm:text-xs font-medium text-white hover:bg-white/20 active:scale-[0.97] transition"
@@ -711,7 +747,6 @@ const EVCalibet: React.FC = () => {
         </div>
       </header>
 
-      {/* Main */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 pb-20 space-y-5">
         {/* SoC + EV Status Panel */}
         <section>
@@ -721,32 +756,12 @@ const EVCalibet: React.FC = () => {
               <p className="text-xs sm:text-sm text-slate-500 mb-1">
                 SoC Status <span className="text-[11px]">(สถานะแบตเตอรี่)</span>
               </p>
-              <div className="relative w-40 h-40 sm:w-52 sm:h-52">
-                <svg
-                  viewBox="0 0 200 200"
-                  className="w-full h-full"
-                  aria-label="State of Charge"
-                >
-                  {/* Track วงนอก (Grid) */}
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r={outerRadius}
-                    fill="none"
-                    stroke="#E2E8F0"
-                    strokeWidth="10"
-                  />
-                  {/* Track วงใน (Solar) */}
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r={innerRadius}
-                    fill="none"
-                    stroke="#E2E8F0"
-                    strokeWidth="10"
-                  />
 
-                  {/* วงนอก Grid */}
+              <div className="relative w-40 h-40 sm:w-52 sm:h-52">
+                <svg viewBox="0 0 200 200" className="w-full h-full" aria-label="State of Charge">
+                  <circle cx="100" cy="100" r={outerRadius} fill="none" stroke="#E2E8F0" strokeWidth="10" />
+                  <circle cx="100" cy="100" r={innerRadius} fill="none" stroke="#E2E8F0" strokeWidth="10" />
+
                   <circle
                     cx="100"
                     cy="100"
@@ -761,7 +776,6 @@ const EVCalibet: React.FC = () => {
                     className="transition-all duration-500"
                   />
 
-                  {/* วงใน Solar */}
                   <circle
                     cx="100"
                     cy="100"
@@ -777,13 +791,12 @@ const EVCalibet: React.FC = () => {
                   />
 
                   <defs>
-                    {/* Grid Gradient (วงนอก) */}
                     <linearGradient id="gridGrad" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#0ea5e9" />
                       <stop offset="50%" stopColor="#0284c7" />
                       <stop offset="100%" stopColor="#0369a1" />
                     </linearGradient>
-                    {/* Solar Gradient (วงใน) */}
+
                     <linearGradient id="solarGrad" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#fdba74" />
                       <stop offset="50%" stopColor="#fb923c" />
@@ -791,10 +804,8 @@ const EVCalibet: React.FC = () => {
                     </linearGradient>
                   </defs>
 
-                  {/* วงกลมพื้นหลังตรงกลาง */}
                   <circle cx="100" cy="100" r={48} fill="#F8FAFC" />
 
-                  {/* ตัวเลข % ตรงกลาง */}
                   <text
                     x="50%"
                     y="50%"
@@ -803,45 +814,36 @@ const EVCalibet: React.FC = () => {
                     className="text-3xl sm:text-4xl font-extrabold"
                     fill="#0f172a"
                   >
-                    {socPercent.toFixed(2).toString().padStart(2, "0")}%
+                    {safeSoc.toFixed(2).toString().padStart(2, "0")}%
                   </text>
                 </svg>
               </div>
 
-              {/* Energy */}
               <p className="mt-2 text-xs text-slate-500">
                 Energy delivered:{" "}
                 <span className="font-semibold text-black">
-                  {energyDeliveredKWh.toFixed(2)} kWh
+                  {Number.isFinite(energyDeliveredKWh) ? energyDeliveredKWh.toFixed(2) : "0.00"} kWh
                 </span>
               </p>
             </div>
 
             {/* Right Status */}
             <div className="flex-1 flex flex-col gap-4 justify-between">
-              {/* EVSE Status */}
               <div>
-                <p className="text-xs sm:text-sm text-slate-500 mb-1">
-                  EVSE Status
-                </p>
+                <p className="text-xs sm:text-sm text-slate-500 mb-1">EVSE Status</p>
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center">
                     <BsLightningChargeFill className="text-sky-600 text-xl" />
                   </div>
                   <div>
-                    <p
-                      className={`text-sm sm:text-base font-semibold ${evseStatusColor}`}
-                    >
+                    <p className={`text-sm sm:text-base font-semibold ${evseStatusColor}`}>
                       {connector.status}
                     </p>
-                    <p className="text-[11px] text-slate-500">
-                      {thaiStatusMap[connector.status]}
-                    </p>
+                    <p className="text-[11px] text-slate-500">{thaiStatusMap[connector.status]}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Plug + Lock */}
               <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
                 <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -853,21 +855,16 @@ const EVCalibet: React.FC = () => {
                         {connector.isPluggedIn ? "Plugged In" : "Not plugged"}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        {connector.isPluggedIn
-                          ? "เสียบปลั๊กแล้ว"
-                          : "ยังไม่เสียบปลั๊ก"}
+                        {connector.isPluggedIn ? "เสียบปลั๊กแล้ว" : "ยังไม่เสียบปลั๊ก"}
                       </p>
                     </div>
                   </div>
                 </div>
+
                 <div className="rounded-xl border border-emerald-50 bg-emerald-50 px-3 py-2 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-white border border-emerald-100 flex items-center justify-center">
-                      <FiPower
-                        className={
-                          connector.isLocked ? "text-rose-500" : "text-emerald-500"
-                        }
-                      />
+                      <FiPower className={connector.isLocked ? "text-rose-500" : "text-emerald-500"} />
                     </div>
                     <div>
                       <p className="font-semibold text-slate-800">
@@ -883,35 +880,31 @@ const EVCalibet: React.FC = () => {
 
               {/* Power + Time + Energy Use */}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 text-xs sm:text-sm">
-                {/* Output Power (เฉลี่ยจาก Energy / Time) */}
                 <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
                   <div>
                     <p className="text-[11px] text-slate-500">Output Power</p>
-                    <p className="font-semibold text-sky-700">
-                      {energyDeliveredKWh.toFixed(2)} kWh
+                    <p className="font-semibold text-sky-700">{outputPowerKw.toFixed(2)} kW</p>
+                    <p className="text-[10px] text-slate-400">
+                      {connector.powerKw > 0 ? "Instant" : "Avg"}
                     </p>
                   </div>
                   <FiBatteryCharging className="text-sky-500 text-lg" />
                 </div>
 
-                {/* Time จาก StartTime / EndTime ของ Session */}
                 <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
                   <div>
                     <p className="text-[11px] text-slate-500">Time</p>
                     <p className="font-semibold text-sky-700">
-                      {sessionStartTime ? formatTime(elapsedSec) : "-"}
+                      {(sessionStartTime || connector.startedAt) ? formatTime(elapsedSec) : "-"}
                     </p>
                   </div>
                   <FiClock className="text-slate-400 text-lg" />
                 </div>
 
-                {/* Energy Use (kWh) = ∑ Power ของทุก EVChargingPayment (kWh) */}
                 <div className="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
                   <div>
                     <p className="text-[11px] text-slate-500">Energy Use</p>
-                    <p className="font-semibold text-sky-700">
-                      {energyUseKWh} kWh
-                    </p>
+                    <p className="font-semibold text-sky-700">{energyUseKWh} kWh</p>
                   </div>
                   <FiBatteryCharging className="text-sky-500 text-lg" />
                 </div>
@@ -920,39 +913,32 @@ const EVCalibet: React.FC = () => {
           </div>
         </section>
 
-        {/* Socket Data (แสดงทุก field จาก message ล่าสุด) */}
+        {/* Socket Data */}
         <section className="rounded-2xl bg-white shadow-sm border border-sky-100 p-4 sm:p-5">
           <p className="text-xs sm:text-sm font-semibold text-slate-700 mb-2">
             Socket Data (Latest OCPP Message)
           </p>
+
           {!lastRawMessage ? (
             <p className="text-[11px] sm:text-xs text-slate-400">
               ยังไม่มีข้อมูลจาก OCPP WebSocket (รอให้ตู้ส่ง Status / MeterValues)
             </p>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Raw string */}
               <div>
-                <p className="text-[11px] text-slate-500 mb-1">
-                  Raw frame (array)
-                </p>
+                <p className="text-[11px] text-slate-500 mb-1">Raw</p>
                 <div className="h-32 sm:h-40 overflow-auto rounded-lg bg-slate-900 text-[11px] sm:text-xs text-slate-100 px-3 py-2 font-mono">
                   {lastRawMessage}
                 </div>
               </div>
 
-              {/* Parsed JSON */}
               <div>
-                <p className="text-[11px] text-slate-500 mb-1">
-                  Parsed (pretty JSON)
-                </p>
+                <p className="text-[11px] text-slate-500 mb-1">Parsed (pretty JSON)</p>
                 <div className="h-32 sm:h-40 overflow-auto rounded-lg bg-slate-900 text-[11px] sm:text-xs text-slate-100 px-3 py-2 font-mono">
                   {lastJsonMessage ? (
                     <pre>{JSON.stringify(lastJsonMessage, null, 2)}</pre>
                   ) : (
-                    <span className="text-slate-400">
-                      ข้อมูลล่าสุดไม่สามารถ parse เป็น JSON ได้
-                    </span>
+                    <span className="text-slate-400">ข้อมูลล่าสุดไม่สามารถ parse เป็น JSON ได้</span>
                   )}
                 </div>
               </div>
@@ -963,16 +949,10 @@ const EVCalibet: React.FC = () => {
         {/* Event Log */}
         <section className="rounded-2xl bg-white shadow-sm border border-sky-100 p-4 sm:p-5">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs sm:text-sm font-semibold text-slate-700">
-              Event Log
-            </p>
+            <p className="text-xs sm:text-sm font-semibold text-slate-700">Event Log</p>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  if (logsEndRef.current) {
-                    logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-                  }
-                }}
+                onClick={() => logsEndRef.current?.scrollIntoView({ behavior: "smooth" })}
                 className="inline-flex items-center gap-1 text-[11px] text-sky-600 hover:text-sky-800"
               >
                 <FiArrowDown className="text-xs" />
@@ -986,11 +966,10 @@ const EVCalibet: React.FC = () => {
               </button>
             </div>
           </div>
+
           <div className="h-32 sm:h-40 overflow-y-auto rounded-lg bg-sky-50 text-[11px] sm:text-xs text-slate-700 px-3 py-2 border border-sky-100">
             {logs.length === 0 ? (
-              <p className="text-slate-400">
-                ...waiting for OCPP events from backend
-              </p>
+              <p className="text-slate-400">...waiting for OCPP events from backend</p>
             ) : (
               <>
                 {logs.map((line, idx) => {
@@ -1006,10 +985,7 @@ const EVCalibet: React.FC = () => {
                     : "";
 
                   return (
-                    <p
-                      key={idx}
-                      className={`whitespace-pre-wrap ${colorClass}`}
-                    >
+                    <p key={idx} className={`whitespace-pre-wrap ${colorClass}`}>
                       {line}
                     </p>
                   );
