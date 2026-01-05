@@ -228,12 +228,12 @@ func SeedIfUsersEmpty(db *gorm.DB) {
 	// Users
 	user1 := entity.User{
 		Username:    "user1",
-		FirstName:   "Janis",
-		LastName:    "Green",
+		FirstName:   "Thipawan",
+		LastName:    "Fungsuwannarak",
 		Email:       "janis.green@example.com",
 		Password:    hashedPassword,
-		Profile:     "uploads/user/avatar1.jpg",
-		PhoneNumber: "0935096372",
+		Profile:     "uploads/user/Main-User.jpg",
+		PhoneNumber: "0856613088",
 		Coin:        10000,
 		GenderID:    1,
 		UserRoleID:  3,
@@ -527,10 +527,10 @@ func seedContent(db *gorm.DB) {
 	db.FirstOrCreate(&status2, entity.Status{Status: "Unavailable"})
 
 	// Type
-	type1 := entity.Type{Type: "AC Charge"}
-	type2 := entity.Type{Type: "DC Charge"}
-	db.FirstOrCreate(&type1, entity.Type{Type: "AC Charge"})
-	db.FirstOrCreate(&type2, entity.Type{Type: "DC Charge"})
+	type1 := entity.Type{Type: "AC Type2"}
+	type2 := entity.Type{Type: "CCS2"}
+	db.FirstOrCreate(&type1, entity.Type{Type: "AC Type2"})
+	db.FirstOrCreate(&type2, entity.Type{Type: "CCS2"})
 
 	// -----------------------------
 	// ⭐ สร้าง EVcharging (ไม่มี EVCabinetID แล้ว!)
