@@ -17,14 +17,13 @@ import {
   FaBolt,
   FaCalendarCheck,
   FaUsers,
-  FaChargingStation,
 } from "react-icons/fa";
 
 type HeaderProps = {
   scrollToValue: () => void;
 };
 
-const Hero = ({}: HeaderProps) => {
+const Hero = ({ }: HeaderProps) => {
   const [evList, setEVList] = useState<EVchargingInterface[]>([]);
   const [userList, setUserList] = useState<UsersInterface[]>([]);
   const [userID, setUserID] = useState<number | null>(null);
@@ -118,12 +117,11 @@ const Hero = ({}: HeaderProps) => {
               {/* ห่อหัวข้อ + subtitle ด้วย flex-col */}
               <div className="flex flex-col gap-2">
                 <h1 className="font-bold leading-tight tracking-tight text-3xl sm:text-4xl">
-                  Discover the Best EV <br />
-                  Charging Spots Near You
+                  Tunnable Solar Energy for your EV charging<br />
                 </h1>
 
                 <p className="text-[13px] sm:text-base text-gray-600">
-                  Quickly find the charging station that's right for you.
+                  Tunnable Solar Energy for your EV charging
                 </p>
               </div>
 
@@ -132,10 +130,9 @@ const Hero = ({}: HeaderProps) => {
                 {/* 👉 ปุ่มเริ่มชาร์จ / กำลังชาร์จ */}
                 <button
                   className={`relative overflow-hidden inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-sm active:scale-[0.99] transition
-                    ${
-                      isChargingActive
-                        ? "bg-orange-500 text-white shadow-lg"
-                        : "bg-blue-600 text-white hover:bg-blue-700"
+                    ${isChargingActive
+                      ? "bg-orange-500 text-white shadow-lg"
+                      : "bg-blue-600 text-white hover:bg-blue-700"
                     }`}
                   onClick={() =>
                     isChargingActive
@@ -170,6 +167,10 @@ const Hero = ({}: HeaderProps) => {
                 </button>
               </div>
 
+              <center className="text-[13px] sm:text-base text-gray-600">
+                Rates of Solar and Grid energy unit
+              </center>
+
               {/* Stats */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5 mt-2">
                 {Object.entries(namePriceSums).map(
@@ -188,14 +189,13 @@ const Hero = ({}: HeaderProps) => {
                       >
                         {/* icon + text group จัดเป็นคอลัมน์เอง */}
                         <div className="flex items-center justify-center sm:justify-start gap-3">
-                          <FaChargingStation className="text-blue-600 text-lg" />
-                          <div className="flex flex-col items-start">
-                            <div className="text-2xl font-extrabold text-blue-700">
-                              {Number(total).toFixed(2)}
-                              <span className="text-blue-300"> ฿</span>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
+                          <div className="flex flex-col items-center sm:items-start">
+                              <div className="text-xl text-gray-500">
                               {name}
+                            </div>
+                            <div className="text-2xl font-extrabold text-blue-700 mt-1">
+                              {Number(total).toFixed(2)}
+                              <br /><span className="text-blue-300 text-sm"> Bath / Unit</span>
                             </div>
                           </div>
                         </div>
@@ -214,7 +214,7 @@ const Hero = ({}: HeaderProps) => {
                         <span className="text-blue-300"> +</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        Members
+                        Customers
                       </div>
                     </div>
                   </div>

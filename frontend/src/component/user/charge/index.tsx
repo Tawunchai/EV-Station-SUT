@@ -1093,7 +1093,7 @@ const ChargingEV = () => {
               </div>
 
               <h3 className="text-xl font-bold text-gray-900 tracking-tight">
-                Want to cancel charging?
+                Want to Stop charging?
               </h3>
 
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[280px]">
@@ -1114,7 +1114,7 @@ const ChargingEV = () => {
                   transition-all
                 "
               >
-                Confirm cancellation
+                Confirm Stop
               </button>
             </div>
           </div>
@@ -1303,7 +1303,7 @@ const ChargingEV = () => {
                       : "bg-red-500 text-white hover:bg-red-600"
                     }`}
                 >
-                  Cancel
+                  Stop
                 </button>
 
                 <button

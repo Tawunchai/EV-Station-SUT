@@ -395,7 +395,7 @@ const Employees: React.FC = () => {
         <Tag color={v === "Male" ? "green" : "orange"}>{v}</Tag>
       ),
     },
-    { title: "Phone", dataIndex: "Phone", key: "phone", width: 140 },
+    //{ title: "Phone", dataIndex: "Phone", key: "phone", width: 140 },
     {
       title: "Salary",
       dataIndex: "Salary",
