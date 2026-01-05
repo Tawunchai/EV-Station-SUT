@@ -1,14 +1,10 @@
 import React, { useState } from "react";
 import { Button, Form, Input, message } from "antd";
 import { Link, useNavigate } from "react-router-dom";
-import { FaBolt } from "react-icons/fa";
 import { LoginInterface } from "../../interface/Login";
-import {
-  AddLogin,
-  clearCachedUser,
-  GetProfile,
-} from "../../services/httpLogin";
+import { AddLogin, clearCachedUser, GetProfile } from "../../services/httpLogin";
 import Background from "../../assets/woman-charging-electro-car-by-her-house.jpg";
+import Logo from "../../assets/Logo-Good.png";
 
 const LoginForm1: React.FC = () => {
   const navigate = useNavigate();
@@ -96,14 +92,20 @@ const LoginForm1: React.FC = () => {
             <div className="rounded-[26px] bg-white border border-gray-200 shadow-[0_20px_60px_rgba(2,6,23,0.18)] p-8 md:p-10">
               {/* โลโก้ + ชื่อระบบ */}
               <div className="flex items-center justify-center gap-3 mb-6">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow">
-                  <FaBolt className="text-xl" />
+                {/* ✅ เปลี่ยนจาก icon เป็นรูป */}
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow border border-gray-200 overflow-hidden">
+                  <img
+                    src={Logo}
+                    alt="EV Station Logo"
+                    className="h-9 w-9 object-contain"
+                    draggable={false}
+                  />
                 </span>
 
                 {/* บังคับให้ title + subtitle เรียงเป็นคอลัมน์เสมอ */}
                 <div className="flex flex-col leading-tight text-left sm:text-center">
                   <h1
-                    className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent"
+                    className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent"
                     style={{
                       backgroundImage:
                         "linear-gradient(90deg, #1e40af, #2563eb, #06b6d4, #22c55e, #2563eb)",
@@ -111,7 +113,7 @@ const LoginForm1: React.FC = () => {
                       animation: "evTextShine 6s ease-in-out infinite",
                     }}
                   >
-                    EV Station
+                    SUT Smart EV
                   </h1>
                   <p className="text-[12px] text-blue-700/70 font-medium mt-1">
                     Smart • Clean • Future
@@ -147,7 +149,9 @@ const LoginForm1: React.FC = () => {
                       Username
                     </span>
                   }
-                  rules={[{ required: true, message: "Please enter your username." }]}
+                  rules={[
+                    { required: true, message: "Please enter your username." },
+                  ]}
                 >
                   <Input
                     size="large"
@@ -163,7 +167,9 @@ const LoginForm1: React.FC = () => {
                       Password
                     </span>
                   }
-                  rules={[{ required: true, message: "Please enter your password." }]}
+                  rules={[
+                    { required: true, message: "Please enter your password." },
+                  ]}
                 >
                   <Input.Password
                     size="large"
@@ -179,10 +185,7 @@ const LoginForm1: React.FC = () => {
                   >
                     Forgot your password?
                   </Link>
-                  <Link
-                    to="/register"
-                    className="text-blue-600 hover:underline"
-                  >
+                  <Link to="/register" className="text-blue-600 hover:underline">
                     Register
                   </Link>
                 </div>
@@ -203,7 +206,7 @@ const LoginForm1: React.FC = () => {
               </Form>
 
               <p className="mt-8 text-center text-xs text-gray-500">
-                © SUT EV Station 2025
+                SUT Smart EV Station
               </p>
             </div>
           </div>

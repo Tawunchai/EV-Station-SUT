@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 import { Button, Form, Input, Typography, message } from "antd";
 import { Link, useNavigate } from "react-router-dom";
-import { FaBolt } from "react-icons/fa";
 
 import Background from "../../assets/woman-charging-electro-car-by-her-house.jpg";
 import { checkEmailExists, SendOTP } from "../../services/httpLogin";
 import OTPModal from "../Signup1/otp"; // ✅ นำเข้า OTPModal
+
+// ✅ import รูปโลโก้มาแทน FaBolt (เปลี่ยน path ให้ตรงไฟล์ของคุณ)
+import Logo from "../../assets/Logo-Good.png";
 
 const { Title } = Typography;
 
@@ -79,12 +81,19 @@ const ForgotPasswordForm: React.FC = () => {
             <div className="rounded-[26px] bg-white border border-gray-200 shadow-[0_20px_60px_rgba(2,6,23,0.18)] p-8 md:p-10">
               {/* Logo */}
               <div className="flex items-center gap-3 mb-6 justify-center">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow">
-                  <FaBolt className="text-xl" />
+                {/* ✅ เปลี่ยนจาก FaBolt เป็นรูป */}
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow border border-gray-200 overflow-hidden">
+                  <img
+                    src={Logo}
+                    alt="EV Station Logo"
+                    className="h-9 w-9 object-contain"
+                    draggable={false}
+                  />
                 </span>
+
                 <div className="leading-tight text-center">
                   <h1
-                    className="text-2xl font-extrabold tracking-tight"
+                    className="text-xl md:text-2xl font-extrabold tracking-tight"
                     style={{
                       backgroundImage:
                         "linear-gradient(90deg, #1e40af, #2563eb, #06b6d4, #22c55e, #2563eb)",
@@ -96,10 +105,10 @@ const ForgotPasswordForm: React.FC = () => {
                       animation: "evTextShine 6s ease-in-out infinite",
                     }}
                   >
-                    EV Station
+                    SUT Smart EV
                   </h1>
                   <p className="text-[12px] text-blue-700/70 font-medium">
-                    Secure • Simple • Clean
+                    Smart • Clean • Future
                   </p>
                 </div>
               </div>
@@ -112,12 +121,12 @@ const ForgotPasswordForm: React.FC = () => {
               </div>
 
               {/* Title */}
-              <div className="mb-4 text-center">
-                <Title level={3} className="!m-0 !text-blue-900 !font-semibold">
+              <div className="mb-3 text-center">
+                <Title level={5} className="!m-0 !text-blue-900 !font-semibold">
                   Forgot your password
                 </Title>
-                <p className="mt-1 text-sm text-blue-900/70">
-                  Wait for your registered email, we will send you an OTP code for verification before resetting your password.
+                <p className="mt-1 text-xs sm:text-sm text-blue-900/70 leading-relaxed">
+                  An OTP will be sent to your email to reset your password.
                 </p>
               </div>
 
@@ -125,10 +134,20 @@ const ForgotPasswordForm: React.FC = () => {
               <Form layout="vertical" onFinish={onFinish}>
                 <Form.Item
                   name="email"
-                  label={<span className="text-sm text-gray-700 font-medium">อีเมล</span>}
+                  label={
+                    <span className="text-sm text-gray-700 font-medium">
+                      Email
+                    </span>
+                  }
                   rules={[
-                    { required: true, message: "Please enter your email address." },
-                    { type: "email", message: "Please enter a valid email address." },
+                    {
+                      required: true,
+                      message: "Please enter your email address.",
+                    },
+                    {
+                      type: "email",
+                      message: "Please enter a valid email address.",
+                    },
                   ]}
                 >
                   <Input
@@ -155,12 +174,17 @@ const ForgotPasswordForm: React.FC = () => {
 
               {/* Links */}
               <div className="flex items-center justify-between mt-4 text-sm">
-                <Link to="/auth/login-2" className="text-blue-600 hover:underline">
+                <Link
+                  to="/auth/login-2"
+                  className="text-blue-600 hover:underline"
+                >
                   Return to login
                 </Link>
               </div>
 
-              <p className="mt-8 text-center text-xs text-gray-500">© EV Station 2025</p>
+              <p className="mt-8 text-center text-xs text-gray-500">
+                SUT Smart EV Station
+              </p>
             </div>
           </div>
         </div>

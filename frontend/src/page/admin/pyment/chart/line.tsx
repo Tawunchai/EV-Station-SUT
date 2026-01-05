@@ -33,72 +33,140 @@ const LinePrimaryYAxis = {
   majorGridLines: { width: 1, dashArray: "5,5", color: "#E2E8F0" },
 };
 
+// ================== HELPERS (คำนึง RemainingPower จริง) ==================
+const n = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const clamp0 = (v: number) => (v < 0 ? 0 : v);
+
+type UsedRemain = { usedBaht: number; remainBaht: number };
+
+const calcUsedRemainBaht = (p: any): UsedRemain => {
+  // โครงสร้างจาก backend ตัวอย่าง:
+  // p.Power (kWh ที่ซื้อ), p.RemainingPower (kWh ที่เหลือ)
+  // p.Price (เงินที่จ่ายของ type นี้), p.EVcharging.Price (บาท/kWh)
+  const totalPower = n(p?.Power);
+  const remainingPower = clamp0(n(p?.RemainingPower));
+  const usedPower = clamp0(totalPower - remainingPower);
+
+  const paidBaht = clamp0(n(p?.Price)); // เงินที่จ่ายของรายการนี้ (ของ type นี้)
+  const rate = clamp0(n(p?.EVcharging?.Price)); // บาท/kWh
+
+  // เงินคงเหลือ "ตาม kWh ที่เหลือ"
+  let remainBaht = rate > 0 ? remainingPower * rate : 0;
+
+  // กันกรณี remainBaht เกินเงินจริงที่จ่าย (เช่น backend ปัดเศษ/ข้อมูลเพี้ยน)
+  if (paidBaht > 0 && remainBaht > paidBaht) remainBaht = paidBaht;
+
+  // เงินที่ใช้ไปแล้ว
+  let usedBaht = 0;
+
+  if (paidBaht > 0) {
+    // ใช้สูตรหลัก: used = paid - remain
+    usedBaht = clamp0(paidBaht - remainBaht);
+  } else if (rate > 0) {
+    // fallback: ไม่มี Price ที่จ่ายมา → คิดจาก usedPower * rate
+    usedBaht = usedPower * rate;
+    // และ remain จาก remainingPower * rate (ที่คำนวณไว้แล้ว)
+  } else {
+    usedBaht = 0;
+    remainBaht = 0;
+  }
+
+  // กันเลขติดลบ/NaN อีกชั้น
+  return { usedBaht: clamp0(usedBaht), remainBaht: clamp0(remainBaht) };
+};
+
 // ================== MAIN COMPONENT ==================
 const MonthlyRevenueChart = () => {
-  //@ts-ignore
+  // @ts-ignore
   const { currentMode } = useStateContext();
+
   const [chartDataSets, setChartDataSets] = useState<any[]>([]);
 
-  // 🕒 โหมดช่วงเวลา: day / month / year
+  // day / month / year
   const [rangeType, setRangeType] = useState<"day" | "month" | "year">("day");
 
-  // 🗓️ state ของช่วงเวลา (Dayjs)
+  // range (Dayjs)
   const [startDate, setStartDate] = useState<Dayjs>(dayjs().subtract(7, "day"));
   const [endDate, setEndDate] = useState<Dayjs>(dayjs());
 
-  // ================== ฟังก์ชันโหลดข้อมูล ==================
   useEffect(() => {
     const fetchChartData = async () => {
       const data = await ListEVChargingPayments();
-      if (!data) return;
-
-      const grouped: Record<string, number> = {};
-
-      for (const p of data as EVChargingPayListmentInterface[]) {
-        const paymentDate = p.Payment?.Date;
-        if (!paymentDate) continue;
-        const date = dayjs(paymentDate);
-
-        // ตรวจสอบช่วงเวลา
-        if (date.isBefore(startDate) || date.isAfter(endDate)) continue;
-
-        // กำหนด key ตามโหมด
-        let key = "";
-        if (rangeType === "day") {
-          key = date.format("YYYY-MM-DD");
-        } else if (rangeType === "month") {
-          key = date.format("YYYY-MM");
-        } else {
-          key = date.format("YYYY");
-        }
-
-        const total = (p.Price || 0) * (p.Quantity || 0);
-        grouped[key] = (grouped[key] || 0) + total;
+      if (!Array.isArray(data)) {
+        setChartDataSets([]);
+        return;
       }
 
-      // แปลงข้อมูลเป็น format ของ Syncfusion
-      const chartData = Object.entries(grouped)
-        .map(([key, total]) => {
-          if (rangeType === "day") return { x: new Date(key), y: total };
-          if (rangeType === "month") {
-            const [y, m] = key.split("-").map(Number);
-            return { x: new Date(y, m - 1, 1), y: total };
-          }
-          const y = Number(key);
-          return { x: new Date(y, 0, 1), y: total };
-        })
+      // ✅ สะสม “ใช้ไปแล้ว” และ “คงเหลือ” แยก bucket เดียวกัน
+      const usedMap: Record<string, number> = {};
+      const remainMap: Record<string, number> = {};
+
+      for (const raw of data as EVChargingPayListmentInterface[]) {
+        const p: any = raw;
+
+        // ✅ อิงวันที่จาก Payment.Date เป็นหลัก (ตรงกับวันที่ทำรายการ)
+        const paymentDate = p?.Payment?.Date ?? p?.CreatedAt;
+        if (!paymentDate) continue;
+
+        const date = dayjs(paymentDate);
+        if (!date.isValid()) continue;
+
+        // filter ช่วงวันที่
+        if (date.isBefore(startDate) || date.isAfter(endDate)) continue;
+
+        // key ตามโหมด
+        let key = "";
+        if (rangeType === "day") key = date.format("YYYY-MM-DD");
+        else if (rangeType === "month") key = date.format("YYYY-MM");
+        else key = date.format("YYYY");
+
+        // ✅ คำนวณจาก RemainingPower จริง
+        const { usedBaht, remainBaht } = calcUsedRemainBaht(p);
+
+        usedMap[key] = (usedMap[key] || 0) + usedBaht;
+        remainMap[key] = (remainMap[key] || 0) + remainBaht;
+      }
+
+      // แปลงเป็น point สำหรับ Syncfusion
+      const toPoint = (key: string, y: number) => {
+        if (rangeType === "day") return { x: new Date(key), y };
+        if (rangeType === "month") {
+          const [yy, mm] = key.split("-").map(Number);
+          return { x: new Date(yy, (mm || 1) - 1, 1), y };
+        }
+        const yy = Number(key);
+        return { x: new Date(yy, 0, 1), y };
+      };
+
+      const usedPoints = Object.entries(usedMap)
+        .map(([k, v]) => toPoint(k, v))
         .sort((a, b) => a.x.getTime() - b.x.getTime());
 
+      const remainPoints = Object.entries(remainMap)
+        .map(([k, v]) => toPoint(k, v))
+        .sort((a, b) => a.x.getTime() - b.x.getTime());
+
+      // ถ้าไม่มีข้อมูลเลย ให้ยังคงแสดง series ว่าง (กัน UI เพี้ยน)
       setChartDataSets([
         {
           name:
             rangeType === "day"
-              ? "ยอดรวมรายวัน"
+              ? "Used revenue (daily)"
               : rangeType === "month"
-              ? "ยอดรวมรายเดือน"
-              : "ยอดรวมรายปี",
-          dataSource: chartData,
-          color: "rgba(34, 197, 94, 0.6)",
+              ? "Used revenue (monthly)"
+              : "Used revenue (yearly)",
+          dataSource: usedPoints,
+          color: "rgba(34, 197, 94, 0.6)", // green
+        },
+        {
+          name:
+            rangeType === "day"
+              ? "Remaining value (daily)"
+              : rangeType === "month"
+              ? "Remaining value (monthly)"
+              : "Remaining value (yearly)",
+          dataSource: remainPoints,
+          color: "rgba(59, 130, 246, 0.65)", // blue
         },
       ]);
     };
@@ -106,7 +174,7 @@ const MonthlyRevenueChart = () => {
     fetchChartData();
   }, [rangeType, startDate, endDate]);
 
-  // ================== แกน X แบบ dynamic ==================
+  // ================== X Axis dynamic ==================
   const LinePrimaryXAxis =
     rangeType === "day"
       ? {
@@ -147,7 +215,7 @@ const MonthlyRevenueChart = () => {
           },
         };
 
-  // ================== UI ตัวเลือกเวลา ==================
+  // ================== Date selector ==================
   const renderDateSelector = () => {
     if (rangeType === "day") {
       return (
@@ -172,11 +240,8 @@ const MonthlyRevenueChart = () => {
           value={[startDate, endDate]}
           onChange={(dates) => {
             if (dates) {
-              // ถ้าเลือกเดือนเดียว ให้ set ทั้งเดือนนั้น
-              const start = dates[0]!.startOf("month");
-              const end = dates[1]!.endOf("month");
-              setStartDate(start);
-              setEndDate(end);
+              setStartDate(dates[0]!.startOf("month"));
+              setEndDate(dates[1]!.endOf("month"));
             }
           }}
           format="MMM YYYY"
@@ -185,24 +250,20 @@ const MonthlyRevenueChart = () => {
       );
     }
 
-    if (rangeType === "year") {
-      return (
-        <RangePicker
-          picker="year"
-          value={[startDate, endDate]}
-          onChange={(dates) => {
-            if (dates) {
-              const start = dates[0]!.startOf("year");
-              const end = dates[1]!.endOf("year");
-              setStartDate(start);
-              setEndDate(end);
-            }
-          }}
-          format="YYYY"
-          allowClear={false}
-        />
-      );
-    }
+    return (
+      <RangePicker
+        picker="year"
+        value={[startDate, endDate]}
+        onChange={(dates) => {
+          if (dates) {
+            setStartDate(dates[0]!.startOf("year"));
+            setEndDate(dates[1]!.endOf("year"));
+          }
+        }}
+        format="YYYY"
+        allowClear={false}
+      />
+    );
   };
 
   // ================== Default เมื่อเปลี่ยนโหมด ==================
@@ -220,13 +281,15 @@ const MonthlyRevenueChart = () => {
     }
   }, [rangeType]);
 
-  // ================== Render ==================
   return (
     <div className="bg-white dark:text-gray-200 dark:bg-secondary-dark-bg p-6 rounded-2xl w-full md:w-full">
       <div className="flex flex-wrap justify-between items-center gap-4 mb-10">
-        <p className="text-xl font-semibold">
-          EV Charging Revenue Overview ({rangeType})
-        </p>
+        <div>
+          <p className="text-xl font-semibold">EV Charging Revenue Overview ({rangeType})</p>
+          <p className="text-xs text-gray-500 mt-1">
+            * Used = Price - (RemainingPower × EVcharging.Price), Remaining = RemainingPower × EVcharging.Price
+          </p>
+        </div>
 
         <div className="flex flex-wrap gap-2 items-center">
           <Select
@@ -243,7 +306,7 @@ const MonthlyRevenueChart = () => {
       </div>
 
       <ChartComponent
-        id="monthly-revenue-chart"
+        id="ev-used-remaining-revenue-chart"
         height="420px"
         width="100%"
         primaryXAxis={LinePrimaryXAxis}

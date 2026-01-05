@@ -3102,3 +3102,26 @@ export const CancelSessionSolarGrid = async (
 
   return res.data;
 };
+
+export const GetUserDataAndCoinsByUserID = async (
+  userID: number | string
+): Promise<any | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/users/${userID}/data-coins`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      return response.data; 
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching user data & coins:", error);
+    return null;
+  }
+};

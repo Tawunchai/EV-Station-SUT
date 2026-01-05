@@ -180,7 +180,7 @@ const PhoneWeeklyStats: React.FC = () => {
         {/* Header */}
         <div className="flex justify-between items-center px-1">
           <p className="text-base font-semibold text-blue-800">
-            Weekly Stats
+            Total Overview
           </p>
           <button
             type="button"

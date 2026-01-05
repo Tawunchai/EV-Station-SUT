@@ -13,11 +13,7 @@ import { EVchargingInterface } from "../../../interface/IEV";
 import { UsersInterface } from "../../../interface/IUser";
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 
-import {
-  FaBolt,
-  FaCalendarCheck,
-  FaUsers,
-} from "react-icons/fa";
+import { FaBolt, FaCalendarCheck, FaUsers } from "react-icons/fa";
 
 type HeaderProps = {
   scrollToValue: () => void;
@@ -53,9 +49,7 @@ const Hero = ({ }: HeaderProps) => {
       const res = await GetChargingSessionByStatusAndUserID(userID);
       const list = res?.data || [];
 
-      const active = list.filter(
-        (s: any) => s.Status === true || s.Status === 1
-      );
+      const active = list.filter((s: any) => s.Status === true || s.Status === 1);
 
       setSessions(active);
       setIsChargingActive(active.length > 0);
@@ -117,12 +111,13 @@ const Hero = ({ }: HeaderProps) => {
               {/* ห่อหัวข้อ + subtitle ด้วย flex-col */}
               <div className="flex flex-col gap-2">
                 <h1 className="font-bold leading-tight tracking-tight text-3xl sm:text-4xl">
-                  Tunnable Solar Energy for your EV charging<br />
+                  Tunnable Solar Energy for your EV charging
+                  <br />
                 </h1>
 
-                <p className="text-[13px] sm:text-base text-gray-600">
+                {/*<p className="text-[13px] sm:text-base text-gray-600">
                   Tunnable Solar Energy for your EV charging
-                </p>
+                </p>*/}
               </div>
 
               {/* ⭐ ACTION BUTTON */}
@@ -135,9 +130,7 @@ const Hero = ({ }: HeaderProps) => {
                       : "bg-blue-600 text-white hover:bg-blue-700"
                     }`}
                   onClick={() =>
-                    isChargingActive
-                      ? setModalOpen(true)
-                      : navigate("/user/evs-selector")
+                    isChargingActive ? setModalOpen(true) : navigate("/user/evs-selector")
                   }
                 >
                   {/* Bubble Animation */}
@@ -171,52 +164,110 @@ const Hero = ({ }: HeaderProps) => {
                 Rates of Solar and Grid energy unit
               </center>
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5 mt-2">
-                {Object.entries(namePriceSums).map(
-                  ([name, total], index, arr) => {
-                    const isLast = index === arr.length - 1;
-                    const isOdd = arr.length % 2 === 1;
+              {/* ✅ STATS (แบบใหม่: cleaner + modern, เกือบสวยแล้วตามที่ขอ) */}
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+                {Object.entries(namePriceSums).map(([name, total], index, arr) => {
+                  const isLast = index === arr.length - 1;
+                  const isOdd = arr.length % 2 === 1;
 
-                    return (
-                      <div
-                        key={name}
-                        className={`
-                          rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_24px_rgba(2,6,23,0.06)]
-                          text-center sm:text-left
-                          ${isLast && isOdd ? "col-span-2" : ""}
-                        `}
-                      >
-                        {/* icon + text group จัดเป็นคอลัมน์เอง */}
-                        <div className="flex items-center justify-center sm:justify-start gap-3">
-                          <div className="flex flex-col items-center sm:items-start">
-                              <div className="text-xl text-gray-500">
-                              {name}
-                            </div>
-                            <div className="text-2xl font-extrabold text-blue-700 mt-1">
+                  return (
+                    <div
+                      key={name}
+                      className={`
+          group relative overflow-hidden rounded-2xl
+          border border-blue-100/70 bg-white
+          p-4 sm:p-5
+          shadow-[0_8px_22px_rgba(2,6,23,0.06)]
+          hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)]
+          transition
+          ${isLast && isOdd ? "col-span-2" : ""}
+        `}
+                    >
+                      {/* top accent line */}
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-200 via-sky-400 to-blue-600 opacity-80" />
+
+                      {/* soft glow */}
+                      <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-sky-200/40 blur-2xl" />
+
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">
+                            {name}
+                          </div>
+
+                          <div className="mt-2 flex items-baseline gap-2">
+                            <div className="text-[26px] sm:text-[30px] font-extrabold text-blue-700 leading-none">
                               {Number(total).toFixed(2)}
-                              <br /><span className="text-blue-300 text-sm"> Bath / Unit</span>
+                            </div>
+                            <div className="text-[11px] sm:text-xs text-slate-500 whitespace-nowrap">
+                              Baht / Unit
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  }
-                )}
 
-                {/* การ์ด Members */}
-                <div className="col-span-2 sm:col-span-1 rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_24px_rgba(2,6,23,0.06)] text-center sm:text-left">
-                  <div className="flex items-center justify-center sm:justify-start gap-3">
-                    <FaUsers className="text-blue-600 text-lg" />
-                    <div className="flex flex-col items-start">
-                      <div className="text-2xl font-extrabold text-blue-700">
-                        <CountUp start={0} end={userList.length} duration={2} />
-                        <span className="text-blue-300"> +</span>
+                        {/* mini pill */}
+                        <div className="shrink-0">
+                          <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold px-2.5 py-1 ring-1 ring-blue-100">
+                            Rate
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Customers
+
+                      {/* bottom subtle divider */}
+                      <div className="mt-3 h-px w-full bg-gradient-to-r from-transparent via-slate-100 to-transparent" />
+
+                      {/* tiny helper text */}
+                      <div className="mt-2 text-[10px] sm:text-[11px] text-slate-500">
+                        {" "}
                       </div>
                     </div>
+                  );
+                })}
+
+                {/* ✅ การ์ด Customers (เข้าชุด) */}
+                <div
+                  className="
+      col-span-2 sm:col-span-1
+      group relative overflow-hidden rounded-2xl
+      border border-blue-100/70 bg-white
+      p-4 sm:p-5
+      shadow-[0_8px_22px_rgba(2,6,23,0.06)]
+      hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)]
+      transition
+    "
+                >
+                  {/* top accent line */}
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-200 via-sky-400 to-blue-600 opacity-80" />
+
+                  {/* soft glow */}
+                  <div className="pointer-events-none absolute -left-12 -bottom-12 h-32 w-32 rounded-full bg-blue-200/40 blur-2xl" />
+
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm">
+                        <FaUsers className="text-lg" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="text-[11px] sm:text-xs font-semibold text-slate-500">
+                          Customers
+                        </div>
+
+                        <div className="mt-2 flex items-end gap-1">
+                          <div className="text-[26px] sm:text-[30px] font-extrabold text-blue-700 leading-none">
+                            <CountUp start={0} end={userList.length} duration={2} />
+                          </div>
+                          <span className="pb-[3px] text-[12px] font-bold text-blue-300">
+                            +
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 h-px w-full bg-gradient-to-r from-transparent via-slate-100 to-transparent" />
+                  <div className="mt-2 text-[10px] sm:text-[11px] text-slate-500">
+                    Total registered users
                   </div>
                 </div>
               </div>
@@ -225,11 +276,7 @@ const Hero = ({ }: HeaderProps) => {
             {/* RIGHT IMAGE */}
             <div className="hidden md:flex justify-end">
               <figure className="relative w-[34rem] max-w-full h-[28rem] rounded-[2rem] overflow-hidden border border-gray-100 shadow-[0_20px_60px_rgba(2,6,23,0.08)] bg-white">
-                <img
-                  src={Hero_Image}
-                  alt="EV Charging"
-                  className="h-full w-full object-cover"
-                />
+                <img src={Hero_Image} alt="EV Charging" className="h-full w-full object-cover" />
                 <figcaption className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-300 via-blue-500 to-blue-600" />
               </figure>
             </div>
@@ -319,9 +366,7 @@ const Hero = ({ }: HeaderProps) => {
                 </div>
               </div>
 
-              <h3 className="text-xl font-bold text-blue-900 tracking-tight">
-                You are charging
-              </h3>
+              <h3 className="text-xl font-bold text-blue-900 tracking-tight">You are charging</h3>
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[260px]">
                 Select a station to check status or add power.
               </p>

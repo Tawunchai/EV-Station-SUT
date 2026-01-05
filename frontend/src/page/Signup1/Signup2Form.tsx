@@ -2,13 +2,14 @@ import React, { useEffect, useState } from "react";
 import { Button, Form, Input, Select, message, Upload } from "antd";
 import ImgCrop from "antd-img-crop";
 import { PlusOutlined } from "@ant-design/icons";
-import { FaBolt } from "react-icons/fa";
 import { Link, useNavigate } from "react-router-dom";
 import { ListGenders, CreateUser, ListUsers } from "../../services";
 import { SendOTP } from "../../services/httpLogin";
 import OTPModal from "./otp/index";
-import { currentYear } from "./data";
 import Background from "../../assets/woman-charging-electro-car-by-her-house.jpg";
+
+// ✅ import รูปโลโก้มาแทน FaBolt (ปรับ path ให้ตรงไฟล์ของคุณ)
+import Logo from "../../assets/Logo-Good.png";
 
 const Signup2Form: React.FC = () => {
   const [form] = Form.useForm();
@@ -162,9 +163,16 @@ const Signup2Form: React.FC = () => {
             <div className="rounded-[22px] bg-white border border-gray-200 shadow-[0_16px_44px_rgba(2,6,23,0.16)] p-6 md:p-7">
               {/* Header */}
               <div className="flex items-center justify-center gap-3 mb-4">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow">
-                  <FaBolt className="text-lg" />
+                {/* ✅ เปลี่ยนจาก FaBolt เป็นรูปโลโก้ */}
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow border border-gray-200 overflow-hidden">
+                  <img
+                    src={Logo}
+                    alt="EV Station Logo"
+                    className="h-7 w-7 object-contain"
+                    draggable={false}
+                  />
                 </span>
+
                 <div className="leading-tight text-center">
                   <h1
                     className="text-xl md:text-2xl font-extrabold tracking-tight"
@@ -179,11 +187,9 @@ const Signup2Form: React.FC = () => {
                       animation: "evTextShine 6s ease-in-out infinite",
                     }}
                   >
-                    EV Station
+                    SUT Smart EV
                   </h1>
-                  <p className="text-[12px] text-blue-700/70 font-medium">
-                    Drive • Charge • Future
-                  </p>
+                  <p className="text-[12px] text-blue-700/70 font-medium">Smart • Clean • Future</p>
                 </div>
               </div>
 
@@ -358,7 +364,7 @@ const Signup2Form: React.FC = () => {
                     </div>
 
                     <p className="mt-4 text-center text-[11px] text-gray-500">
-                      © EV Station {currentYear}
+                      SUT Smart EV Station
                     </p>
                   </div>
                 </div>

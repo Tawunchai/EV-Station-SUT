@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IoIosMore } from "react-icons/io";
 import { useStateContext } from "../../../../contexts/ContextProvider";
 import { BsBatteryCharging } from "react-icons/bs";
@@ -9,102 +9,161 @@ import {
   apiUrlPicture,
 } from "../../../../services";
 
+type ChargerUsedStat = {
+  usedPower: number; // kWh ที่ใช้ไปแล้ว
+  usedBaht: number;  // บาทที่ใช้ไปแล้ว (คำนวณจาก RemainingPower)
+  rate: number;      // บาท/kWh (ไว้สำหรับ debug/tooltip)
+};
+
 const Index = () => {
   const { currentColor } = useStateContext();
 
-  const [power, setPower] = useState(0);
-  const [expense, setExpense] = useState(0);
+  // ✅ ต้องการ “ค่าที่ใช้ไปแล้ว” เท่านั้น
+  const [power, setPower] = useState(0);     // used kWh
+  const [expense, setExpense] = useState(0); // used ฿
+
   const [today, setToday] = useState("");
-  const [chargerPowerMap, setChargerPowerMap] = useState<{ [name: string]: number }>({});
+  const [chargerUsedMap, setChargerUsedMap] = useState<Record<string, ChargerUsedStat>>({});
   const [todayPaymentCount, setTodayPaymentCount] = useState(0);
   const [leaders, setLeaders] = useState<string[]>([]);
 
+  // ✅ helper: รูปโปรไฟล์/รูปจาก backend อาจเป็น "uploads/..." หรือ "/uploads/..." หรือ url เต็ม
+  const resolveImageUrl = (path?: string) => {
+    if (!path) return "";
+    if (path.startsWith("http://") || path.startsWith("https://")) return path;
+    if (path.startsWith("/")) return `${apiUrlPicture}${path}`;
+    return `${apiUrlPicture}${path}`;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
-      const evResponse = await ListEVChargingPayments();
-      const paymentResponse = await ListPayments();
-      const userResponse = await ListUsers();
+      try {
+        const evResponse = await ListEVChargingPayments();
+        const paymentResponse = await ListPayments();
+        const userResponse = await ListUsers();
 
-      const todayDate = new Date().toISOString().split("T")[0];
+        const todayDate = new Date().toISOString().split("T")[0];
 
-      /* ======================================================
-         1) EV Charging Power วันนี้
-      ====================================================== */
-      const todayEV = evResponse!.filter((item: any) => {
-        const paymentDate = item?.Payment?.Date?.split("T")[0];
-        return paymentDate === todayDate;
-      });
+        /* ======================================================
+           1) EV Charging วันนี้ (แสดงเฉพาะ “ใช้ไปแล้ว”)
+              - usedPower = Power - RemainingPower
+              - usedBaht  = Price - (RemainingPower * EVcharging.Price)
+                (fallback: usedPower * EVcharging.Price ถ้า Price ไม่มี)
+        ====================================================== */
+        const todayEV = Array.isArray(evResponse)
+          ? evResponse.filter((item: any) => {
+              const paymentDate = item?.Payment?.Date?.split("T")[0];
+              return paymentDate === todayDate;
+            })
+          : [];
 
-      let totalPower = 0;
-      const map: { [name: string]: number } = {};
+        let totalUsedPower = 0;
+        let totalUsedBaht = 0;
 
-      todayEV.forEach((item: any) => {
-        const chargerName = item?.EVcharging?.Name || "Unknown";
+        const map: Record<string, ChargerUsedStat> = {};
 
-        // ❗ เปลี่ยน Quantity → Power
-        const pwr = Number(item?.Power) || 0;
+        todayEV.forEach((item: any) => {
+          const chargerName = item?.EVcharging?.Name || "Unknown";
 
-        totalPower += pwr;
+          const totalPower = Number(item?.Power) || 0; // kWh ที่ซื้อ/ได้มา
+          const remainingPower = Math.max(0, Number(item?.RemainingPower) || 0);
+          const usedPower = Math.max(0, totalPower - remainingPower);
 
-        if (map[chargerName]) map[chargerName] += pwr;
-        else map[chargerName] = pwr;
-      });
+          const rate = Number(item?.EVcharging?.Price) || 0; // บาท/kWh
+          const paidBaht = Number(item?.Price) || 0; // บาทที่จ่ายสำหรับ type นั้น
 
-      setPower(totalPower);
-      setChargerPowerMap(map);
+          // มูลค่าไฟที่เหลือ (บาท)
+          let remainingBaht = rate > 0 ? remainingPower * rate : 0;
+          if (paidBaht > 0 && remainingBaht > paidBaht) remainingBaht = paidBaht;
 
-      /* ======================================================
-         2) Payment วันนี้
-      ====================================================== */
-      const todayPayments = paymentResponse!.filter((item: any) =>
-        item.Date?.startsWith(todayDate)
-      );
-      setTodayPaymentCount(todayPayments.length);
+          // เงินที่ใช้ไปแล้ว (บาท)
+          let usedBaht = 0;
+          if (paidBaht > 0) {
+            usedBaht = Math.max(0, paidBaht - remainingBaht);
+          } else if (rate > 0) {
+            usedBaht = usedPower * rate;
+          }
 
-      const totalAmount = todayPayments.reduce(
-        (sum: number, item: any) => sum + item.Amount,
-        0
-      );
-      setExpense(totalAmount);
+          totalUsedPower += usedPower;
+          totalUsedBaht += usedBaht;
 
-      /* ======================================================
-         3) Today date format
-      ====================================================== */
-      const date = new Date();
-      const options: Intl.DateTimeFormatOptions = {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-      };
-      setToday(date.toLocaleDateString("en-US", options));
+          if (!map[chargerName]) {
+            map[chargerName] = { usedPower: 0, usedBaht: 0, rate };
+          }
+          map[chargerName].usedPower += usedPower;
+          map[chargerName].usedBaht += usedBaht;
+          map[chargerName].rate = rate || map[chargerName].rate;
+        });
 
-      /* ======================================================
-         4) Leaders (Admin)
-      ====================================================== */
-      const adminUsers = userResponse!.filter(
-        (user: any) => user.UserRole?.RoleName === "Admin"
-      );
-      const adminImages = adminUsers.map((user: any) => user.Profile).filter(Boolean);
-      setLeaders(adminImages);
+        setPower(totalUsedPower);
+        setExpense(totalUsedBaht);
+        setChargerUsedMap(map);
+
+        /* ======================================================
+           2) Payment วันนี้ (นับจำนวนรายการเพื่อโชว์ Recent Transactions)
+        ====================================================== */
+        const todayPayments = Array.isArray(paymentResponse)
+          ? paymentResponse.filter((item: any) => item?.Date?.startsWith(todayDate))
+          : [];
+        setTodayPaymentCount(todayPayments.length);
+
+        /* ======================================================
+           3) Today date format
+        ====================================================== */
+        const date = new Date();
+        const options: Intl.DateTimeFormatOptions = {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+        };
+        setToday(date.toLocaleDateString("en-US", options));
+
+        /* ======================================================
+           4) Leaders (Admin)
+        ====================================================== */
+        const adminUsers = Array.isArray(userResponse)
+          ? userResponse.filter((user: any) => user?.UserRole?.RoleName === "Admin")
+          : [];
+
+        const adminImages = adminUsers
+          .map((user: any) => user?.Profile)
+          .filter(Boolean);
+
+        setLeaders(adminImages);
+      } catch (err) {
+        console.error("❌ Overview fetch error:", err);
+        setPower(0);
+        setExpense(0);
+        setChargerUsedMap({});
+        setTodayPaymentCount(0);
+        setLeaders([]);
+      }
     };
 
     fetchData();
   }, []);
 
-  const medicalproBranding = {
-    data: [
-      { title: "Today Date", desc: today },
-      { title: "Power", desc: `${power.toFixed(2)} kWh` },
-      { title: "Expense", desc: `฿${expense.toLocaleString()}` },
-    ],
-  };
+  const medicalproBranding = useMemo(() => {
+    return {
+      data: [
+        { title: "Today Date", desc: today },
+        { title: "Power", desc: `${power.toFixed(2)} kWh` }, // ✅ ใช้ไปแล้ว
+        {
+          title: "Expense",
+          desc: `฿${expense.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`,
+        }, // ✅ ใช้ไปแล้ว
+      ],
+    };
+  }, [today, power, expense]);
 
   return (
     <div className="w-250 bg-gradient-to-br from-blue-50 to-blue-100 dark:text-gray-200 rounded-2xl shadow-lg border border-blue-200 p-6 m-3 transition-all duration-300 hover:shadow-xl">
-
       {/* Header */}
       <div className="flex justify-between items-center">
-        <p className="text-xl font-semibold text-blue-800">EV Station Overview</p>
+        <p className="text-xl font-semibold text-blue-800">Daily Overview</p>
         <button
           type="button"
           className="text-2xl font-semibold text-blue-500 hover:text-blue-700 transition-all"
@@ -135,16 +194,19 @@ const Index = () => {
         </p>
 
         <div className="flex flex-wrap gap-2">
-          {Object.entries(chargerPowerMap).map(([name, pwr]) => (
+          {Object.entries(chargerUsedMap).map(([name, stat]) => (
             <p
               key={name}
-              className="cursor-pointer text-white py-1 px-3 rounded-full text-xs bg-blue-600 hover:bg-blue-700 transition-all shadow-sm"
+              className="cursor-pointer text-white py-1.5 px-3 rounded-full text-xs bg-blue-600 hover:bg-blue-700 transition-all shadow-sm"
+              title={`${name} @ ฿${stat.rate.toFixed(2)}/kWh`}
             >
-              {name}: {pwr.toFixed(2)} kWh
+              {/* ✅ ต้องการรูปแบบ: 1.20 kWh • ฿3.15 */}
+              {name}: {stat.usedPower.toFixed(2)} kWh • ฿
+              {stat.usedBaht.toFixed(2)}
             </p>
           ))}
 
-          {Object.keys(chargerPowerMap).length === 0 && (
+          {Object.keys(chargerUsedMap).length === 0 && (
             <p className="text-xs text-gray-400">No data available</p>
           )}
         </div>
@@ -158,14 +220,12 @@ const Index = () => {
             <img
               key={index}
               className="rounded-full w-9 h-9 object-cover ring-2 ring-blue-200 shadow-sm hover:scale-105 transition-transform"
-              src={`${apiUrlPicture}${img}`}
+              src={resolveImageUrl(img)}
               alt={`Leader ${index}`}
             />
           ))}
 
-          {leaders.length === 0 && (
-            <p className="text-xs text-gray-400">No leaders found</p>
-          )}
+          {leaders.length === 0 && <p className="text-xs text-gray-400">No leaders found</p>}
         </div>
       </div>
 

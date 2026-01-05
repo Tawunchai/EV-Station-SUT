@@ -1,6 +1,6 @@
 /* ==== FULL FILE: src/component/user/ev-selector/index.tsx ==== */
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ListEVCharging,
@@ -8,6 +8,7 @@ import {
   GetCarByUserID,
   ListBank,
   GetChargingSessionByStatusTrue,
+  GetUserDataAndCoinsByUserID,
 } from "../../../services";
 import { getCurrentUser, initUserProfile } from "../../../services/httpLogin";
 import { EVchargingInterface } from "../../../interface/IEV";
@@ -30,6 +31,26 @@ type CabinetView = {
   chargers: EVchargingInterface[];
 };
 
+type UserView = {
+  id?: number;
+  firstname?: string;
+  lastname?: string;
+  email?: string;
+  profile?: string;
+  username?: string;
+  role?: string;
+};
+
+type UserDataCoinsView = {
+  id?: number;
+  username?: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  profile?: string;
+  coin?: number;
+};
+
 const Index: React.FC = () => {
   const [evChargers, setEvChargers] = useState<EVchargingInterface[]>([]);
   const [percentMap, setPercentMap] = useState<{ [id: number]: number }>({});
@@ -47,20 +68,102 @@ const Index: React.FC = () => {
   // ✅ เก็บ "หลายตู้" ที่กำลังชาร์จอยู่
   const [activeCabinetIds, setActiveCabinetIds] = useState<number[]>([]);
 
+  // ✅ user สำหรับแสดงโปรไฟล์
+  const [userInfo, setUserInfo] = useState<UserView | null>(null);
+
+  // ✅ ดึง coin จาก API
+  const [userDataCoins, setUserDataCoins] = useState<UserDataCoinsView | null>(null);
+
   const navigate = useNavigate();
 
-  /* โหลด user */
+  // ✅ helper: ทำ URL รูปให้ถูกต้อง (รองรับ path แบบ uploads/... หรือ /uploads/... หรือ url เต็ม)
+  const resolveImageUrl = (path?: string) => {
+    if (!path) return "";
+    if (path.startsWith("http://") || path.startsWith("https://")) return path;
+    if (path.startsWith("/")) return `${apiUrlPicture}${path}`;
+    return `${apiUrlPicture}${path}`;
+  };
+
+  // ✅ helper: ดึง "Type" ของหัวชาร์จในตู้ แล้ว unique (เช่น "AC Type2")
+  const getUniqueChargerTypes = (cab: CabinetView): string[] => {
+    const raw = cab.chargers
+      .map((c: any) => {
+        const group = c?.Type?.Type; // เช่น "AC"
+        const name = c?.TypeName?.TypeName; // เช่น "Type2"
+        const alt = c?.Type?.TypeName; // เผื่อ backend ชื่อ field ไม่ตรง
+        const alt2 = c?.TypeName?.Type; // เผื่อสลับ field
+
+        const typeA = typeof group === "string" ? group.trim() : "";
+        const nameA =
+          typeof name === "string"
+            ? name.trim()
+            : typeof alt === "string"
+              ? alt.trim()
+              : typeof alt2 === "string"
+                ? alt2.trim()
+                : "";
+
+        const full = `${typeA} ${nameA}`.trim();
+        return full || typeA || nameA || "";
+      })
+      .filter((s) => !!s);
+
+    // unique (case-insensitive)
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const s of raw) {
+      const key = s.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(s);
+    }
+    return unique;
+  };
+
+  /* โหลด user + coin */
   useEffect(() => {
     const loadUser = async () => {
       let current = getCurrentUser();
       if (!current) current = await initUserProfile();
+
       const uid = current?.id;
       if (!uid) {
         navigate("/login");
         return;
       }
+
       setUserID(uid);
+
+      // เก็บ userInfo สำหรับแสดงชื่อ/อีเมล/โปรไฟล์
+      setUserInfo({
+        id: current?.id,
+        firstname: current?.firstname,
+        lastname: current?.lastname,
+        email: current?.email,
+        profile: current?.profile,
+        username: current?.username,
+        role: current?.role,
+      });
+
+      // ✅ ดึงข้อมูล user+coin จาก API
+      try {
+        const usersData = await GetUserDataAndCoinsByUserID(uid);
+
+        setUserDataCoins({
+          id: usersData?.id,
+          username: usersData?.username,
+          email: usersData?.email,
+          firstName: usersData?.firstName,
+          lastName: usersData?.lastName,
+          profile: usersData?.profile,
+          coin: Number(usersData?.coin ?? 0),
+        });
+      } catch (err) {
+        console.error("❌ Failed to load user coin:", err);
+        setUserDataCoins(null);
+      }
     };
+
     loadUser();
   }, [navigate]);
 
@@ -88,14 +191,11 @@ const Index: React.FC = () => {
     const fetchChargingStatus = async () => {
       try {
         const charging = await GetChargingSessionByStatusTrue();
-        console.log("charging:", charging);
 
         if (Array.isArray(charging) && charging.length > 0) {
           const activeIds = charging
             .map((s: any) => s?.Payment?.EVCabinetID as number | undefined)
             .filter((id): id is number => id !== undefined);
-
-          console.log("🔥 ตู้ที่กำลังชาร์จทั้งหมด:", activeIds);
 
           setActiveCabinetIds(activeIds);
         } else {
@@ -188,9 +288,7 @@ const Index: React.FC = () => {
     const cab = cabinets.find((c) => c.id === selectedCabinetId);
     if (!cab) return;
 
-    const available = cab.chargers.filter(
-      (c) => c.Status?.Status !== "Unavailable"
-    );
+    const available = cab.chargers.filter((c) => c.Status?.Status !== "Unavailable");
 
     setEvChargers(available);
 
@@ -267,12 +365,22 @@ const Index: React.FC = () => {
       chargerNames: cab.chargers
         .filter((c) => c.Status?.Status !== "Unavailable")
         .map((c) => c.Name),
+      // ✅ NEW: เอา Type ของหัวชาร์จ (unique)
+      types: getUniqueChargerTypes(cab),
     }));
   }, [cabinets]);
 
   /* ================================================================= */
   /* ============================ RENDER ============================== */
   /* ================================================================= */
+
+  const firstName = userDataCoins?.firstName ?? userInfo?.firstname ?? "";
+  const lastName = userDataCoins?.lastName ?? userInfo?.lastname ?? "";
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  const profileUrl = resolveImageUrl(userDataCoins?.profile ?? userInfo?.profile);
+
+  const coin = Number(userDataCoins?.coin ?? 0);
 
   return (
     <div className="min-h-screen bg-white">
@@ -303,6 +411,47 @@ const Index: React.FC = () => {
 
       {/* CONTENT */}
       <main className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
+        {/* Profile (ซ้าย) + Coin (ขวา) */}
+        <section className="mb-4">
+          <div className="rounded-2xl border bg-white px-4 py-3 shadow-sm flex items-center justify-between">
+            {/* Left: user */}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-12 w-12 rounded-2xl overflow-hidden bg-blue-50 ring-1 ring-blue-100 flex items-center justify-center">
+                {profileUrl ? (
+                  <img
+                    src={profileUrl}
+                    alt="profile"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xl">👤</span>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-900 truncate">
+                  {fullName || "User"}
+                </div>
+                <div className="text-xs text-gray-500 truncate">
+                  {userDataCoins?.email ?? userInfo?.email ?? ""}
+                </div>
+              </div>
+            </div>
+
+            {/* Right: coin from API + unit coin/baht */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="rounded-2xl bg-blue-50 px-3 py-2 ring-1 ring-blue-100 text-right">
+                <div className="text-[11px] text-blue-700 leading-none">
+                  Coin / Baht
+                </div>
+                <div className="text-base font-bold text-blue-700 leading-tight">
+                  {coin.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* เงิน */}
         <div className="mb-5 rounded-xl bg-gradient-to-r from-[#EAF3FF] via-[#F3F8FF] to-[#FFFFFF] border border-blue-100 p-3 shadow-sm">
           <label className="block text-xs mb-1 text-[#0A84FF]">
@@ -395,7 +544,21 @@ const Index: React.FC = () => {
                           <div className="text-xs text-gray-500">{cab.location}</div>
                         )}
 
-                        <div className="mt-1 flex flex-wrap gap-1.5">
+                        {/* ✅ NEW: แสดง Type ใต้ location (เช่น AC Type2) ถ้าซ้ำให้โชว์ครั้งเดียว */}
+                        {Array.isArray(cab.types) && cab.types.length > 0 && (
+                          <div className="mt-0.5 flex flex-wrap gap-1.5">
+                            {cab.types.map((t, idx) => (
+                              <span
+                                key={`${cab.id}-type-${idx}`}
+                                className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 ring-1 ring-emerald-100"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/*<div className="mt-1 flex flex-wrap gap-1.5">
                           {cab.chargerNames.map((nm, idx) => (
                             <span
                               key={idx}
@@ -404,7 +567,7 @@ const Index: React.FC = () => {
                               {nm}
                             </span>
                           ))}
-                        </div>
+                        </div>*/}
                       </div>
 
                       {/* Tag สถานะ */}
@@ -461,6 +624,7 @@ const Index: React.FC = () => {
                     <img
                       src={`${apiUrlPicture}${charger.Picture}`}
                       className="h-16 w-16 rounded-xl object-cover"
+                      alt={charger.Name}
                     />
 
                     <div className="flex-1">
@@ -528,43 +692,40 @@ const Index: React.FC = () => {
               }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />
-            <span className="text-sm font-semibold">
-              Next
-            </span>
+            <span className="text-sm font-semibold">Next</span>
           </button>
         </div>
       </div>
 
       <Modal
-  open={showCarModal}
-  footer={null}
-  onCancel={() => setShowCarModal(false)}
-  centered
->
-  <div className="flex flex-col items-center text-center mt-2 mb-1">
-    <div className="text-4xl mb-3">🚗</div>
-
-    <h3 className="text-lg font-semibold text-blue-700 mb-1">
-      No car information found
-    </h3>
-
-    <p className="text-gray-600 mb-5">
-      Before making a payment, please add your car information.
-    </p>
-
-    <div className="flex justify-center gap-3">
-      <Button onClick={() => setShowCarModal(false)}>Cancel</Button>
-      <Button
-        type="primary"
-        onClick={() => navigate("/user/add-cars")}
-        className="bg-blue-600"
+        open={showCarModal}
+        footer={null}
+        onCancel={() => setShowCarModal(false)}
+        centered
       >
-        Go to add car
-      </Button>
-    </div>
-  </div>
-</Modal>
+        <div className="flex flex-col items-center text-center mt-2 mb-1">
+          <div className="text-4xl mb-3">🚗</div>
 
+          <h3 className="text-lg font-semibold text-blue-700 mb-1">
+            No car information found
+          </h3>
+
+          <p className="text-gray-600 mb-5">
+            Before making a payment, please add your car information.
+          </p>
+
+          <div className="flex justify-center gap-3">
+            <Button onClick={() => setShowCarModal(false)}>Cancel</Button>
+            <Button
+              type="primary"
+              onClick={() => navigate("/user/add-cars")}
+              className="bg-blue-600"
+            >
+              Go to add car
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
