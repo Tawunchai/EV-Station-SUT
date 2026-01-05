@@ -84,6 +84,7 @@ const Payment = () => {
   const fetchPayments = async () => {
     setTableLoading(true);
     const data = await ListPayments();
+    console.log("Payment data:", data);
     setTimeout(() => {
       setPaymentData(data || []);
       setTableLoading(false);

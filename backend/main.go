@@ -275,6 +275,7 @@ func main() {
 
 		//monitor
 		public.GET("/charging-session/monitor/:charge_point", cabinet.GetDataMonitorByChargePoint)
+		public.GET("/users/:id/data-coins", user.GetUserDataAndCoinsByUserID)
 	}
 
 	r.GET("/", func(c *gin.Context) {

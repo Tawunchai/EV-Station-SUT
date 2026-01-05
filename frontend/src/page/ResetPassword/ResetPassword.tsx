@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { Button, Form, Input, Typography, message } from "antd";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { FaBolt } from "react-icons/fa";
 
 import Background from "../../assets/woman-charging-electro-car-by-her-house.jpg"; // พื้นหลังเต็มจอแบบเดียวกับตัวอย่าง
 import { resetPassword } from "../../services/httpLogin";
+
+// ✅ import รูปโลโก้มาแทน FaBolt (แก้ path ให้ตรงไฟล์ของคุณ)
+import Logo from "../../assets/Logo-Good.png";
 
 const { Title } = Typography;
 
@@ -32,13 +34,13 @@ const ResetPasswordForm: React.FC = () => {
     try {
       const res = await resetPassword({ email, new_password: newpassword });
       if (res) {
-        messageApi.success("เปลี่ยนรหัสผ่านสำเร็จ กำลังพาไปหน้าเข้าสู่ระบบ…");
+        messageApi.success("Password changed successfully");
         setTimeout(() => navigate("/"), 1200);
       } else {
-        messageApi.error("เปลี่ยนรหัสผ่านไม่สำเร็จ กรุณาลองใหม่");
+        messageApi.error("Failed to change password");
       }
     } catch {
-      messageApi.error("เกิดข้อผิดพลาด กรุณาลองใหม่");
+      messageApi.error("An error occurred");
     } finally {
       setLoading(false);
     }
@@ -48,7 +50,8 @@ const ResetPasswordForm: React.FC = () => {
     <>
       {contextHolder}
 
-      {/* พื้นหลังภาพเต็มจอ + overlay + grid + blobs (สไตล์เดียวกับตัวอย่าง LoginForm1) */}
+      {/* พื้นหลังภาพเต็มจอ + overlay + grid +
+       + blobs (สไตล์เดียวกับตัวอย่าง LoginForm1) */}
       <div className="relative min-h-dvh flex items-center justify-center px-4 py-10 overflow-hidden">
         {/* ภาพพื้นหลังเต็มจอ (แก้ white strip) */}
         <div className="absolute inset-0 -z-10">
@@ -106,9 +109,16 @@ const ResetPasswordForm: React.FC = () => {
             <div className="rounded-[26px] bg-white border border-gray-200 shadow-[0_20px_60px_rgba(2,6,23,0.18)] p-8 md:p-10">
               {/* แบรนด์ */}
               <div className="flex items-center gap-3 mb-6 justify-center">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow">
-                  <FaBolt className="text-xl" />
+                {/* ✅ เปลี่ยน FaBolt เป็นรูปโลโก้ */}
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow border border-gray-200 overflow-hidden">
+                  <img
+                    src={Logo}
+                    alt="EV Station Logo"
+                    className="h-9 w-9 object-contain"
+                    draggable={false}
+                  />
                 </span>
+
                 <div className="leading-tight text-center">
                   <h1
                     className="text-2xl font-extrabold tracking-tight"
@@ -123,10 +133,10 @@ const ResetPasswordForm: React.FC = () => {
                       animation: "evTextShine 6s ease-in-out infinite",
                     }}
                   >
-                    EV Station
+                    SUT Smart EV
                   </h1>
                   <p className="text-[12px] text-blue-700/70 font-medium">
-                    Reset • Secure • Go
+                    Smart • Clean • Future
                   </p>
                 </div>
               </div>
@@ -144,7 +154,7 @@ const ResetPasswordForm: React.FC = () => {
                   Reset Password
                 </Title>
                 <p className="mt-1 text-sm text-blue-900/70">
-                  โปรดตั้งรหัสผ่านใหม่ด้านล่างเพื่อความปลอดภัยของบัญชี
+                  Please set a new password below for account security.
                 </p>
               </div>
 
@@ -152,7 +162,11 @@ const ResetPasswordForm: React.FC = () => {
               <Form layout="vertical" onFinish={onFinish}>
                 <Form.Item
                   name="password"
-                  label={<span className="text-sm text-gray-700 font-medium">New Password</span>}
+                  label={
+                    <span className="text-sm text-gray-700 font-medium">
+                      New Password
+                    </span>
+                  }
                   rules={[{ required: true, message: "Please input your new password!" }]}
                   hasFeedback
                 >
@@ -165,7 +179,11 @@ const ResetPasswordForm: React.FC = () => {
 
                 <Form.Item
                   name="newpassword"
-                  label={<span className="text-sm text-gray-700 font-medium">Confirm New Password</span>}
+                  label={
+                    <span className="text-sm text-gray-700 font-medium">
+                      Confirm New Password
+                    </span>
+                  }
                   dependencies={["password"]}
                   hasFeedback
                   rules={[
@@ -195,7 +213,7 @@ const ResetPasswordForm: React.FC = () => {
                     disabled={loading}
                     className="!h-12 !rounded-2xl !bg-blue-600 hover:!bg-blue-700 font-medium"
                   >
-                    บันทึกรหัสผ่านใหม่
+                    Save the new password
                   </Button>
                 </Form.Item>
               </Form>
@@ -203,11 +221,11 @@ const ResetPasswordForm: React.FC = () => {
               {/* ลิงก์ช่วยเหลือ */}
               <div className="flex items-center justify-between mt-4 text-sm">
                 <Link to="/" className="text-blue-600 hover:underline">
-                  กลับไปเข้าสู่ระบบ
+                  Go back to login
                 </Link>
               </div>
 
-              <p className="mt-8 text-center text-xs text-gray-500">© EV Station 2025</p>
+              <p className="mt-8 text-center text-xs text-gray-500">SUT Smart EV Station</p>
             </div>
           </div>
         </div>

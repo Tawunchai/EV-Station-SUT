@@ -67,6 +67,8 @@ export interface EVChargingPayListmentInterface {
   PaymentID: number;
   Price: number;
   Quantity: number;
+  Power: number; // kWh
+  RemainingPower: number; // kWh ที่เหลือ
   CreatedAt?: string;
   UpdatedAt?: string;
   EVcharging?: EVchargingInterface;

@@ -351,7 +351,7 @@ const Index = () => {
       <div className="md:w-200 bg-white border border-blue-100 rounded-2xl p-6 m-3 shadow-sm">
         <div className="flex justify-between">
           <p className="text-xl font-semibold text-blue-800">
-            Weekly Stats
+            Total Overview
           </p>
           <button
             type="button"

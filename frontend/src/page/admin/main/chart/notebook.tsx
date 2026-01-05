@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "@syncfusion/ej2-react-charts";
 import type { EdgeLabelPlacement } from "@syncfusion/ej2-react-charts";
-import { ListPayments } from "../../../../services";
+import { ListEVChargingPayments } from "../../../../services";
 
 // Month list
 type MonthOption = { Id: number; Time: string };
@@ -37,7 +37,7 @@ const MonthDropDown: React.FC<{
   value: number;
   onChange: (val: number) => void;
 }> = ({ currentMode, value, onChange }) => (
-  <div className="w-28 border border-blue-300 px-2 py-1 rounded-md">
+  <div className="w-28 border border-blue-300 px-2 py-1 rounded-md bg-white">
     <DropDownListComponent
       id="month"
       fields={{ text: "Time", value: "Id" }}
@@ -60,7 +60,7 @@ const YearDropDown: React.FC<{
   value: number;
   onChange: (val: number) => void;
 }> = ({ currentMode, years, value, onChange }) => (
-  <div className="w-28 border border-blue-300 px-2 py-1 rounded-md">
+  <div className="w-28 border border-blue-300 px-2 py-1 rounded-md bg-white">
     <DropDownListComponent
       id="year"
       fields={{ text: "label", value: "value" }}
@@ -111,28 +111,34 @@ type Point = { x: Date; y: number };
 
 const MonthlyRevenueChart: React.FC = () => {
   const { currentMode } = useStateContext();
+
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const now = useMemo(() => new Date(), []);
+
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(-1);
+
   const [data, setData] = useState<Point[]>([]);
   const [yMax, setYMax] = useState<number>(5000);
 
   useEffect(() => {
     const run = async () => {
-      const payments = await ListPayments();
-      if (!Array.isArray(payments)) {
+      const evPayments = await ListEVChargingPayments();
+      if (!Array.isArray(evPayments)) {
         setAvailableYears([]);
         setData([]);
         setYMax(1000);
         return;
       }
 
+      // ✅ ปีที่มีข้อมูล (อิง Payment.Date หรือ fallback CreatedAt)
       const yearsSet = new Set<number>();
-      for (const p of payments) {
-        const d = new Date(p?.Date);
+      for (const item of evPayments) {
+        const raw = item?.Payment?.Date ?? item?.CreatedAt;
+        const d = new Date(raw!);
         if (!isNaN(d.getTime())) yearsSet.add(d.getFullYear());
       }
+
       const years = Array.from(yearsSet).sort((a, b) => a - b);
       setAvailableYears(years);
 
@@ -140,13 +146,35 @@ const MonthlyRevenueChart: React.FC = () => {
         years.includes(year) ? year : years[years.length - 1] ?? now.getFullYear();
       if (activeYear !== year) setYear(activeYear);
 
+      // ✅ รวม “Used Revenue” รายเดือน (คำนึง RemainingPower)
       const monthlyMap = Array.from({ length: 12 }, () => 0);
-      for (const p of payments) {
-        const d = new Date(p?.Date);
+
+      for (const item of evPayments) {
+        const raw = item?.Payment?.Date ?? item?.CreatedAt;
+        const d = new Date(raw!);
         if (isNaN(d.getTime())) continue;
         if (d.getFullYear() !== activeYear) continue;
+
         const m = d.getMonth();
-        monthlyMap[m] += Number(p?.Amount) || 0;
+
+        const totalPower = Number(item?.Power) || 0; // kWh ซื้อ
+        const remainingPower = Math.max(0, Number(item?.RemainingPower) || 0); // kWh เหลือ
+        const usedPower = Math.max(0, totalPower - remainingPower); // ✅ ใช้ไปแล้ว
+
+        const rate = Number(item?.EVcharging?.Price) || 0; // บาท/kWh
+        const paidBaht = Number(item?.Price) || 0; // บาทที่จ่ายของ type นี้
+
+        let remainingBaht = rate > 0 ? remainingPower * rate : 0;
+        if (paidBaht > 0 && remainingBaht > paidBaht) remainingBaht = paidBaht;
+
+        let usedBaht = 0;
+        if (paidBaht > 0) {
+          usedBaht = Math.max(0, paidBaht - remainingBaht);
+        } else if (rate > 0) {
+          usedBaht = usedPower * rate;
+        }
+
+        monthlyMap[m] += usedBaht;
       }
 
       let points: Point[] = [];
@@ -165,14 +193,16 @@ const MonthlyRevenueChart: React.FC = () => {
       }
 
       points.sort((a, b) => a.x.getTime() - b.x.getTime());
+
       const localMax = Math.max(0, ...points.map((p) => p.y));
       const roundedMax = Math.max(1000, Math.ceil(localMax / 1000) * 1000);
+
       setYMax(roundedMax);
       setData(points);
     };
 
     run();
-  }, [year, month]);
+  }, [year, month, now]);
 
   const monthLabel = useMemo(
     () => MONTH_OPTIONS.find((m) => m.Id === month)?.Time ?? "All",
@@ -184,7 +214,7 @@ const MonthlyRevenueChart: React.FC = () => {
       dataSource: data,
       xName: "x",
       yName: "y",
-      name: "Monthly Revenue",
+      name: "Used Revenue",
       width: "3",
       fill: "rgba(59,130,246,0.15)",
       border: { width: 3, color: "#2563EB" },
@@ -232,7 +262,8 @@ const MonthlyRevenueChart: React.FC = () => {
           chartArea={{ border: { width: 0 } }}
           tooltip={{
             enable: true,
-            format: "${point.x} : ${point.y}฿",
+            // Syncfusion tooltip: แสดงค่าเป็นบาท + format สวย
+            format: "${point.x} : ${point.y}",
           }}
           margin={{ top: 10, bottom: 40, left: 10, right: 10 }}
           legendSettings={{

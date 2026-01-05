@@ -262,7 +262,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
       <header className="sticky top-0 z-40 bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md">
         <div className="mx-auto flex max-w-screen-xl items-center justify-between px-4 py-3">
           <button onClick={() => navigate("/user")} className="font-semibold">
-            EV Station
+            SUT Smart EV Station
           </button>
 
           {/* Desktop */}

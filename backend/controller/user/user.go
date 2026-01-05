@@ -665,3 +665,63 @@ func GetUserByID(c *gin.Context) {
 
 	c.JSON(http.StatusOK, user)
 }
+
+// ✅ Response แบบไม่ส่ง Password กลับ (แนะนำ)
+type UserDataAndCoinsResponse struct {
+	ID          uint    `json:"id"`
+	Username    string  `json:"username"`
+	Email       string  `json:"email"`
+	FirstName   string  `json:"firstName"`
+	LastName    string  `json:"lastName"`
+	Profile     string  `json:"profile"`
+	PhoneNumber string  `json:"phoneNumber"`
+	Coin        float64 `json:"coin"`
+
+	UserRoleID uint              `json:"userRoleID"`
+	UserRole   *entity.UserRoles `json:"userRole,omitempty"`
+
+	GenderID uint            `json:"genderID"`
+	Gender   *entity.Genders `json:"gender,omitempty"`
+}
+
+// GET /users/:id/data-coins
+func GetUserDataAndCoinsByUserID(c *gin.Context) {
+	idParam := c.Param("id")
+	userID, err := strconv.Atoi(idParam)
+	if err != nil || userID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	db := config.DB()
+
+	var user entity.User
+	// ✅ โหลดข้อมูล + ความสัมพันธ์ที่ต้องใช้
+	if err := db.
+		Preload("UserRole").
+		Preload("Gender").
+		First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// ✅ map เป็น response (ไม่ส่ง Password)
+	resp := UserDataAndCoinsResponse{
+		ID:          user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		FirstName:   user.FirstName,
+		LastName:    user.LastName,
+		Profile:     user.Profile,
+		PhoneNumber: user.PhoneNumber,
+		Coin:        user.Coin,
+
+		UserRoleID: user.UserRoleID,
+		UserRole:   user.UserRole,
+
+		GenderID: user.GenderID,
+		Gender:   user.Gender,
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
