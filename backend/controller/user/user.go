@@ -427,10 +427,9 @@ func UpdateUserByID(c *gin.Context) {
 		return
 	}
 
-	// allowed fields
+	// ✅ allowed fields (ไม่รวม Password)
 	allowed := map[string]bool{
 		"Username":    true,
-		"Password":    true,
 		"Email":       true,
 		"FirstName":   true,
 		"LastName":    true,
@@ -450,18 +449,8 @@ func UpdateUserByID(c *gin.Context) {
 	delete(input, "UserRole")
 	delete(input, "Gender")
 
-	// ถ้ามี Password -> hash ก่อนเก็บ
-	if rawPass, ok := input["Password"].(string); ok && rawPass != "" {
-		hashed, err := config.HashPassword(rawPass)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
-			return
-		}
-		input["Password"] = hashed
-	} else {
-		// ไม่อัพเดตรหัสผ่านถ้าไม่ได้ส่งมาหรือส่งค่าว่าง
-		delete(input, "Password")
-	}
+	// ✅ กันพลาด: ไม่แตะ Password ไม่ว่า payload จะส่งมาหรือไม่
+	delete(input, "Password")
 
 	// เตรียมค่าบทบาท "หลังอัปเดต"
 	targetRoleID := user.UserRoleID // ค่าเดิม
@@ -498,7 +487,6 @@ func UpdateUserByID(c *gin.Context) {
 			var emp entity.Employee
 			err := tx.Where("user_id = ?", user.ID).First(&emp).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// ยังไม่มี -> สร้างใหม่แบบ default
 				emp = entity.Employee{
 					Bio:        fmt.Sprintf("Profile of %s %s", user.FirstName, user.LastName),
 					Experience: "",
@@ -512,7 +500,6 @@ func UpdateUserByID(c *gin.Context) {
 			} else if err != nil {
 				return err
 			}
-			// ถ้ามีอยู่แล้ว -> ไม่ทำอะไร (ตามเงื่อนไขของคุณ)
 		}
 
 		return nil
@@ -530,7 +517,6 @@ func UpdateUserByID(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "User updated successfully", "user": user})
 }
-
 
 func ListUserByID(c *gin.Context) {
 	idParam := c.Param("id")
