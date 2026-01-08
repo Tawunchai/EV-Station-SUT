@@ -8,6 +8,9 @@ import { useStateContext } from "../../contexts/ContextProvider";
 import { getEmployeeByID, apiUrlPicture } from "../../services";
 import { getCurrentUser, initUserProfile } from "../../services/httpLogin";
 
+// ✅ import รูปโลโก้มาใช้แทน "EV"
+import LogoEV from "../../assets/Logo-Good.png"; // <-- แก้ path ให้ตรงไฟล์ของคุณ
+
 /* ---------- ปุ่มเมนูขนาดเล็กพร้อม Tooltip ---------- */
 type NavBtnProps = {
   title: string;
@@ -134,11 +137,31 @@ const Navbar: React.FC = () => {
 
         {/* Center: Brand */}
         <div className="hidden sm:flex items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-blue-600 text-white text-[14px] font-bold">
-            EV
+          {/* ✅ โลโก้พื้นหลังขาว (แทน bg-blue-600) */}
+          <span
+            className="inline-flex h-7 w-7 items-center justify-center rounded-xl
+              bg-white ring-1 ring-blue-200 overflow-hidden shadow-sm"
+          >
+            <img
+              src={LogoEV}
+              alt="EV Logo"
+              className="h-full w-full object-contain p-1"
+              draggable={false}
+              onError={(e) => {
+                // fallback: ถ้ารูปโหลดไม่ได้ ให้โชว์พื้นหลังขาว + ตัวอักษร EV สีน้ำเงิน
+                const el = e.currentTarget as HTMLImageElement;
+                el.style.display = "none";
+                const parent = el.parentElement;
+                if (parent) {
+                  parent.innerHTML =
+                    "<span style='color:#2563eb;font-weight:700;font-size:12px;letter-spacing:.5px;'>EV</span>";
+                }
+              }}
+            />
           </span>
+
           <span className="text-sm font-semibold tracking-wide text-blue-700">
-            FastCharge Admin
+            SUT Smart EV Station
           </span>
         </div>
 

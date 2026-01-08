@@ -51,6 +51,7 @@ const BeforeSolar = Loadable(lazy(() => import("../page/admin/mornitor/solar/bef
 const EVCabinet = Loadable(lazy(() => import("../page/admin/mornitor/cabinet/ev")));
 const BeforeEVCabinet = Loadable(lazy(() => import("../page/admin/mornitor/cabinet/before_ev")));
 const TestCabinetEV = Loadable(lazy(() => import("../page/admin/mornitor/cabinet/test_cabinet")));
+const MeterSolar = Loadable(lazy(() => import("../page/admin/mornitor/solar/meter")));
 
 // ======================= ROUTES =======================
 
@@ -114,6 +115,7 @@ const AdminRoutes = (roleName: string | null): RouteObject[] => {
         { path: "Car", element: <Car /> },
         { path: "Car-data", element: <CarData /> },
         { path: "test-cabinet", element: <TestCabinetEV /> },
+        { path: "meter", element: <MeterSolar /> },
         { path: "*", element: <Admin /> },
       ],
     },

@@ -18,6 +18,7 @@ import (
 	"github.com/Tawunchai/work-project/controller/inverter"
 	"github.com/Tawunchai/work-project/controller/like"
 	"github.com/Tawunchai/work-project/controller/login"
+	"github.com/Tawunchai/work-project/controller/meter"
 	"github.com/Tawunchai/work-project/controller/method"
 	modal "github.com/Tawunchai/work-project/controller/modal"
 	"github.com/Tawunchai/work-project/controller/new"
@@ -279,6 +280,16 @@ func main() {
 		//monitor
 		public.GET("/charging-session/monitor/:charge_point", cabinet.GetDataMonitorByChargePoint)
 		public.GET("/users/:id/data-coins", user.GetUserDataAndCoinsByUserID)
+
+		//meter
+		public.POST("create-meter", meter.CreateMeter)           // POST   /api/meter
+		public.PATCH("update-meter/:id", meter.UpdateMeterByID)  // PATCH  /api/meter/:id
+		public.DELETE("delete-meter/:id", meter.DeleteMeterByID) // DELETE /api/meter/:id
+		public.GET("meters", meter.ListMeter)                    // GET /api/meters
+		public.POST("/create-meter-realtime-data", meter.CreateMeterRealtimeData)
+		public.DELETE("/delete-meter-realtime-data", meter.DeleteMeterRealtimeDataByIDs)
+		public.GET("/meter/:deviceID", meter.HandleMeter)
+		public.GET("/meter/frontend", meter.HandleFrontend)
 	}
 
 	r.GET("/", func(c *gin.Context) {

@@ -9,7 +9,11 @@ type Solar struct {
 	UrlWebsocket string `json:"url_websocket"`
 	SolarPoint   string `json:"solar_point"`
 
-	Description  string `json:"description"`  
-	Picture      string `json:"picture"`     
-	Location     string `json:"location"`     
+	Description string `json:"description"`
+	Picture     string `json:"picture"`
+	Location    string `json:"location"`
+
+	
+	MeterID      *uint 
+	Meter        Meter   `gorm:"foreignKey:MeterID"` 
 }

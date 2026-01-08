@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const ThunderAuthToken = "0e163198-4d01-4ebe-8bab-1985348d41a9"
+const ThunderAuthToken = "e0f364e3-b054-4ab1-bf63-be7790ef1e49"
 
 func CheckSlipThunder(c *gin.Context) {
 	file, err := c.FormFile("file")

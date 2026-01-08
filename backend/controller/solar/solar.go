@@ -43,13 +43,6 @@ func solarLogln(args ...interface{}) {
 	fmt.Println(args...)
 }
 
-func solarLogf(format string, args ...interface{}) {
-	if !isSolarLogEnabled() {
-		return
-	}
-	fmt.Printf(format, args...)
-}
-
 // ============================================================================
 // ✅ WebSocket Upgrader
 // ============================================================================
