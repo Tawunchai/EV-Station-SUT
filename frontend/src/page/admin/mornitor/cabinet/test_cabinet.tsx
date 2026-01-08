@@ -222,7 +222,7 @@ const TestCabinet: React.FC = () => {
 
     meterIntervalRef.current = window.setInterval(() => {
       sendMeterValues();
-    }, 20000);
+    }, 15000);
   };
 
   /** ---------- Connect / Disconnect ---------- */

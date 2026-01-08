@@ -3125,3 +3125,48 @@ export const GetUserDataAndCoinsByUserID = async (
     return null;
   }
 };
+
+
+// ✅ interface any ตามที่ขอ
+export interface ChargerSnapshotResponse {
+  source?: any;
+  snapshot?: any;
+  count?: any;
+  snapshots?: any;
+  data?: any;
+}
+
+export const GetOcppSnapshotByChargerID = async (
+  chargerID: string,
+  options?: { refresh?: boolean; include_db?: boolean }
+): Promise<any | null> => {
+  try {
+    if (!chargerID) return null;
+
+    const params: any = {};
+    if (options?.refresh) params.refresh = 1;
+    if (options?.include_db) params.include_db = 1;
+
+    const response = await axios.get(
+      `${apiUrl}/ocpp/snapshot/${encodeURIComponent(chargerID)}`,
+      {
+        params,
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      // ✅ handler ส่ง { source, snapshot }
+      return response.data;
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching ocpp snapshot:", error);
+    return null;
+  }
+};

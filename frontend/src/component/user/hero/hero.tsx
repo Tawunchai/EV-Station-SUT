@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import CountUp from "react-countup";
 import Hero_Image from "../../../assets/picture/car_charging.jpg";
@@ -19,7 +19,7 @@ type HeaderProps = {
   scrollToValue: () => void;
 };
 
-const Hero = ({ }: HeaderProps) => {
+const Hero = ({}: HeaderProps) => {
   const [evList, setEVList] = useState<EVchargingInterface[]>([]);
   const [userList, setUserList] = useState<UsersInterface[]>([]);
   const [userID, setUserID] = useState<number | null>(null);
@@ -31,15 +31,51 @@ const Hero = ({ }: HeaderProps) => {
 
   const navigate = useNavigate();
 
+  // ✅ ป้องกัน setState หลัง unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // ⭐ โหลด user จาก JWT
   useEffect(() => {
     const loadUser = async () => {
       let u = getCurrentUser();
       if (!u) u = await initUserProfile();
+      if (!mountedRef.current) return;
       if (u?.id) setUserID(u.id);
     };
     loadUser();
   }, []);
+
+  // ✅ helper: เช็คว่า session "ใช้งานได้จริง" สำหรับการไปหน้าชาร์จ
+  // เงื่อนไขสำคัญตามที่ขอ:
+  // - ถ้าใช้ service GetChargingSessionByStatusAndUserID แล้ว "PaymentID ไม่มีอะไรเลย" (null/0/undefined/"" )
+  //   => ถือว่าไม่ active และไม่โชว์ Charging
+  const isValidActiveSession = (s: any) => {
+    const statusOk = s?.Status === true || s?.Status === 1;
+
+    // PaymentID ต้องมีจริง และต้องไม่เป็น 0
+    const paymentId = s?.PaymentID;
+    const paymentIdOk =
+      paymentId !== null &&
+      paymentId !== undefined &&
+      paymentId !== "" &&
+      Number(paymentId) > 0;
+
+    // กันกรณีบาง backend ส่งมาเป็น active แต่ Payment ว่าง/ไม่มี cabinet
+    const cabinetId = s?.Payment?.EVCabinetID;
+    const cabinetIdOk =
+      cabinetId !== null &&
+      cabinetId !== undefined &&
+      cabinetId !== "" &&
+      Number(cabinetId) > 0;
+
+    return statusOk && paymentIdOk && cabinetIdOk;
+  };
 
   // ⭐ โหลด Charging Session ที่ Status = true
   useEffect(() => {
@@ -49,10 +85,18 @@ const Hero = ({ }: HeaderProps) => {
       const res = await GetChargingSessionByStatusAndUserID(userID);
       const list = res?.data || [];
 
-      const active = list.filter((s: any) => s.Status === true || s.Status === 1);
+      // ✅ กรองเฉพาะ session ที่ active และ PaymentID ต้องมีจริง
+      const active = Array.isArray(list)
+        ? list.filter((s: any) => isValidActiveSession(s))
+        : [];
+
+      if (!mountedRef.current) return;
 
       setSessions(active);
       setIsChargingActive(active.length > 0);
+
+      // ✅ ถ้าไม่มี active จริง ให้ปิด modal เผื่อค้างอยู่
+      if (active.length === 0) setModalOpen(false);
     };
 
     loadSession();
@@ -63,6 +107,7 @@ const Hero = ({ }: HeaderProps) => {
     const fetchData = async () => {
       const evs = await ListEVCharging();
       const users = await ListUsers();
+      if (!mountedRef.current) return;
       if (evs) setEVList(evs);
       if (users) setUserList(users);
     };
@@ -80,6 +125,14 @@ const Hero = ({ }: HeaderProps) => {
 
   // ⭐ ไปยังตู้ชาร์จที่เลือก
   const goToCabinet = (s: any) => {
+    // ✅ Safety: ถ้า session ไม่ valid จริง ๆ ไม่ให้ไป และกลับไป Start charge
+    if (!isValidActiveSession(s)) {
+      setModalOpen(false);
+      setIsChargingActive(false);
+      setSessions([]);
+      return;
+    }
+
     navigate("/user/charging", {
       state: {
         paymentID: s?.PaymentID,
@@ -125,12 +178,15 @@ const Hero = ({ }: HeaderProps) => {
                 {/* 👉 ปุ่มเริ่มชาร์จ / กำลังชาร์จ */}
                 <button
                   className={`relative overflow-hidden inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-sm active:scale-[0.99] transition
-                    ${isChargingActive
-                      ? "bg-orange-500 text-white shadow-lg"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
+                    ${
+                      isChargingActive
+                        ? "bg-orange-500 text-white shadow-lg"
+                        : "bg-blue-600 text-white hover:bg-blue-700"
                     }`}
                   onClick={() =>
-                    isChargingActive ? setModalOpen(true) : navigate("/user/evs-selector")
+                    isChargingActive
+                      ? setModalOpen(true)
+                      : navigate("/user/evs-selector")
                   }
                 >
                   {/* Bubble Animation */}
@@ -164,7 +220,7 @@ const Hero = ({ }: HeaderProps) => {
                 Rates of Solar and Grid energy unit
               </center>
 
-              {/* ✅ STATS (แบบใหม่: cleaner + modern, เกือบสวยแล้วตามที่ขอ) */}
+              {/* ✅ STATS */}
               <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
                 {Object.entries(namePriceSums).map(([name, total], index, arr) => {
                   const isLast = index === arr.length - 1;
@@ -174,14 +230,14 @@ const Hero = ({ }: HeaderProps) => {
                     <div
                       key={name}
                       className={`
-          group relative overflow-hidden rounded-2xl
-          border border-blue-100/70 bg-white
-          p-4 sm:p-5
-          shadow-[0_8px_22px_rgba(2,6,23,0.06)]
-          hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)]
-          transition
-          ${isLast && isOdd ? "col-span-2" : ""}
-        `}
+                        group relative overflow-hidden rounded-2xl
+                        border border-blue-100/70 bg-white
+                        p-4 sm:p-5
+                        shadow-[0_8px_22px_rgba(2,6,23,0.06)]
+                        hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)]
+                        transition
+                        ${isLast && isOdd ? "col-span-2" : ""}
+                      `}
                     >
                       {/* top accent line */}
                       <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-200 via-sky-400 to-blue-600 opacity-80" />
@@ -227,14 +283,14 @@ const Hero = ({ }: HeaderProps) => {
                 {/* ✅ การ์ด Customers (เข้าชุด) */}
                 <div
                   className="
-      col-span-2 sm:col-span-1
-      group relative overflow-hidden rounded-2xl
-      border border-blue-100/70 bg-white
-      p-4 sm:p-5
-      shadow-[0_8px_22px_rgba(2,6,23,0.06)]
-      hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)]
-      transition
-    "
+                    col-span-2 sm:col-span-1
+                    group relative overflow-hidden rounded-2xl
+                    border border-blue-100/70 bg-white
+                    p-4 sm:p-5
+                    shadow-[0_8px_22px_rgba(2,6,23,0.06)]
+                    hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)]
+                    transition
+                  "
                 >
                   {/* top accent line */}
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-200 via-sky-400 to-blue-600 opacity-80" />
@@ -276,7 +332,11 @@ const Hero = ({ }: HeaderProps) => {
             {/* RIGHT IMAGE */}
             <div className="hidden md:flex justify-end">
               <figure className="relative w-[34rem] max-w-full h-[28rem] rounded-[2rem] overflow-hidden border border-gray-100 shadow-[0_20px_60px_rgba(2,6,23,0.08)] bg-white">
-                <img src={Hero_Image} alt="EV Charging" className="h-full w-full object-cover" />
+                <img
+                  src={Hero_Image}
+                  alt="EV Charging"
+                  className="h-full w-full object-cover"
+                />
                 <figcaption className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-300 via-blue-500 to-blue-600" />
               </figure>
             </div>
@@ -366,7 +426,9 @@ const Hero = ({ }: HeaderProps) => {
                 </div>
               </div>
 
-              <h3 className="text-xl font-bold text-blue-900 tracking-tight">You are charging</h3>
+              <h3 className="text-xl font-bold text-blue-900 tracking-tight">
+                You are charging
+              </h3>
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[260px]">
                 Select a station to check status or add power.
               </p>

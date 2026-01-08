@@ -186,6 +186,257 @@ func getLastRealStatus(chargerID string) (ChargerStatus, bool) {
 }
 
 // ============================================================================
+// ✅ NEW: SNAPSHOT (กัน state ปนกันข้าม payment/session)
+// - ผูกกับ chargerId + connectorId + transactionId (ถ้ามี)
+// - แนบ payment/session เป็น context (optional)
+// ============================================================================
+
+type MeterSnapshot struct {
+	EnergyWh      float64 `json:"energy_wh"`
+	TransactionID int     `json:"transaction_id"`
+	Timestamp     string  `json:"timestamp"`
+}
+
+type SessionSnapshot struct {
+	ID              uint    `json:"id"`
+	Status          bool    `json:"status"`
+	PaymentID       uint    `json:"payment_id"`
+	StartEnergyWh   float64 `json:"start_energy_wh"`
+	StartTime       string  `json:"start_time"`
+	EndTime         string  `json:"end_time"`
+	ExpiresAt       string  `json:"expires_at"`
+	SessionEnergyWh float64 `json:"session_energy_wh"`
+}
+
+type PaymentSnapshot struct {
+	ID              uint    `json:"id"`
+	Amount          float64 `json:"amount"`
+	ReferenceNumber string  `json:"referenceNumber"`
+	EVCabinetID     uint    `json:"ev_cabinet_id"`
+}
+
+type CabinetSnapshot struct {
+	ID          uint   `json:"id"`
+	ChargePoint string `json:"chargePoint"`
+	Name        string `json:"name"`
+}
+
+type ChargerSnapshot struct {
+	Type        string `json:"type"`
+	ChargerID   string `json:"chargerId"`
+	ConnectorID int    `json:"connectorId"`
+	Seq         uint64 `json:"seq"`
+	Timestamp   string `json:"timestamp"`
+	Reason      string `json:"reason"`
+
+	// สถานะตู้
+	Status        string `json:"status"`
+	ErrorCode     string `json:"errorCode"`
+	Connected     bool   `json:"connected"`
+	LastHeartbeat string `json:"lastHeartbeat"`
+
+	// tx / meter
+	ActiveTransactionID int           `json:"active_transaction_id"`
+	Meter               MeterSnapshot `json:"meter"`
+
+	// context ฝั่ง DB
+	ChargingSession *SessionSnapshot `json:"charging_session,omitempty"`
+	Payment         *PaymentSnapshot `json:"payment,omitempty"`
+	EVCabinet       *CabinetSnapshot `json:"ev_cabinet,omitempty"`
+}
+
+var (
+	lastMeterMu   sync.Mutex
+	lastMeterInfo = make(map[string]MeterSnapshot) // chargerID -> last meter snapshot
+
+	snapshotMu            sync.Mutex
+	lastSnapshotByCharger = make(map[string]ChargerSnapshot) // chargerID -> snapshot ล่าสุด
+	snapshotSeq           = make(map[string]uint64)          // chargerID -> seq เพิ่มขึ้นเรื่อยๆ
+)
+
+func nextSnapshotSeq(chargerID string) uint64 {
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	snapshotSeq[chargerID]++
+	return snapshotSeq[chargerID]
+}
+
+func setLastMeter(chargerID string, m MeterSnapshot) {
+	if chargerID == "" {
+		return
+	}
+	lastMeterMu.Lock()
+	lastMeterInfo[chargerID] = m
+	lastMeterMu.Unlock()
+}
+
+func getLastMeter(chargerID string) (MeterSnapshot, bool) {
+	lastMeterMu.Lock()
+	defer lastMeterMu.Unlock()
+	m, ok := lastMeterInfo[chargerID]
+	return m, ok
+}
+
+func cacheSnapshot(chargerID string, snap ChargerSnapshot) {
+	if chargerID == "" {
+		return
+	}
+	snapshotMu.Lock()
+	lastSnapshotByCharger[chargerID] = snap
+	snapshotMu.Unlock()
+}
+
+func getCachedSnapshot(chargerID string) (ChargerSnapshot, bool) {
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	s, ok := lastSnapshotByCharger[chargerID]
+	return s, ok
+}
+
+func broadcastSnapshotToRoom(chargerID string, snap ChargerSnapshot) {
+	b, err := json.Marshal(snap)
+	if err != nil {
+		logln("❌ marshal snapshot failed:", err)
+		return
+	}
+	cacheSnapshot(chargerID, snap)
+	broadcastToFrontendRoom(chargerID, b)
+}
+
+func sendSnapshotToConn(conn *websocket.Conn, snap ChargerSnapshot) {
+	if conn == nil {
+		return
+	}
+	b, err := json.Marshal(snap)
+	if err != nil {
+		return
+	}
+	_ = conn.WriteMessage(websocket.TextMessage, b)
+}
+
+func buildSnapshot(db *gorm.DB, chargerID string, reason string) ChargerSnapshot {
+	seq := nextSnapshotSeq(chargerID)
+
+	// 1) status (memory)
+	statusMu.Lock()
+	st, ok := chargerStatuses[chargerID]
+	statusMu.Unlock()
+	if !ok {
+		st = ChargerStatus{ChargerID: chargerID}
+	}
+
+	// 2) tx (memory)
+	txID, _ := getTransactionID(chargerID)
+
+	// 3) meter (memory)
+	meter, hasMeter := getLastMeter(chargerID)
+	if !hasMeter {
+		meter = MeterSnapshot{EnergyWh: 0, TransactionID: 0, Timestamp: ""}
+	}
+
+	// ปรับ meter.tx ให้สอดคล้องกับ tx ล่าสุดถ้ามี
+	if txID > 0 {
+		meter.TransactionID = txID
+	}
+
+	snap := ChargerSnapshot{
+		Type:        "charger_snapshot",
+		ChargerID:   chargerID,
+		ConnectorID: st.ConnectorID,
+		Seq:         seq,
+		Timestamp:   nowOcppTime(),
+		Reason:      reason,
+
+		Status:        st.Status,
+		ErrorCode:     st.ErrorCode,
+		Connected:     st.Connected,
+		LastHeartbeat: st.LastHeartbeat.UTC().Format(time.RFC3339),
+
+		ActiveTransactionID: txID,
+		Meter:               meter,
+	}
+
+	// 4) DB context (optional)
+	if db == nil {
+		db = config.DB()
+	}
+
+	// หา active session ที่ “ตรงกับ chargePoint” จริงๆ
+	sess, okSess, err := findActiveSessionByChargePoint(db, chargerID)
+	if err == nil && okSess {
+		ss := &SessionSnapshot{
+			ID:              sess.ID,
+			Status:          sess.Status,
+			PaymentID:       sess.PaymentID,
+			StartEnergyWh:   sess.StartEnergy,
+			SessionEnergyWh: 0,
+			StartTime:       "",
+			EndTime:         "",
+			ExpiresAt:       "",
+		}
+		if !sess.StartTime.IsZero() {
+			ss.StartTime = sess.StartTime.Format(time.RFC3339)
+		}
+		if !sess.EndTime.IsZero() {
+			ss.EndTime = sess.EndTime.Format(time.RFC3339)
+		}
+		if !sess.ExpiresAt.IsZero() {
+			ss.ExpiresAt = sess.ExpiresAt.Format(time.RFC3339)
+		}
+		// sessionEnergyWh = meterNow - startEnergy
+		if meter.EnergyWh > 0 && sess.StartEnergy > 0 {
+			delta := meter.EnergyWh - sess.StartEnergy
+			if delta < 0 {
+				delta = 0
+			}
+			ss.SessionEnergyWh = math.Round(delta*100) / 100
+		}
+		snap.ChargingSession = ss
+
+		// โหลด Payment + Cabinet เพื่อแนบ context
+		if sess.PaymentID > 0 {
+			var pay entity.Payment
+			if err := db.Preload("EVChargingPayments").First(&pay, sess.PaymentID).Error; err == nil {
+				ps := &PaymentSnapshot{
+					ID:              pay.ID,
+					Amount:          pay.Amount,
+					ReferenceNumber: pay.ReferenceNumber,
+				}
+				if pay.EVCabinetID != nil {
+					ps.EVCabinetID = *pay.EVCabinetID
+					snap.Payment = ps
+
+					// cabinet
+					var cab entity.EVCabinet
+					if err := db.First(&cab, *pay.EVCabinetID).Error; err == nil {
+						cs := &CabinetSnapshot{
+							ID:          cab.ID,
+							ChargePoint: cab.ChargePoint,
+							Name:        cab.Name,
+						}
+						snap.EVCabinet = cs
+
+						// ถ้า connector ยังไม่รู้ ให้ fallback จาก status เดิม
+						if snap.ConnectorID == 0 && st.ConnectorID != 0 {
+							snap.ConnectorID = st.ConnectorID
+						}
+					}
+				} else {
+					snap.Payment = ps
+				}
+			}
+		}
+	}
+
+	return snap
+}
+
+func buildAndBroadcastSnapshot(chargerID string, reason string) {
+	snap := buildSnapshot(config.DB(), chargerID, reason)
+	broadcastSnapshotToRoom(chargerID, snap)
+}
+
+// ============================================================================
 // 🧾 Pending Calls (สำหรับจับคู่ CALLRESULT / CALLERROR จากตู้)
 // ============================================================================
 
@@ -295,6 +546,9 @@ func scheduleDisconnectHold(chargerID string) {
 	if b, err := json.Marshal(dataMsg); err == nil {
 		broadcastToFrontendRoom(chargerID, b)
 	}
+
+	// ✅ SNAPSHOT
+	buildAndBroadcastSnapshot(chargerID, "disconnect_hold")
 
 	t := time.NewTimer(disconnectHoldDuration)
 
@@ -414,6 +668,18 @@ func HandleFrontend(c *gin.Context) {
 
 	logln("🌐 Frontend connected, room =", roomID)
 
+	// ✅ ส่ง snapshot ล่าสุดทันที (ถ้าดูตู้เดียว)
+	if roomID != "*" {
+		if snap, ok := getCachedSnapshot(roomID); ok {
+			sendSnapshotToConn(conn, snap)
+		} else {
+			// ถ้ายังไม่มี cache ก็ build แล้วส่ง (ไม่ broadcast)
+			snap := buildSnapshot(config.DB(), roomID, "frontend_connected")
+			sendSnapshotToConn(conn, snap)
+			cacheSnapshot(roomID, snap)
+		}
+	}
+
 	if isLogEnabled() {
 		_ = conn.WriteMessage(websocket.TextMessage,
 			[]byte("[SYSTEM] Frontend connected to room "+roomID+"\n"))
@@ -445,6 +711,14 @@ func HandleFrontend(c *gin.Context) {
 		case "verbose_off":
 			setLogVerbose(false)
 			_ = conn.WriteMessage(websocket.TextMessage, []byte("[LOG] verbose_off\n"))
+			continue
+		case "snapshot":
+			// ✅ ขอ snapshot ปัจจุบัน (ถ้าดูตู้เดียว)
+			if roomID != "*" {
+				snap := buildSnapshot(config.DB(), roomID, "frontend_command_snapshot")
+				sendSnapshotToConn(conn, snap)
+				cacheSnapshot(roomID, snap)
+			}
 			continue
 		default:
 		}
@@ -499,6 +773,9 @@ func handleDisconnectAsInterruption(chargerID string) {
 	}
 
 	clearTransactionID(chargerID)
+
+	// ✅ SNAPSHOT
+	buildAndBroadcastSnapshot(chargerID, "disconnect_timeout_interruption")
 }
 
 // HandleOCPP: ws://host/ocpp/:chargerID
@@ -569,6 +846,9 @@ func HandleOCPP(c *gin.Context) {
 	if b, err := json.Marshal(statusMsg); err == nil {
 		broadcastToFrontendRoom(chargerID, b)
 	}
+
+	// ✅ SNAPSHOT ตอนเชื่อมต่อสำเร็จ (frontend ต่อทีหลังจะได้เห็นสถานะ/tx/meter ล่าสุด)
+	buildAndBroadcastSnapshot(chargerID, "ocpp_connected")
 
 	defer func() {
 		chargersMu.Lock()
@@ -700,6 +980,9 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			logf("💓 Heartbeat Answered for %s\n", chargerID)
 		}
 
+		// ✅ snapshot ไม่ต้องทำทุก heartbeat (ถี่) — ถ้าจะใช้จริงให้เปิดเอง
+		// buildAndBroadcastSnapshot(chargerID, "heartbeat")
+
 	case "Authorize":
 		idTag, _ := payload["idTag"].(string)
 		logln("🔐 Authorize request from", chargerID, "idTag =", idTag)
@@ -722,8 +1005,6 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		}
 
 	case "StatusNotification":
-		// logf("📥 StatusNotification from %s\n", chargerID)
-
 		var connectorID int
 		var statusStr, errorCode string
 
@@ -763,6 +1044,22 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			logf("✅ StatusNotification stored: %+v\n", newSt)
 		}
 
+		// ✅ ส่ง status update ไป frontend (เพื่อ UI ขยับทันที)
+		statusMsg := map[string]interface{}{
+			"type":      "charger_status_update",
+			"chargerId": chargerID,
+			"status":    newSt.Status,
+			"errorCode": newSt.ErrorCode,
+			"connected": true,
+			"timestamp": nowOcppTime(),
+		}
+		if b, err := json.Marshal(statusMsg); err == nil {
+			broadcastToFrontendRoom(chargerID, b)
+		}
+
+		// ✅ SNAPSHOT
+		buildAndBroadcastSnapshot(chargerID, "status_notification")
+
 		if statusStr == "SuspendedEV" {
 			dbConn := config.DB()
 			if err := updateEndTimeOnSuspendedEVByChargePoint(dbConn, chargerID); err != nil {
@@ -781,6 +1078,10 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 					fmt.Sprintf("[SESSION-CLOSED] status=%s -> EndTime updated & status=false\n", statusStr),
 				)
 			}
+
+			// tx จบจริง -> เคลียร์ + snapshot
+			clearTransactionID(chargerID)
+			buildAndBroadcastSnapshot(chargerID, "status_finishing_or_faulted_closed")
 		}
 
 	case "StartTransaction":
@@ -807,6 +1108,9 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			logln("🎉 StartTransaction Accepted → transactionId =", transactionID)
 		}
 
+		// ✅ SNAPSHOT
+		buildAndBroadcastSnapshot(chargerID, "start_transaction")
+
 	case "StopTransaction":
 		logln("🛑 StopTransaction received — ending session for", chargerID)
 
@@ -829,16 +1133,28 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			logln("🧹 Transaction cleared for", chargerID)
 		}
 
+		// ✅ SNAPSHOT
+		buildAndBroadcastSnapshot(chargerID, "stop_transaction")
+
 	case "MeterValues":
 		// ✅ ตามที่ต้องการ: ไม่ print payload ซ้ำ, ไม่ print acknowledged, ไม่ print “START/FOUND”
 		energyWh := extractEnergyActiveImportRegister(payload)
+		txFromPayload := extractTransactionIDFromMeterValues(payload)
+		tsFromPayload := extractTimestampFromMeterValues(payload)
 
 		logf("🟨 [METERVALUES] chargePoint=%s energyWh=%.2f tx=%d ts=%s\n",
 			chargerID,
 			energyWh,
-			extractTransactionIDFromMeterValues(payload),
-			extractTimestampFromMeterValues(payload),
+			txFromPayload,
+			tsFromPayload,
 		)
+
+		// ✅ อัปเดต last meter info ไว้ทำ snapshot เสมอ
+		setLastMeter(chargerID, MeterSnapshot{
+			EnergyWh:      energyWh,
+			TransactionID: txFromPayload,
+			Timestamp:     tsFromPayload,
+		})
 
 		if energyWh > 0 {
 			dbConn := config.DB()
@@ -855,11 +1171,13 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 			vlogf("⚠️ [METERVALUES] energyWh=0 -> skip db/broadcast (chargePoint=%s)\n", chargerID)
 		}
 
+		// ✅ SNAPSHOT ทุก MeterValues (ความถี่ระดับนี้โอเค)
+		buildAndBroadcastSnapshot(chargerID, "meter_values")
+
 		response := []interface{}{3, messageID, map[string]interface{}{}}
 		if err := conn.WriteJSON(response); err != nil {
 			logln("❌ Failed to send MeterValues conf:", err)
 		}
-		// ✅ ไม่ print "Acknowledged" แล้ว
 
 	case "DiagnosticsStatusNotification", "FirmwareStatusNotification", "DataTransfer":
 		// ลด log -> verbose เท่านั้น
@@ -998,6 +1316,10 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 
 	logln("➡️ RemoteStartTransaction sent to", chargerID, "connectorId =", connectorID, "idTag =", idTag)
 	broadcastLogTextToFrontendRoom(chargerID, "[SENT] RemoteStartTransaction to "+chargerID+"\n")
+
+	// ✅ SNAPSHOT
+	buildAndBroadcastSnapshot(chargerID, "remote_start_sent")
+
 	return nil
 }
 
@@ -1046,6 +1368,10 @@ func SendRemoteStopTransaction(chargerID string, txID int) error {
 
 	logln("➡️ RemoteStopTransaction sent to", chargerID, "txID =", txID)
 	broadcastLogTextToFrontendRoom(chargerID, "[SENT] RemoteStopTransaction to "+chargerID+"\n")
+
+	// ✅ SNAPSHOT
+	buildAndBroadcastSnapshot(chargerID, "remote_stop_sent")
+
 	return nil
 }
 
@@ -1172,7 +1498,13 @@ func GetChargerStatusHandler(c *gin.Context) {
 	chargersMu.Unlock()
 	st.Connected = connected
 
-	c.JSON(http.StatusOK, gin.H{"data": st})
+	// ✅ ส่ง snapshot ล่าสุดไปด้วย (optional แต่ช่วย UI)
+	snap := buildSnapshot(config.DB(), chargerID, "http_get_status")
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":     st,
+		"snapshot": snap,
+	})
 }
 
 // ============================================================================
@@ -1281,7 +1613,7 @@ func extendSessionExpiresAtIfNeeded(db *gorm.DB, sess *entity.ChargingSession, c
 		sess.ExpiresAt = newExp
 
 		// ลด log -> verbose เท่านั้น
-		vlogf("⏳ [SESSION-EXPIRE] (%s) paymentID=%d sessionID=%d ExpiresAt was ZERO (%v) -> set to %s\n",
+		logf("⏳ [SESSION-EXPIRE] (%s) paymentID=%d sessionID=%d ExpiresAt was ZERO (%v) -> set to %s\n",
 			chargePointForLog, sess.PaymentID, sess.ID, old, sess.ExpiresAt.Format(time.RFC3339))
 		return nil
 	}
@@ -1390,6 +1722,9 @@ func updateStartEnergyByChargePoint(db *gorm.DB, chargePoint string, startEnergy
 			broadcastToFrontendRoom(chargePoint, b)
 		}
 
+		// ✅ SNAPSHOT (startEnergy ถูก set แล้ว)
+		buildAndBroadcastSnapshot(chargePoint, "start_energy_updated")
+
 		return nil
 	}
 
@@ -1439,6 +1774,9 @@ func updateEndTimeOnSuspendedEVByChargePoint(db *gorm.DB, chargePoint string) er
 	vlogf("✅ Update EndTime on SuspendedEV: sessionID=%d paymentID=%d cabinetID=%d chargePoint=%s EndTime=%s\n",
 		session.ID, pay.ID, cab.ID, chargePoint, session.EndTime.Format(time.RFC3339))
 
+	// ✅ SNAPSHOT
+	buildAndBroadcastSnapshot(chargePoint, "suspended_ev_endtime_updated")
+
 	return nil
 }
 
@@ -1486,6 +1824,9 @@ func updateEndTimeAndCloseOnFinishingByChargePoint(db *gorm.DB, chargePoint stri
 	vlogf("✅ Finishing/Faulted -> session closed: sessionID=%d paymentID=%d cabinetID=%d chargePoint=%s EndTime=%s status=%v\n",
 		session.ID, pay.ID, cab.ID, chargePoint, session.EndTime.Format(time.RFC3339), session.Status)
 
+	// ✅ SNAPSHOT
+	buildAndBroadcastSnapshot(chargePoint, "session_closed_finishing_faulted")
+
 	return nil
 }
 
@@ -1501,9 +1842,16 @@ func findActiveSessionByChargePoint(db *gorm.DB, chargePoint string) (entity.Cha
 		return entity.ChargingSession{}, false, fmt.Errorf("chargePoint is required")
 	}
 
+	now := time.Now()
+
 	var sessions []entity.ChargingSession
 	if err := db.
-		Where("status = ?", true).
+		Where(
+			"status = ? AND (expires_at IS NULL OR expires_at = ? OR expires_at > ?)",
+			true,
+			time.Time{}, // zero time
+			now,
+		).
 		Order("created_at DESC").
 		Limit(50).
 		Find(&sessions).Error; err != nil {
@@ -1571,6 +1919,56 @@ func closeSessionByID(db *gorm.DB, sessionID uint) error {
 }
 
 // ============================================================================
+// ✅ SAFETY AUTO STOP: session มีอยู่ แต่ Payment หาไม่เจอ -> สั่งหยุดทันที
+// ============================================================================
+
+func safetyAutoStopWhenPaymentMissing(db *gorm.DB, chargePoint string, sessID uint, meterPayload map[string]interface{}, reason string) {
+	if chargePoint == "" || sessID == 0 {
+		return
+	}
+
+	// กันยิงซ้ำ (ใช้ map autoStoppedSessions เดิมของคุณ)
+	if !markAutoStopped(sessID) {
+		return
+	}
+
+	debugPrefix := fmt.Sprintf("🛑 [SAFETY-AUTO-STOP] (%s) ", chargePoint)
+	logf("%sreason=%s sessID=%d -> send RemoteStop immediately (payment missing)\n", debugPrefix, reason, sessID)
+
+	// หา txID จาก memory ก่อน ถ้าไม่มีค่อย fallback จาก payload
+	txID, hasTx := getTransactionID(chargePoint)
+	if !hasTx || txID <= 0 {
+		txID = extractTransactionIDFromMeterValues(meterPayload)
+	}
+
+	if txID > 0 {
+		if err := SendRemoteStopTransaction(chargePoint, txID); err != nil {
+			logln(debugPrefix+"❌ RemoteStop failed:", err)
+		} else {
+			broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
+				"[SAFETY-AUTO-STOP] chargePoint=%s sessID=%d txID=%d reason=%s\n",
+				chargePoint, sessID, txID, reason,
+			))
+		}
+	} else {
+		logln(debugPrefix + "⚠️ txID not found -> cannot send RemoteStop")
+	}
+
+	// ปิด session ฝั่ง DB กันค้าง (ถ้าปิดไม่ได้ก็ไม่ทำให้ flow พัง)
+	if db != nil {
+		if err := closeSessionByID(db, sessID); err != nil {
+			logln(debugPrefix+"❌ closeSessionByID error:", err)
+		}
+	}
+
+	// เคลียร์ tx ใน memory กัน stale
+	clearTransactionID(chargePoint)
+
+	// snapshot แจ้ง UI
+	buildAndBroadcastSnapshot(chargePoint, "safety_auto_stop_payment_missing")
+}
+
+// ============================================================================
 // ✅ MeterValues -> รวม power -> คิด % -> auto stop
 // ✅ PRINT LOG บน SERVER เฉพาะ 4 กลุ่มที่คุณต้องการ:
 // 1) 📥 CALL ... MeterValues ...
@@ -1615,7 +2013,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 		debugPrefix, sess.ID, sess.Status, sess.PaymentID, sess.StartEnergy)
 
 	if sess.PaymentID == 0 {
-		vlogln(debugPrefix + "session.PaymentID=0 -> skip")
+		safetyAutoStopWhenPaymentMissing(db, chargePoint, sess.ID, meterPayload, "session.payment_id=0")
 		return nil
 	}
 
@@ -1640,12 +2038,8 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 	// 3) โหลด Payment ด้วย PaymentID จาก session (พร้อม EVChargingPayments)
 	var pay entity.Payment
 	if err := db.Preload("EVChargingPayments").First(&pay, sess.PaymentID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			vlogln(debugPrefix + "NO Payment by session.PaymentID -> skip")
-			return nil
-		}
-		logln(debugPrefix+"find Payment error:", err)
-		return fmt.Errorf("find Payment by id failed: %w", err)
+		safetyAutoStopWhenPaymentMissing(db, chargePoint, sess.ID, meterPayload, "payment_not_found_or_query_error")
+		return nil
 	}
 
 	if pay.EVCabinetID == nil {
@@ -1653,7 +2047,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 		return nil
 	}
 
-	vlogf("%sFOUND paymentID=%d amount=%.2f ref=%s ev_cabinet_id=%d evChargingPayments=%d\n",
+	logf("%sFOUND paymentID=%d amount=%.2f ref=%s ev_cabinet_id=%d evChargingPayments=%d\n",
 		debugPrefix, pay.ID, pay.Amount, pay.ReferenceNumber, *pay.EVCabinetID, len(pay.EVChargingPayments))
 
 	if *pay.EVCabinetID != cab.ID {
@@ -1798,6 +2192,9 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 					chargePoint, sess.ID,
 				))
 			}
+
+			// ✅ SNAPSHOT หลัง auto stop + close
+			buildAndBroadcastSnapshot(chargePoint, "auto_stop_closed")
 		}
 	}
 
@@ -1913,4 +2310,151 @@ func extractTimestampFromMeterValues(payload map[string]interface{}) string {
 		return ts
 	}
 	return ""
+}
+
+// ============================================================================
+// ✅ API: List Snapshots (GET /ocpp/snapshots)
+// - default: ใช้ cache ถ้ามี, ถ้าไม่มีจะ build memory-only
+// - refresh=1 => build ใหม่ทุกตัว
+// - include_db=1 => build แบบมี DB context (อ่านอย่างเดียว)
+// ============================================================================
+
+func ListChargerSnapshotsHandler(c *gin.Context) {
+	refresh := c.Query("refresh") == "1" || strings.ToLower(c.Query("refresh")) == "true"
+	includeDB := c.Query("include_db") == "1" || strings.ToLower(c.Query("include_db")) == "true"
+
+	// เอารายชื่อ charger จาก chargerStatuses (ครอบคลุมมากสุดในระบบคุณ)
+	statusMu.Lock()
+	ids := make([]string, 0, len(chargerStatuses))
+	for id := range chargerStatuses {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	statusMu.Unlock()
+
+	result := make(map[string]ChargerSnapshot, len(ids))
+
+	for _, chargerID := range ids {
+		if !refresh {
+			if snap, ok := getCachedSnapshot(chargerID); ok {
+				result[chargerID] = snap
+				continue
+			}
+		}
+
+		var snap ChargerSnapshot
+		if includeDB {
+			snap = buildSnapshot(config.DB(), chargerID, "http_list_snapshots")
+		} else {
+			snap = buildSnapshotMemoryOnly(chargerID, "http_list_snapshots_memory_only")
+		}
+
+		cacheSnapshot(chargerID, snap)
+		result[chargerID] = snap
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"count":     len(result),
+		"snapshots": result,
+	})
+}
+
+// ============================================================================
+// ✅ API: Get Snapshot (GET /ocpp/snapshot/:chargerID)
+// - ไม่เก็บ DB (persist) แน่นอน
+// - default: ใช้ cache ถ้ามี
+// - refresh=1 => build ใหม่
+// - include_db=1 => build แบบมี DB context (อ่านอย่างเดียว)
+// ============================================================================
+
+func GetChargerSnapshotHandler(c *gin.Context) {
+	chargerID := c.Param("chargerID")
+	if chargerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerID is required"})
+		return
+	}
+
+	refresh := c.Query("refresh") == "1" || strings.ToLower(c.Query("refresh")) == "true"
+	includeDB := c.Query("include_db") == "1" || strings.ToLower(c.Query("include_db")) == "true"
+
+	// ถ้าไม่ refresh -> คืน cache ก่อน
+	if !refresh {
+		if snap, ok := getCachedSnapshot(chargerID); ok {
+			c.JSON(http.StatusOK, gin.H{
+				"source":   "cache",
+				"snapshot": snap,
+			})
+			return
+		}
+	}
+
+	// build ใหม่
+	var snap ChargerSnapshot
+	if includeDB {
+		// ✅ อันนี้ "อ่าน DB" เพื่อแนบ session/payment/cabinet context (ไม่ใช่การเก็บ snapshot ลง DB)
+		snap = buildSnapshot(config.DB(), chargerID, "http_get_snapshot")
+	} else {
+		// ✅ memory-only ไม่แตะ DB
+		snap = buildSnapshotMemoryOnly(chargerID, "http_get_snapshot_memory_only")
+	}
+
+	// cache ไว้ใน memory เพื่อให้เรียกครั้งต่อไปเร็ว
+	cacheSnapshot(chargerID, snap)
+
+	c.JSON(http.StatusOK, gin.H{
+		"source":   "fresh",
+		"snapshot": snap,
+	})
+}
+
+// ============================================================================
+// ✅ NEW: SNAPSHOT (MEMORY-ONLY) — ไม่แตะ DB เลย
+// - ใช้สำหรับ HTTP API เรียก snapshot ล่าสุด โดยไม่ต้อง query DB
+// - ถ้าคุณอยากแนบ context จาก DB ค่อยใช้ include_db=1 ที่ handler
+// ============================================================================
+
+func buildSnapshotMemoryOnly(chargerID string, reason string) ChargerSnapshot {
+	seq := nextSnapshotSeq(chargerID)
+
+	// 1) status (memory)
+	statusMu.Lock()
+	st, ok := chargerStatuses[chargerID]
+	statusMu.Unlock()
+	if !ok {
+		st = ChargerStatus{ChargerID: chargerID}
+	}
+
+	// 2) tx (memory)
+	txID, _ := getTransactionID(chargerID)
+
+	// 3) meter (memory)
+	meter, hasMeter := getLastMeter(chargerID)
+	if !hasMeter {
+		meter = MeterSnapshot{EnergyWh: 0, TransactionID: 0, Timestamp: ""}
+	}
+	if txID > 0 {
+		meter.TransactionID = txID
+	}
+
+	snap := ChargerSnapshot{
+		Type:        "charger_snapshot",
+		ChargerID:   chargerID,
+		ConnectorID: st.ConnectorID,
+		Seq:         seq,
+		Timestamp:   nowOcppTime(),
+		Reason:      reason,
+
+		Status:        st.Status,
+		ErrorCode:     st.ErrorCode,
+		Connected:     st.Connected,
+		LastHeartbeat: st.LastHeartbeat.UTC().Format(time.RFC3339),
+
+		ActiveTransactionID: txID,
+		Meter:               meter,
+
+		// ✅ ไม่แนบ DB context (ChargingSession/Payment/EVCabinet = nil)
+	}
+
+	return snap
 }
