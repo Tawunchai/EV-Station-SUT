@@ -9,13 +9,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/Tawunchai/work-project/config"
-	"github.com/Tawunchai/work-project/entity"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
+
+	"github.com/Tawunchai/work-project/config"
+	"github.com/Tawunchai/work-project/entity"
 	"github.com/gorilla/websocket"
 )
 
@@ -520,13 +521,14 @@ func HandleFrontend(c *gin.Context) {
 }
 
 // ============================================================================
+// ============================================================================
 // 🔹 HARDWARE / METER DEVICE — สำหรับอุปกรณ์ที่ส่งข้อมูลเข้ามา
 //    ws://host/meter/meter_001
 //
-// ✅ ทำงานคล้าย solar:
+// ✅ เป้าหมาย (ตัวเลือก A):
 // - รับ msg JSON
 // - ใส่ device_id ให้
-// - (optional) บันทึกลง DB ตาราง MeterRealtimeData
+// - ❌ ไม่บันทึก DB ใน WS (กัน DB โตทุก 5 วิ)
 // - broadcast เฉพาะ frontend ที่ subscribe deviceID นี้
 // ============================================================================
 func HandleMeter(c *gin.Context) {
@@ -538,7 +540,6 @@ func HandleMeter(c *gin.Context) {
 
 	deviceID := strings.TrimSpace(c.Param("deviceID"))
 	if deviceID == "" {
-		// ไม่ควรเกิด แต่กันไว้
 		return
 	}
 
@@ -581,7 +582,6 @@ func HandleMeter(c *gin.Context) {
 			}
 		}
 		if ts.IsZero() {
-			// ถ้าไม่มี timestamp ให้ใช้เวลาปัจจุบัน
 			ts = time.Now()
 			jsonData["timestamp"] = ts.Format(time.RFC3339Nano)
 		}
@@ -625,21 +625,9 @@ func HandleMeter(c *gin.Context) {
 		jsonData["irms"] = irms
 
 		// --------------------------------------------------------------------
-		// ✅ Save DB (MeterRealtimeData)
+		// ❌ ไม่บันทึก DB ใน WS แล้ว (กัน DB เพิ่มทุก 5 วินาที)
+		// ✅ ให้บันทึกผ่าน API: CreateMeterRealtimeData เท่านั้น (ตามที่คุณตั้ง 10 นาที)
 		// --------------------------------------------------------------------
-		row := entity.MeterRealtimeData{
-			DeviceID:  deviceID,
-			Timestamp: ts,
-			W:         w,
-			Var:       varVal,
-			VA:        va,
-			Vrms:      vrms,
-			Irms:      irms,
-		}
-		if err := config.DB().Create(&row).Error; err != nil {
-			// ไม่ทำให้ WS ล่ม แค่ log เมื่อเปิด METER_LOG
-			meterLogln("❌ DB create MeterRealtimeData failed:", err)
-		}
 
 		// marshal enriched แล้ว broadcast
 		enriched, err := json.Marshal(jsonData)
@@ -674,4 +662,59 @@ func broadcastToFrontend(deviceID string, msg []byte) {
 	if len(clients) == 0 {
 		delete(meterClients, deviceID)
 	}
+}
+
+// GET /meters/by-solar-point/:solar_point
+func ListDataMeterBySolarPoint(c *gin.Context) {
+	db := config.DB()
+
+	solarPoint := strings.TrimSpace(c.Param("solar_point"))
+	if solarPoint == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "solar_point ห้ามว่าง"})
+		return
+	}
+
+	// ✅ ถ้าในระบบมี solar_point ซ้ำหลายตัว ให้ Find เป็น list (ปลอดภัยกว่า)
+	var solars []entity.Solar
+	if err := db.Preload("Meter").
+		Where("solar_point = ?", solarPoint).
+		Find(&solars).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถดึงข้อมูลได้: " + err.Error()})
+		return
+	}
+
+	if len(solars) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบ SolarPoint นี้ในระบบ"})
+		return
+	}
+
+	// ✅ สรุปผล meter ที่ผูกอยู่ (กันกรณี MeterID nil)
+	meters := make([]entity.Meter, 0)
+	for _, s := range solars {
+		if s.MeterID != nil {
+			meters = append(meters, s.Meter)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"solar_point": solarPoint,
+		"solars":      solars,  // มีข้อมูล Solar + Meter ที่ preload แล้ว
+		"meters":      meters,  // list เฉพาะ meter ที่ผูกอยู่
+	})
+}
+
+func ListMeterRealtimeData(c *gin.Context) {
+	db := config.DB()
+
+	var meterRealtimeData []entity.MeterRealtimeData
+	if err := db.Find(&meterRealtimeData).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "ไม่สามารถดึงข้อมูล MeterRealtimeData ได้: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": meterRealtimeData,
+	})
 }

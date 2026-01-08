@@ -265,3 +265,93 @@ export const connectMeterSocket = (
     },
   };
 };
+
+export const ListDataMeterBySolarPoint = async (
+  solarPoint: string
+): Promise<any> => {
+  try {
+    const response = await axios.get(
+      `${apiUrl}/meters/by-solar-point/${encodeURIComponent(solarPoint)}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // ✅ จะได้ { solar_point, solars, meters }
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching meter by solar point:", error);
+    return null;
+  }
+};
+
+export const ListMeterRealtimeData = async (): Promise<any[] | null> => {
+  try {
+    const response = await axios.get(`${apiUrl}/meter-realtime-data`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+    });
+
+    if (response.status === 200) {
+      // backend อาจคืน array ตรงๆ หรือ {data: [...]}
+      const data = response.data?.data ?? response.data;
+      return data as any[];
+    } else {
+      console.error("Unexpected status:", response.status);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching meter realtime data:", error);
+    return null;
+  }
+};
+
+type DeleteMeterRealtimeDataResult = {
+  message: string;
+  ids: number[];
+  deleted_rows: number;
+  hard_delete: boolean;
+  soft_delete: boolean;
+  deleted_at_gorm?: string;
+};
+
+// ✅ ส่งแบบ JSON body {"ids":[...]} (แนะนำ)
+export const DeleteMeterRealtimeDataByIDs = async (
+  ids: number[],
+  force = false
+): Promise<DeleteMeterRealtimeDataResult | null> => {
+  try {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      console.error("DeleteMeterRealtimeDataByIDs: ids is empty");
+      return null;
+    }
+
+    const response = await axios.delete(`${apiUrl}/delete-meter-realtime-data`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+      params: force ? { force: "true" } : undefined,
+      data: { ids }, // ✅ สำคัญ: axios delete ต้องใส่ body ที่ config.data
+    });
+
+    if (response.status === 200) {
+      return response.data as DeleteMeterRealtimeDataResult;
+    }
+
+    console.error("Unexpected status:", response.status);
+    return null;
+  } catch (error) {
+    console.error("Error deleting meter realtime data by ids:", error);
+    return null;
+  }
+};

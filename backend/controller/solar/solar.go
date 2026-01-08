@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -194,7 +195,7 @@ func ListSolar(c *gin.Context) {
 	var solars []entity.Solar
 
 	db := config.DB()
-	if err := db.Find(&solars).Error; err != nil {
+	if err := db.Preload("Meter").Find(&solars).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
@@ -202,11 +203,31 @@ func ListSolar(c *gin.Context) {
 	c.JSON(http.StatusOK, solars)
 }
 
-//
+// ==============================
+//   helpers
+// ==============================
+func parseOptionalUintPtr(raw string) (*uint, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return nil, nil
+	}
+
+	// รองรับการ "เคลียร์ค่า" จากฝั่งฟอร์ม
+	if v == "0" || strings.EqualFold(v, "null") || strings.EqualFold(v, "nil") {
+		return nil, nil
+	}
+
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("meter_id ต้องเป็นตัวเลข")
+	}
+	u := uint(n)
+	return &u, nil
+}
+
 // ==============================
 //   CREATE SOLAR
 // ==============================
-//
 func CreateSolar(c *gin.Context) {
 	db := config.DB()
 
@@ -217,16 +238,33 @@ func CreateSolar(c *gin.Context) {
 	description := c.PostForm("description")
 	location := c.PostForm("location")
 
+	// ✅ NEW: MeterID (optional)
+	meterIDRaw := c.PostForm("meter_id")
+	meterID, err := parseOptionalUintPtr(meterIDRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	if name == "" || urlWS == "" || solarPoint == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกข้อมูลให้ครบ Name, UrlWebsocket, SolarPoint"})
 		return
 	}
 
-	// ---- จัดการรูปภาพ (picture) แบบ News ----
+	// ✅ ถ้ามี meter_id -> เช็คว่ามี meter จริง
+	if meterID != nil {
+		var m entity.Meter
+		if err := db.First(&m, *meterID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบข้อมูล Meter ตาม meter_id ที่ส่งมา"})
+			return
+		}
+	}
+
+	// ---- จัดการรูปภาพ (picture) ----
 	var filePath string
 
-	file, err := c.FormFile("picture")
-	if err == nil && file != nil {
+	file, errFile := c.FormFile("picture")
+	if errFile == nil && file != nil {
 		// ตรวจสอบประเภทไฟล์
 		validTypes := []string{"image/jpeg", "image/png", "image/gif"}
 		isValid := false
@@ -260,7 +298,6 @@ func CreateSolar(c *gin.Context) {
 			return
 		}
 	} else {
-		// ตอนนี้จะปล่อยให้ว่างได้
 		filePath = "" // ไม่มีรูป
 	}
 
@@ -270,7 +307,10 @@ func CreateSolar(c *gin.Context) {
 		SolarPoint:   solarPoint,
 		Description:  description,
 		Location:     location,
-		Picture:      filePath, // เก็บ path รูป
+		Picture:      filePath,
+
+		// ✅ NEW
+		MeterID: meterID,
 	}
 
 	if err := db.Create(&s).Error; err != nil {
@@ -278,17 +318,18 @@ func CreateSolar(c *gin.Context) {
 		return
 	}
 
+	// (optional) preload meter กลับไปให้พร้อม
+	_ = db.Preload("Meter").First(&s, s.ID).Error
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Solar created successfully",
 		"data":    s,
 	})
 }
 
-//
 // ==============================
 //   UPDATE SOLAR BY ID
 // ==============================
-//
 func UpdateSolarByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -308,9 +349,30 @@ func UpdateSolarByID(c *gin.Context) {
 	description := c.PostForm("description")
 	location := c.PostForm("location")
 
+	// ✅ NEW: meter_id (optional / สามารถส่งมาเพื่อเปลี่ยนหรือเคลียร์ได้)
+	meterIDRaw := c.PostForm("meter_id")
+	if strings.TrimSpace(meterIDRaw) != "" { // ส่งมาเท่านั้นถึงจะอัปเดต
+		meterID, err := parseOptionalUintPtr(meterIDRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// ถ้ามี meterID ใหม่ -> เช็คว่ามี meter จริง
+		if meterID != nil {
+			var m entity.Meter
+			if err := db.First(&m, *meterID).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบข้อมูล Meter ตาม meter_id ที่ส่งมา"})
+				return
+			}
+		}
+
+		s.MeterID = meterID // nil = เคลียร์
+	}
+
 	// อัปโหลดรูปใหม่ (ถ้ามี)
-	file, err := c.FormFile("picture")
-	if err == nil && file != nil {
+	file, errFile := c.FormFile("picture")
+	if errFile == nil && file != nil {
 		validTypes := []string{"image/jpeg", "image/png", "image/gif"}
 		isValid := false
 		contentType := file.Header.Get("Content-Type")
@@ -333,14 +395,19 @@ func UpdateSolarByID(c *gin.Context) {
 
 		ext := filepath.Ext(file.Filename)
 		newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-		filePath := filepath.Join(uploadDir, newFileName)
+		newPath := filepath.Join(uploadDir, newFileName)
 
-		if err := c.SaveUploadedFile(file, filePath); err != nil {
+		if err := c.SaveUploadedFile(file, newPath); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		s.Picture = filePath // อัปเดตรูปใหม่
+		// (optional) ลบรูปเก่า ถ้าต้องการ
+		// if s.Picture != "" {
+		// 	_ = os.Remove(s.Picture)
+		// }
+
+		s.Picture = newPath
 	}
 
 	// อัปเดต field ที่ส่งมา (ถ้ามี)
@@ -365,6 +432,9 @@ func UpdateSolarByID(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// (optional) preload meter กลับไปให้พร้อม
+	_ = db.Preload("Meter").First(&s, s.ID).Error
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "อัปเดตข้อมูล Solar สำเร็จ",

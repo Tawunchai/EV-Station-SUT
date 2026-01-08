@@ -290,6 +290,9 @@ func main() {
 		public.DELETE("/delete-meter-realtime-data", meter.DeleteMeterRealtimeDataByIDs)
 		public.GET("/meter/:deviceID", meter.HandleMeter)
 		public.GET("/meter/frontend", meter.HandleFrontend)
+		public.GET("/meters/by-solar-point/:solar_point", meter.ListDataMeterBySolarPoint)
+		public.GET("/meter-realtime-data", meter.ListMeterRealtimeData)
+
 	}
 
 	r.GET("/", func(c *gin.Context) {

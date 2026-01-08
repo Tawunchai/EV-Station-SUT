@@ -1,6 +1,6 @@
 // src/page/admin/mornitor/solar/BeforeSolar.tsx
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { SlideLeft } from "./SlideLeft";
 import { ListSolar, DeleteSolar, apiUrlPicture } from "../../../../services";
@@ -30,6 +30,11 @@ import { useNavigate } from "react-router-dom";
 // Solar Modals
 import CreateSolarModal from "./create/index";
 import EditSolarModal from "./update/index";
+
+/* =========================================
+   ✅ Utils
+========================================= */
+const normalizePoint = (v?: string) => (v ?? "").trim().toLowerCase();
 
 /* =========================================
    ✅ Hook: isMobile
@@ -80,10 +85,76 @@ const IconGhostButton: React.FC<
 };
 
 /* =========================================
+   ✅ Input components (แก้พิมพ์ได้ทีละตัว)
+   - ใช้ draft state ด้านใน แล้ว sync ออกไป
+========================================= */
+const TextFieldControlled: React.FC<{
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  compact?: boolean;
+}> = ({ label, value, onChange, placeholder, compact }) => {
+  const [draft, setDraft] = useState<string>(value ?? "");
+
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [value]);
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-slate-600">{label}</label>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => {
+          const v = e.target.value;
+          setDraft(v);
+          onChange(v);
+        }}
+        placeholder={placeholder}
+        autoComplete="off"
+        className={`w-full ${compact ? "h-10" : "h-11"} rounded-2xl border border-blue-200 bg-white px-3 text-sm
+                   outline-none focus:ring-4 focus:ring-blue-100`}
+      />
+    </div>
+  );
+};
+
+const TextAreaControlled: React.FC<{
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  compact?: boolean;
+}> = ({ label, value, onChange, placeholder, compact }) => {
+  const [draft, setDraft] = useState<string>(value ?? "");
+
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [value]);
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-slate-600">{label}</label>
+      <textarea
+        value={draft}
+        onChange={(e) => {
+          const v = e.target.value;
+          setDraft(v);
+          onChange(v);
+        }}
+        placeholder={placeholder}
+        rows={compact ? 3 : 4}
+        className="w-full rounded-2xl border border-blue-200 bg-white px-3 py-2 text-sm
+                   outline-none focus:ring-4 focus:ring-blue-100 resize-none"
+      />
+    </div>
+  );
+};
+
+/* =========================================
    ✅ Meter Modal / Bottom Sheet (Mobile)
-   - Desktop: Center modal
-   - Mobile: Bottom Sheet slide up from bottom
-   - No sub-modal create/update/delete (แก้ไข inline ใน card)
 ========================================= */
 type MeterFormState = {
   name: string;
@@ -108,15 +179,12 @@ const MeterModal: React.FC<{
   const [meterList, setMeterList] = useState<MeterInterface[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Create form (always visible)
   const [createForm, setCreateForm] = useState<MeterFormState>(emptyMeterForm);
 
-  // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<MeterFormState>(emptyMeterForm);
 
-  // animation state for sheet/modal
-  const [visible, setVisible] = useState(false); // controls translate/opacity
+  const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
 
   const mapMeter = (item: any): MeterInterface => ({
@@ -141,7 +209,6 @@ const MeterModal: React.FC<{
     }
   }, []);
 
-  // lock body scroll while open
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -151,21 +218,17 @@ const MeterModal: React.FC<{
     };
   }, [open]);
 
-  // open/close animation
   useEffect(() => {
     if (!open) return;
 
-    // reset state
     setClosing(false);
     setVisible(false);
 
-    // load
     fetchMeters();
     setCreateForm(emptyMeterForm);
     setEditingId(null);
     setEditForm(emptyMeterForm);
 
-    // animate in next frame
     const t = window.requestAnimationFrame(() => setVisible(true));
     return () => window.cancelAnimationFrame(t);
   }, [open, fetchMeters]);
@@ -192,57 +255,6 @@ const MeterModal: React.FC<{
     return "";
   };
 
-  const Field = ({
-    label,
-    value,
-    onChange,
-    placeholder,
-    compact,
-  }: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-    compact?: boolean;
-  }) => (
-    <div className="space-y-1">
-      <label className="text-xs font-semibold text-slate-600">{label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`w-full ${compact ? "h-10" : "h-11"} rounded-2xl border border-blue-200 bg-white px-3 text-sm
-                   outline-none focus:ring-4 focus:ring-blue-100`}
-      />
-    </div>
-  );
-
-  const TextArea = ({
-    label,
-    value,
-    onChange,
-    placeholder,
-    compact,
-  }: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-    compact?: boolean;
-  }) => (
-    <div className="space-y-1">
-      <label className="text-xs font-semibold text-slate-600">{label}</label>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={compact ? 3 : 4}
-        className="w-full rounded-2xl border border-blue-200 bg-white px-3 py-2 text-sm
-                   outline-none focus:ring-4 focus:ring-blue-100 resize-none"
-      />
-    </div>
-  );
-
   const handleCreate = async () => {
     const err = validateForm(createForm);
     if (err) return message.warning(err);
@@ -256,11 +268,11 @@ const MeterModal: React.FC<{
 
     const created = await CreateMeter(payload);
     if (created) {
-      message.success("สร้าง Meter สำเร็จ");
+      message.success("Meter created successfully");
       setCreateForm(emptyMeterForm);
       fetchMeters();
     } else {
-      message.error("สร้าง Meter ไม่สำเร็จ");
+      message.error("Meter creation failed");
     }
   };
 
@@ -295,46 +307,35 @@ const MeterModal: React.FC<{
 
     const updated = await UpdateMeterByID(editingId, payload);
     if (updated) {
-      message.success("แก้ไข Meter สำเร็จ");
+      message.success("Update Meter successfully");
       setEditingId(null);
       setEditForm(emptyMeterForm);
       fetchMeters();
     } else {
-      message.error("แก้ไข Meter ไม่สำเร็จ");
+      message.error("Meter repair failed");
     }
   };
 
   const handleDelete = async (m: MeterInterface) => {
     if (!m.ID) return;
-    const okConfirm = window.confirm(`ยืนยันลบ Meter: "${m.name || "-"}" ?`);
-    if (!okConfirm) return;
 
     const ok = await DeleteMeterByID(m.ID);
     if (ok) {
-      message.success("ลบ Meter สำเร็จ");
+      message.success("Meter deleted successfully");
       if (editingId === m.ID) cancelEdit();
       fetchMeters();
     } else {
-      message.error("ลบ Meter ไม่สำเร็จ");
+      message.error("Delete Meter failed");
     }
   };
 
-  /* --------------------------
-     ✅ Shared content (body)
-  --------------------------- */
   const Content = (
     <div className="px-4 sm:px-6 py-4 sm:py-6">
-      {/* Summary + Create */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Summary */}
         <div className="lg:col-span-4 rounded-3xl border border-blue-100 bg-white p-5 shadow-sm">
           <p className="text-xs text-slate-500">Total Meter</p>
-          <p className="text-3xl font-extrabold text-blue-700 leading-tight">
-            {meterList.length}
-          </p>
-          <p className="text-xs text-slate-500 mt-2 leading-5">
-            จัดการ Meter สำหรับหน้า Solar/EV
-          </p>
+          <p className="text-3xl font-extrabold text-blue-700 leading-tight">{meterList.length}</p>
+          <p className="text-xs text-slate-500 mt-2 leading-5">จัดการ Meter สำหรับหน้า Solar/EV</p>
 
           {editingId && (
             <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2">
@@ -345,7 +346,6 @@ const MeterModal: React.FC<{
           )}
         </div>
 
-        {/* Create form */}
         <div className="lg:col-span-8 rounded-3xl border border-blue-100 bg-white p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -376,13 +376,13 @@ const MeterModal: React.FC<{
           </div>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field
+            <TextFieldControlled
               label="Name *"
               value={createForm.name}
               onChange={(v) => setCreateForm((s) => ({ ...s, name: v }))}
               placeholder="เช่น Meter Solar"
             />
-            <Field
+            <TextFieldControlled
               label="MeterPoint *"
               value={createForm.meter_point}
               onChange={(v) => setCreateForm((s) => ({ ...s, meter_point: v }))}
@@ -390,7 +390,7 @@ const MeterModal: React.FC<{
             />
 
             <div className="sm:col-span-2">
-              <Field
+              <TextFieldControlled
                 label="UrlWebsocket *"
                 value={createForm.url_websocket}
                 onChange={(v) => setCreateForm((s) => ({ ...s, url_websocket: v }))}
@@ -399,7 +399,7 @@ const MeterModal: React.FC<{
             </div>
 
             <div className="sm:col-span-2">
-              <TextArea
+              <TextAreaControlled
                 label="Description"
                 value={createForm.description}
                 onChange={(v) => setCreateForm((s) => ({ ...s, description: v }))}
@@ -410,14 +410,12 @@ const MeterModal: React.FC<{
         </div>
       </div>
 
-      {/* List */}
       <div className="mt-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
           <p className="text-base font-extrabold text-slate-900">Meter List</p>
           <p className="text-xs text-slate-500">กดดินสอเพื่อแก้ไขใน card ได้เลย</p>
         </div>
 
-        {/* ✅ bigger card + responsive */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-5 pb-2">
           {meterList.map((m) => {
             const isEditing = editingId === m.ID;
@@ -435,7 +433,6 @@ const MeterModal: React.FC<{
                 <div className="h-1.5 w-full bg-gradient-to-r from-blue-600/80 via-blue-400/70 to-blue-200/60" />
 
                 <div className="p-5 sm:p-6">
-                  {/* Desktop corner actions */}
                   <div className="hidden sm:block absolute top-4 right-4">
                     <div className="flex gap-2">
                       {!isEditing ? (
@@ -484,7 +481,6 @@ const MeterModal: React.FC<{
                             {m.name || "-"}
                           </p>
 
-                          {/* Mobile action row */}
                           <div className="flex sm:hidden gap-2 mt-3">
                             <button
                               onClick={() => startEdit(m)}
@@ -529,32 +525,31 @@ const MeterModal: React.FC<{
                       ) : (
                         <>
                           <div className="space-y-3">
-                            <Field
+                            <TextFieldControlled
                               label="Name *"
                               value={editForm.name}
                               onChange={(v) => setEditForm((s) => ({ ...s, name: v }))}
                               compact
                             />
-                            <Field
+                            <TextFieldControlled
                               label="MeterPoint *"
                               value={editForm.meter_point}
                               onChange={(v) => setEditForm((s) => ({ ...s, meter_point: v }))}
                               compact
                             />
-                            <Field
+                            <TextFieldControlled
                               label="UrlWebsocket *"
                               value={editForm.url_websocket}
                               onChange={(v) => setEditForm((s) => ({ ...s, url_websocket: v }))}
                               compact
                             />
-                            <TextArea
+                            <TextAreaControlled
                               label="Description"
                               value={editForm.description}
                               onChange={(v) => setEditForm((s) => ({ ...s, description: v }))}
                               compact
                             />
 
-                            {/* Mobile save/cancel */}
                             <div className="flex gap-2 pt-1 sm:hidden">
                               <button
                                 onClick={saveEdit}
@@ -595,9 +590,6 @@ const MeterModal: React.FC<{
     </div>
   );
 
-  /* --------------------------
-     ✅ Desktop modal wrapper
-  --------------------------- */
   const DesktopModal = (
     <div
       className={`fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 px-3 transition-opacity duration-300 ${
@@ -618,7 +610,6 @@ const MeterModal: React.FC<{
                       visible ? "translate-y-0 scale-100" : "translate-y-3 scale-[0.98]"
                     }`}
       >
-        {/* Header */}
         <div className="px-4 sm:px-6 py-4 border-b border-blue-100 bg-[linear-gradient(180deg,#eff6ff_0%,#ffffff_100%)]">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -664,19 +655,13 @@ const MeterModal: React.FC<{
           </div>
         </div>
 
-        {/* Body scroll */}
         <div className="max-h-[calc(92vh-72px)] overflow-y-auto">{Content}</div>
       </div>
     </div>
   );
 
-  /* --------------------------
-     ✅ Mobile Bottom Sheet wrapper
-     - slide up from bottom like your example
-  --------------------------- */
   const MobileSheet = (
     <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true">
-      {/* overlay */}
       <div
         className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${
           visible ? "opacity-100" : "opacity-0"
@@ -684,38 +669,27 @@ const MeterModal: React.FC<{
         onClick={requestClose}
       />
 
-      {/* sheet */}
       <div
         className={`absolute inset-x-0 bottom-0 bg-white shadow-2xl border-t border-slate-200 rounded-t-3xl
-                    transition-transform duration-300 ${
-                      visible ? "translate-y-0" : "translate-y-full"
-                    }`}
+                    transition-transform duration-300 ${visible ? "translate-y-0" : "translate-y-full"}`}
         style={{
           paddingBottom: "env(safe-area-inset-bottom)",
           maxHeight: "90dvh",
         }}
       >
-        {/* handle */}
         <div className="pt-2 pb-1">
           <div className="mx-auto h-1.5 w-12 rounded-full bg-slate-300" />
         </div>
 
-        {/* header */}
         <div className="px-4 pb-3 flex items-center justify-between">
-          <button
-            className="text-blue-600 font-extrabold"
-            onClick={requestClose}
-            type="button"
-          >
+          <button className="text-blue-600 font-extrabold" onClick={requestClose} type="button">
             close
           </button>
-
           <div className="flex items-center gap-2">
             <div className="text-slate-900 font-extrabold">Meter Manager</div>
           </div>
         </div>
 
-        {/* content scroll */}
         <div className="overflow-y-auto" style={{ maxHeight: "80dvh" }}>
           {Content}
         </div>
@@ -736,13 +710,11 @@ const BeforeSolar: React.FC = () => {
   const [openCreateModal, setOpenCreateModal] = useState(false);
   const [openEditModal, setOpenEditModal] = useState(false);
 
-  // ✅ Meter modal open
   const [openMeterModal, setOpenMeterModal] = useState(false);
 
   const selectedSolarRef = useRef<SolarInterface | null>(null);
   const navigate = useNavigate();
 
-  // SVG fallback ถ้าไม่มีรูป
   const fallbackImg =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(
@@ -765,7 +737,7 @@ const BeforeSolar: React.FC = () => {
       </svg>`
     );
 
-  const fetchSolar = async () => {
+  const fetchSolar = useCallback(async () => {
     const data = await ListSolar();
     if (Array.isArray(data)) {
       const mapped: SolarInterface[] = data.map((item: any) => ({
@@ -784,11 +756,15 @@ const BeforeSolar: React.FC = () => {
     } else {
       setSolarList([]);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchSolar();
-  }, []);
+  }, [fetchSolar]);
+
+  const existingSolarPoints = useMemo(() => {
+    return solarList.map((s) => normalizePoint(s.SolarPoint)).filter((p) => p.length > 0);
+  }, [solarList]);
 
   const openDeleteModal = (solar: SolarInterface) => {
     selectedSolarRef.current = solar;
@@ -799,10 +775,10 @@ const BeforeSolar: React.FC = () => {
     if (!selectedSolarRef.current) return;
     const ok = await DeleteSolar(selectedSolarRef.current.ID!);
     if (ok) {
-      message.success("ลบ Solar สำเร็จ");
+      message.success("Delete Solar Successfully");
       fetchSolar();
     } else {
-      message.warning("เกิดข้อผิดพลาดในการลบ Solar");
+      message.warning("Error deleting Solar");
     }
     setOpenConfirmModal(false);
     selectedSolarRef.current = null;
@@ -823,7 +799,7 @@ const BeforeSolar: React.FC = () => {
     setOpenEditModal(true);
   };
 
-  const handleCreateSolar = (_createdSolar: any) => {
+  const handleCreateSolar = async (_createdSolar: any) => {
     setOpenCreateModal(false);
     fetchSolar();
   };
@@ -849,12 +825,10 @@ const BeforeSolar: React.FC = () => {
       className="min-h-screen w-full bg-[linear-gradient(180deg,#eaf2ff_0%,#f6f9ff_60%,#ffffff_100%)] mt-14 sm:mt-0"
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
-      {/* Top bar */}
       <div className="sticky top-0 z-10 bg-blue-600 text-white shadow-sm">
         <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h1 className="text-sm sm:text-base font-semibold tracking-wide">Solar Management</h1>
 
-          {/* Actions */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button
               onClick={() => setOpenMeterModal(true)}
@@ -881,9 +855,7 @@ const BeforeSolar: React.FC = () => {
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-screen-xl mx-auto w-full px-4 sm:px-6 py-6">
-        {/* Summary */}
         <div className="rounded-2xl bg-white border border-blue-100 p-4 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -898,15 +870,12 @@ const BeforeSolar: React.FC = () => {
           </div>
         </div>
 
-        {/* Grid list */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-5">
           {solarList.map((item, index) => {
             const delay = 0.12 + index * 0.06;
 
             const imgSrc =
-              item.Picture && item.Picture !== ""
-                ? `${apiUrlPicture}${item.Picture}`
-                : fallbackImg;
+              item.Picture && item.Picture !== "" ? `${apiUrlPicture}${item.Picture}` : fallbackImg;
 
             return (
               <motion.div
@@ -918,7 +887,6 @@ const BeforeSolar: React.FC = () => {
                 onClick={() => handleCardClick(item)}
                 className="group rounded-2xl bg-white border border-blue-100 p-4 shadow-sm hover:shadow-md transition-shadow relative cursor-pointer"
               >
-                {/* Actions */}
                 <div className="absolute top-3 right-3 flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
                   <IconGhostButton
                     tone="blue"
@@ -975,22 +943,18 @@ const BeforeSolar: React.FC = () => {
 
                     {item.SolarPoint && (
                       <p className="text-[12px] text-blue-700 line-clamp-1">
-                        <span className="font-medium text-gray-700">Point:</span>{" "}
-                        {item.SolarPoint}
+                        <span className="font-medium text-gray-700">Point:</span> {item.SolarPoint}
                       </p>
                     )}
 
                     {item.Location && (
                       <p className="text-[12px] text-emerald-700 line-clamp-1">
-                        <span className="font-medium text-gray-700">Location:</span>{" "}
-                        {item.Location}
+                        <span className="font-medium text-gray-700">Location:</span> {item.Location}
                       </p>
                     )}
 
                     {item.Description && (
-                      <p className="text-[12px] text-gray-500 line-clamp-2 mt-1">
-                        {item.Description}
-                      </p>
+                      <p className="text-[12px] text-gray-500 line-clamp-2 mt-1">{item.Description}</p>
                     )}
                   </div>
                 </div>
@@ -999,12 +963,9 @@ const BeforeSolar: React.FC = () => {
           })}
         </div>
 
-        {solarList.length === 0 && (
-          <div className="text-center text-gray-500 py-16">ยังไม่มีรายการ Solar</div>
-        )}
+        {solarList.length === 0 && <div className="text-center text-gray-500 py-16">ยังไม่มีรายการ Solar</div>}
       </div>
 
-      {/* Confirm delete modal — Solar */}
       {openConfirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
           <div className="w-full max-w-[320px] rounded-2xl bg-white text-center px-3 py-4 shadow-lg">
@@ -1018,9 +979,7 @@ const BeforeSolar: React.FC = () => {
               {selectedSolarRef.current?.Name && (
                 <>
                   <br />
-                  <span className="font-semibold text-blue-700">
-                    “{selectedSolarRef.current.Name}”
-                  </span>
+                  <span className="font-semibold text-blue-700">“{selectedSolarRef.current.Name}”</span>
                 </>
               )}
               <br />
@@ -1048,11 +1007,23 @@ const BeforeSolar: React.FC = () => {
         </div>
       )}
 
-      {/* Solar Modals */}
-      <CreateSolarModal open={openCreateModal} onClose={closeCreateModal} onSubmit={handleCreateSolar} />
-      <EditSolarModal open={openEditModal} onClose={closeEditModal} solar={selectedSolarRef.current} onSubmit={handleEditSolar} />
+      {/* ✅ Solar Modals (✅ Mobile = Bottom Sheet, Desktop = Modal) */}
+      <CreateSolarModal
+        open={openCreateModal}
+        onClose={closeCreateModal}
+        onSubmit={handleCreateSolar}
+        existingSolarPoints={existingSolarPoints}
+        onCreatedSuccess={fetchSolar}
+      />
 
-      {/* ✅ Meter (Desktop modal / Mobile bottom sheet) */}
+      <EditSolarModal
+        open={openEditModal}
+        onClose={closeEditModal}
+        solar={selectedSolarRef.current}
+        onSubmit={handleEditSolar}
+      />
+
+      {/* ✅ Meter */}
       <MeterModal open={openMeterModal} onClose={() => setOpenMeterModal(false)} />
     </div>
   );

@@ -326,10 +326,10 @@ const HistoryPay: React.FC = () => {
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-xl bg-blue-50 p-3">
                     <div className="text-[11px] text-blue-900">
-                      Balance (Coins)
+                      Balance (Baht)
                     </div>
                     <div className="mt-1 text-lg font-bold text-blue-700">
-                      {fmt(coinBalance)}
+                      {fmt(coinBalance)} ฿
                     </div>
                   </div>
                   <div className="rounded-xl bg-blue-50 p-3">

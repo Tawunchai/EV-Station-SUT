@@ -318,7 +318,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                 className={btnEqual}
               >
                 <GiTwoCoins className="text-blue-600" />
-                My Coins : <b>{Number(user.Coin).toFixed(2)}</b>
+                My Coins : <b>{Number(user.Coin).toFixed(2)}</b> 
               </button>
             )}
 
@@ -399,7 +399,7 @@ const Header: React.FC<HeaderProps> = ({ }) => {
                 className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white"
               >
                 <GiTwoCoins className="text-lg" />
-                My Coins : <b>{Number(user.Coin).toFixed(2)}</b>
+                My Coins : <b>{Number(user.Coin).toFixed(2)}</b> Baht
               </button>
             )}
 
