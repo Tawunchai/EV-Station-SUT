@@ -196,7 +196,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
       className="max-w-full md:max-w-[600px]"
       style={
         isMobile
-          ? { top: 24, paddingBottom: "env(safe-area-inset-bottom)" }
+          ? { top: 1, paddingBottom: "env(safe-area-inset-bottom)" }
           : {}
       }
       bodyStyle={{ padding: 0, background: "transparent" }}

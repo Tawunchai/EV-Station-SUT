@@ -111,6 +111,12 @@ const Index: React.FC = () => {
     0
   );
 
+  // ✅ helper: เช็ค coin พอ/ไม่พอ (ใช้กับ UI)
+  const userCoin = user?.Coin || 0;
+  const isCoinSelected = paymentMethod === "card";
+  const isCoinInsufficient =
+    isCoinSelected && !!user && Number(userCoin) < Number(totalAmount);
+
   // โหลดข้อมูลผู้ใช้ + Method
   useEffect(() => {
     const fetchUserData = async () => {
@@ -392,8 +398,6 @@ const Index: React.FC = () => {
             cabinet_id,
           },
         });
-        // ✅ ไม่ต้อง setIsProcessing(false) เพราะกำลังเปลี่ยนหน้าอยู่
-        // และเราตั้งใจให้กดได้ครั้งเดียวจนสำเร็จ
       }, 2000);
     } catch (err) {
       console.error(err);
@@ -471,6 +475,7 @@ const Index: React.FC = () => {
                   <img
                     src={`${apiUrlPicture}${item.picture}`}
                     className="h-14 w-14 rounded-lg object-cover"
+                    alt={item?.name || "item"}
                   />
                   <div className="flex-1">
                     <h3 className="text-sm font-medium text-gray-900 line-clamp-1">
@@ -507,9 +512,7 @@ const Index: React.FC = () => {
           <SectionTitle>Payment method</SectionTitle>
           <div className="mt-3 space-y-3">
             {isLoadingMethod ? (
-              <p className="text-sm text-gray-500">
-                Loading payment methods...
-              </p>
+              <p className="text-sm text-gray-500">Loading payment methods...</p>
             ) : (
               <>
                 {qrMethod && (
@@ -521,32 +524,77 @@ const Index: React.FC = () => {
                     label={
                       <div className="flex items-center gap-2">
                         <span>{qrMethod.Medthod}</span>
-                        <img
-                          src={qrpayment}
-                          className="h-5"
-                          alt="PromptPay"
-                        />
+                        <img src={qrpayment} className="h-5" alt="PromptPay" />
                       </div>
                     }
                   />
                 )}
+
                 {coinMethod && (
-                  <PaymentRadio
-                    id="payment-coin"
-                    name="payment"
-                    checked={paymentMethod === "card"}
-                    onChange={() => setPaymentMethod("card")}
-                    label={
-                      <div className="flex items-center gap-2">
-                        <span>{coinMethod.Medthod}</span>
-                        {user && (
-                          <span className="text-[11px] text-blue-700 font-semibold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                            You have {(user.Coin || 0).toFixed(2)} Coin.
-                          </span>
-                        )}
+                  <div className="space-y-2">
+                    <PaymentRadio
+                      id="payment-coin"
+                      name="payment"
+                      checked={paymentMethod === "card"}
+                      onChange={() => setPaymentMethod("card")}
+                      label={
+                        <div className="flex items-center gap-2">
+                          <span>{coinMethod.Medthod}</span>
+                          {user && (
+                            <span
+                              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border
+                              ${isCoinInsufficient
+                                  ? "text-orange-700 bg-orange-50 border-orange-200"
+                                  : "text-blue-700 bg-blue-50 border-blue-200"
+                                }`}
+                            >
+                              You have {Number(userCoin).toFixed(2)} Baht
+                            </span>
+                          )}
+                        </div>
+                      }
+                    />
+
+                    {/* ✅ แสดงคำเตือนเมื่อเลือก Coin Payment และเงินไม่พอ */}
+                    {isCoinInsufficient && (
+                      <div className="pl-1">
+                        <div className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2">
+                          <div className="flex items-start gap-2">
+                            {/* icon */}
+                            <div className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                                <path
+                                  d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </div>
+
+                            <div className="leading-snug">
+                              <p className="text-xs font-semibold text-orange-700">
+                                Insufficient funds
+                              </p>
+                              <p className="text-[11px] text-orange-600">
+                                Please top up your balance to continue.
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => navigate("/user/add-coins")}
+                            className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-200 shadow-sm hover:bg-blue-50 active:scale-[0.98] transition"
+                          >
+                            Top up now →
+                          </button>
+                        </div>
                       </div>
-                    }
-                  />
+                    )}
+                  </div>
                 )}
               </>
             )}
@@ -566,12 +614,10 @@ const Index: React.FC = () => {
 
           <button
             onClick={handlePayment}
-            disabled={
-              isProcessing || isLoadingMethod || chargers.length === 0
-            }
+            disabled={isProcessing || isLoadingMethod || chargers.length === 0}
             className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${isProcessing || isLoadingMethod || chargers.length === 0
-                ? "bg-blue-300 cursor-not-allowed"
-                : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
+              ? "bg-blue-300 cursor-not-allowed"
+              : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
               }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />

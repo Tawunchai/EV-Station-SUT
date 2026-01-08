@@ -439,13 +439,21 @@ const Index: React.FC = () => {
             </div>
 
             {/* Right: coin from API + unit coin/baht */}
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="rounded-2xl bg-blue-50 px-3 py-2 ring-1 ring-blue-100 text-right">
-                <div className="text-[11px] text-blue-700 leading-none">
-                  Coin / Baht
+            <div className="flex items-center shrink-0">
+              <div
+                className="
+      min-w-[104px] sm:min-w-[120px]
+      rounded-2xl bg-blue-50/80 px-3 py-2
+      ring-1 ring-blue-100
+      text-right
+      leading-none
+    "
+              >
+                <div className="text-[15px] sm:text-base font-bold text-blue-700 tabular-nums">
+                  {coin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <div className="text-base font-bold text-blue-700 leading-tight">
-                  {coin.toLocaleString()}
+                <div className="mt-0.5 text-[10px] sm:text-[11px] text-blue-600/90">
+                  Baht
                 </div>
               </div>
             </div>
@@ -687,8 +695,8 @@ const Index: React.FC = () => {
             onClick={handleNext}
             disabled={evChargers.length === 0 || money < minAmount}
             className={`px-6 py-2 rounded-xl flex items-center gap-2 text-white ${evChargers.length === 0 || money < minAmount
-                ? "bg-blue-300"
-                : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
+              ? "bg-blue-300"
+              : "bg-gradient-to-r from-blue-600 to-sky-500 shadow-md"
               }`}
           >
             <BoltIcon className="h-5 w-5 text-white" />

@@ -576,7 +576,7 @@ func seedContent(db *gorm.DB) {
 		Name:           "Solar",
 		Description:    "Solar is Good Power",
 		Price:          2,
-		Picture:        "uploads/evcharging/solar.jpg",
+		Picture:        "uploads/evcharging/solar_ev_charging.jpg",
 		EmployeeID:     empIDPtr,
 		StatusID:       status1.ID,
 		TypeID:         type1.ID,

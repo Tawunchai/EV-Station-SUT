@@ -1,387 +1,375 @@
 // src/page/admin/mornitor/solar/update/index.tsx
-// ปรับ path import ให้ตรงโปรเจกต์จริงด้วยนะ
 
 import React, { useEffect, useState } from "react";
 import { Upload, message } from "antd";
 import ImgCrop from "antd-img-crop";
 import { UpdateSolarByID, apiUrlPicture } from "../../../../../services";
 import type { SolarInterface } from "../../../../../interface/ISolar";
-import {
-  FaTimes,
-  FaSolarPanel,
-  FaGlobe,
-  FaMapMarkerAlt,
-  FaImage,
-  FaAlignLeft,
-} from "react-icons/fa";
+import { X, Sun, Plus } from "react-feather";
+
+/* =========================================
+   ✅ Hook: isMobile
+========================================= */
+const useIsMobile = (bp = 768) => {
+  const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth < bp);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < bp);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [bp]);
+  return isMobile;
+};
 
 type Props = {
   open: boolean;
   onClose: () => void;
   solar: SolarInterface | null;
-  onSubmit: (updatedSolar: {
-    ID?: number;
-    Name: string;
-    UrlWebsocket: string;
-    SolarPoint: string;
-    Description?: string;
-    Picture?: string;
-    Location?: string;
-  }) => void;
+  onSubmit: (updatedSolar: Partial<SolarInterface>) => void;
+};
+
+type FormState = {
+  Name: string;
+  UrlWebsocket: string;
+  SolarPoint: string;
+  Location: string;
+  Description: string;
+};
+
+const emptyForm: FormState = {
+  Name: "",
+  UrlWebsocket: "",
+  SolarPoint: "",
+  Location: "",
+  Description: "",
 };
 
 const EditSolarModal: React.FC<Props> = ({ open, onClose, solar, onSubmit }) => {
-  const [form, setForm] = useState({
-    Name: "",
-    UrlWebsocket: "",
-    SolarPoint: "",
-    Description: "",
-    Location: "",
-  });
+  const isMobile = useIsMobile(768);
 
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [submitting, setSubmitting] = useState(false);
+
+  // picture
   const [fileList, setFileList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  // โหลดข้อมูลจาก solar ตอนเปิด modal
+  // animation state
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+
   useEffect(() => {
-    if (open && solar) {
-      setForm({
-        Name: solar.Name || "",
-        UrlWebsocket: solar.UrlWebsocket || "",
-        SolarPoint: solar.SolarPoint || "",
-        Description: solar.Description || "",
-        Location: solar.Location || "",
-      });
+    if (!open) return;
 
-      // ถ้ามีรูปเดิม ให้แสดงใน Upload ด้วย
-      if (solar.Picture) {
-        setFileList([
-          {
-            uid: "-1",
-            name: solar.Picture,
-            status: "done",
-            url: `${apiUrlPicture}${solar.Picture}`,
-          },
-        ]);
-      } else {
-        setFileList([]);
-      }
+    // lock scroll
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
-      setLoading(false);
-    }
+    setClosing(false);
+    setVisible(false);
+    setSubmitting(false);
 
-    if (!open) {
-      // ปิดแล้วรีเซ็ต state เผื่อเคสเปิดของใหม่
-      setLoading(false);
-    }
+    // ✅ sync ของเดิมทุกครั้งที่เปิด
+    setForm({
+      Name: solar?.Name ?? "",
+      UrlWebsocket: solar?.UrlWebsocket ?? "",
+      SolarPoint: solar?.SolarPoint ?? "",
+      Location: solar?.Location ?? "",
+      Description: solar?.Description ?? "",
+    });
+
+    // ✅ ถ้าแก้ไขรูปใหม่ค่อย upload (เปิดมารูปเดิม = แสดง preview เฉยๆ ไม่ต้องใส่ fileList)
+    setFileList([]);
+
+    const t = window.requestAnimationFrame(() => setVisible(true));
+
+    return () => {
+      document.body.style.overflow = prev;
+      window.cancelAnimationFrame(t);
+    };
   }, [open, solar]);
 
-  if (!open || !solar) return null;
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    setVisible(false);
+    window.setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 260);
   };
+
+  if (!open) return null;
 
   const validate = () => {
-    if (!form.Name.trim()) {
-      message.warning("กรุณากรอกชื่อ Solar");
-      return false;
-    }
-    if (!form.UrlWebsocket.trim()) {
-      message.warning("กรุณากรอก WebSocket URL");
-      return false;
-    }
-    if (!form.SolarPoint.trim()) {
-      message.warning("กรุณากรอก Solar Point");
-      return false;
-    }
-    return true;
+    const name = form.Name.trim();
+    const url = form.UrlWebsocket.trim();
+    const point = form.SolarPoint.trim();
+    if (!name) return "กรุณากรอก Name";
+    if (!url) return "กรุณากรอก UrlWebsocket";
+    if (!point) return "กรุณากรอก SolarPoint";
+    return "";
   };
 
-  const handleSubmit = async () => {
-    if (!solar || !solar.ID) {
-      message.error("ไม่พบข้อมูล Solar ที่ต้องการแก้ไข");
-      return;
-    }
-    if (!validate()) return;
-    if (loading) return;
+  const handleUpdate = async () => {
+    if (!solar?.ID) return message.error("ไม่พบ Solar ที่จะแก้ไข");
 
+    const err = validate();
+    if (err) return message.warning(err);
+
+    setSubmitting(true);
     try {
-      setLoading(true);
+      const fd = new FormData();
+      fd.append("name", form.Name.trim());
+      fd.append("url_websocket", form.UrlWebsocket.trim());
+      fd.append("solar_point", form.SolarPoint.trim());
+      fd.append("location", form.Location.trim());
+      fd.append("description", form.Description.trim());
 
-      const formData = new FormData();
-      // key ต้องตรงกับ backend (json:"name" เป็นต้น)
-      formData.append("name", form.Name);
-      formData.append("url_websocket", form.UrlWebsocket);
-      formData.append("solar_point", form.SolarPoint);
-      formData.append("description", form.Description);
-      formData.append("location", form.Location);
+      const f = fileList?.[0]?.originFileObj;
+      if (f) fd.append("picture", f);
 
-      // ถ้าเลือกไฟล์ใหม่ (มี originFileObj) → ส่งขึ้น backend
-      if (fileList.length > 0 && fileList[0].originFileObj) {
-        formData.append("picture", fileList[0].originFileObj);
+      const updated = await (UpdateSolarByID as any)(solar.ID, fd);
+      if (updated) {
+        message.success("Updated Solar successfully");
+        onSubmit(updated);
+        requestClose();
+      } else {
+        message.error("Solar troubleshooting failed");
       }
-      // ถ้าไม่มี originFileObj แปลว่าใช้รูปเดิม → ไม่ต้องส่ง field picture, backend จะเก็บรูปเดิมไว้
-
-      const res = await UpdateSolarByID(solar.ID, formData);
-
-      if (!res) {
-        message.error("แก้ไข Solar ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-        return;
-      }
-
-      const d: any = res.data;
-
-      const updatedSolar = {
-        ID: d.ID ?? solar.ID,
-        Name: d.name ?? d.Name ?? form.Name,
-        UrlWebsocket: d.url_websocket ?? d.UrlWebsocket ?? form.UrlWebsocket,
-        SolarPoint: d.solar_point ?? d.SolarPoint ?? form.SolarPoint,
-        Description: d.description ?? d.Description ?? form.Description,
-        Location: d.location ?? d.Location ?? form.Location,
-        Picture: d.picture ?? d.Picture ?? solar.Picture ?? "",
-      };
-
-      message.success(res.message || "แก้ไข Solar สำเร็จ");
-
-      // ส่งขึ้นไปให้ parent (BeforeSolar) → parent จะ refetch อีกที
-      onSubmit(updatedSolar);
-      onClose();
-    } catch (error) {
-      console.error("❌ UpdateSolarByID error:", error);
-      message.error("เกิดข้อผิดพลาดในการแก้ไข Solar");
+    } catch (e) {
+      message.error("Error updating Solar");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  // Upload change
-  const handleUploadChange = ({ fileList }: { fileList: any[] }) => {
-    setFileList(fileList);
-  };
+  const oldImg = solar?.Picture && solar.Picture !== "" ? `${apiUrlPicture}${solar.Picture}` : "";
 
-  // Preview รูป (เหมือน EV / CreateSolar)
-  const onPreview = async (file: any) => {
-    let src = file.url;
-    if (!src && file.originFileObj) {
-      src = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file.originFileObj);
-        reader.onload = () => resolve(reader.result as string);
-      });
-    }
-    const imgWindow = window.open(src as string);
-    imgWindow?.document.write(
-      `<img src="${src}" style="max-width: 100%;" />`
-    );
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center ev-scope"
-      role="dialog"
-      aria-modal="true"
-    >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={loading ? undefined : onClose}
-        aria-hidden="true"
-      />
-
-      {/* Card */}
-      <div className="relative w-full max-w-[520px] mx-4 md:mx-auto mb-6 md:mb-0">
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden ring-1 ring-blue-100 flex flex-col">
-          {/* Header */}
-          <div
-            className="px-5 pt-3 pb-4 bg-blue-600 text-white flex justify-between items-center"
-            style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}
-          >
-            <div className="flex items-center gap-2">
-              <FaSolarPanel className="opacity-90" />
-              <h2 className="text-base md:text-lg font-semibold">
-                แก้ไข Solar
-              </h2>
-            </div>
-            <button
-              onClick={loading ? undefined : onClose}
-              className="p-2 -m-2 rounded-lg hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              aria-label="ปิดหน้าต่าง"
-              title="ปิด"
-            >
-              <FaTimes />
-            </button>
+  const Content = (
+    <div className="px-4 sm:px-6 py-4 sm:py-6">
+      <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="h-12 w-12 rounded-2xl bg-blue-600/10 border border-blue-100 grid place-items-center flex-shrink-0">
+            <Sun size={20} className="text-blue-700" />
           </div>
+          <div className="min-w-0">
+            <p className="text-base font-extrabold text-slate-900">Edit Solar</p>
+            <p className="text-xs text-slate-500">แก้ไขข้อมูลแล้วกด Save</p>
+          </div>
+        </div>
 
-          {/* Body */}
-          <div
-            className="px-5 py-5 bg-blue-50/40"
-            style={{
-              overflowY: "auto",
-              WebkitOverflowScrolling: "touch",
-              maxHeight: "72vh",
-            }}
-          >
-            {/* Upload อยู่ด้านบนสุดแบบ EV Modal / CreateSolar */}
-            <div className="flex justify-center mb-4">
-              <ImgCrop rotationSlider>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
+            <label className="text-xs font-semibold text-slate-600">Picture</label>
+
+            {oldImg && fileList.length === 0 && (
+              <div className="mt-2 rounded-2xl border border-blue-100 bg-blue-50/40 p-3">
+                <p className="text-[12px] text-slate-600 mb-2">
+                  รูปเดิม (ถ้าต้องการเปลี่ยน ค่อย Upload ใหม่)
+                </p>
+                <img
+                  src={oldImg}
+                  alt="old"
+                  className="w-full max-h-56 object-cover rounded-2xl border border-blue-100"
+                />
+              </div>
+            )}
+
+            <div className="mt-2">
+              <ImgCrop rotationSlider aspectSlider showReset showGrid quality={1}>
                 <Upload
-                  accept="image/*"
                   listType="picture-card"
                   fileList={fileList}
-                  onChange={handleUploadChange}
-                  onPreview={onPreview}
+                  onChange={({ fileList: fl }) => setFileList(fl)}
                   beforeUpload={() => false}
                   maxCount={1}
                 >
-                  {fileList.length < 1 && (
-                    <div className="flex flex-col items-center text-blue-500">
-                      <FaImage size={24} />
-                      <span className="mt-1 text-sm">Upload</span>
+                  {fileList.length >= 1 ? null : (
+                    <div className="flex flex-col items-center justify-center">
+                      <Plus size={16} />
+                      <div className="mt-1 text-xs">Upload</div>
                     </div>
                   )}
                 </Upload>
               </ImgCrop>
-            </div>
 
-            <div className="space-y-3">
-              {/* Name */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">ชื่อ Solar</span>
-                <div className="flex items-center bg-white rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-blue-500/40">
-                  <span className="pl-3 pr-2 text-amber-500">
-                    <FaSolarPanel />
-                  </span>
-                  <input
-                    name="Name"
-                    value={form.Name}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent text-sm"
-                    placeholder="เช่น Solar_001 หรือ Solar Roof A1"
-                    disabled={loading}
-                  />
-                </div>
-              </label>
-
-              {/* WebSocket URL */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">WebSocket URL</span>
-                <div className="flex items-center bg-white rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-blue-500/40">
-                  <span className="pl-3 pr-2 text-blue-500">
-                    <FaGlobe />
-                  </span>
-                  <input
-                    name="UrlWebsocket"
-                    value={form.UrlWebsocket}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent text-sm"
-                    placeholder="เช่น wss://payment-project-t4dj.onrender.com/solar/solar_001"
-                    disabled={loading}
-                  />
-                </div>
-              </label>
-
-              {/* Solar Point */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  Solar Point
-                </span>
-                <div className="flex items-center bg-white rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-blue-500/40">
-                  <span className="pl-3 pr-2 text-rose-500">
-                    <FaMapMarkerAlt />
-                  </span>
-                  <input
-                    name="SolarPoint"
-                    value={form.SolarPoint}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2.5 rounded-xl outline-none bg-transparent text-sm"
-                    placeholder="เช่น อาคารเรียน 2 ชั้นดาดฟ้า / solar_001"
-                    disabled={loading}
-                  />
-                </div>
-              </label>
-
-              {/* Description */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaAlignLeft className="text-blue-500" />
-                  รายละเอียด (Description)
-                </span>
-                <textarea
-                  name="Description"
-                  value={form.Description}
-                  onChange={handleChange}
-                  className="w-full min-h-[72px] px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-sm resize-y"
-                  placeholder="เช่น Solar ดาดฟ้าอาคารเรียน 1 ผลิตไฟไปยังตู้ EV โซนหน้าอาคาร"
-                  disabled={loading}
-                />
-              </label>
-
-              {/* Location */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600 flex items-center gap-2">
-                  <FaMapMarkerAlt className="text-emerald-500" />
-                  Location (ตำแหน่ง)
-                </span>
-                <input
-                  name="Location"
-                  value={form.Location}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-sm"
-                  placeholder="เช่น ดาดฟ้าอาคารเรียน 1 / Parking Zone B"
-                  disabled={loading}
-                />
-              </label>
+              <p className="text-[11px] text-slate-500 mt-1">
+                ถ้า Upload ใหม่ ระบบจะใช้รูปใหม่แทนรูปเดิม
+              </p>
             </div>
           </div>
 
-          {/* Footer: ปุ่มเดียว บันทึก Solar */}
-          <div className="px-5 py-4 bg-white border-t border-blue-100 flex justify-end">
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="px-4 h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-sm hover:bg-blue-700 active:scale-[0.99] disabled:bg-blue-300 disabled:cursor-not-allowed transition"
-            >
-              {loading ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
-            </button>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-600">Name *</label>
+            <input
+              value={form.Name}
+              onChange={(e) => setForm((s) => ({ ...s, Name: e.target.value }))}
+              className="w-full h-11 rounded-2xl border border-blue-200 bg-white px-3 text-sm outline-none focus:ring-4 focus:ring-blue-100"
+              placeholder="เช่น Solar Station 1"
+            />
           </div>
 
-          {/* safe-area bottom สำหรับ mobile */}
-          <div className="md:hidden h-[env(safe-area-inset-bottom)] bg-white" />
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-600">SolarPoint *</label>
+            <input
+              value={form.SolarPoint}
+              onChange={(e) => setForm((s) => ({ ...s, SolarPoint: e.target.value }))}
+              className="w-full h-11 rounded-2xl border border-blue-200 bg-white px-3 text-sm outline-none focus:ring-4 focus:ring-blue-100"
+              placeholder="เช่น solar_001"
+            />
+          </div>
+
+          <div className="sm:col-span-2 space-y-1">
+            <label className="text-xs font-semibold text-slate-600">UrlWebsocket *</label>
+            <input
+              value={form.UrlWebsocket}
+              onChange={(e) => setForm((s) => ({ ...s, UrlWebsocket: e.target.value }))}
+              className="w-full h-11 rounded-2xl border border-blue-200 bg-white px-3 text-sm outline-none focus:ring-4 focus:ring-blue-100"
+              placeholder="เช่น wss://api.evstation-sut.it.com/solar/solar_001"
+            />
+          </div>
+
+          <div className="sm:col-span-2 space-y-1">
+            <label className="text-xs font-semibold text-slate-600">Location</label>
+            <input
+              value={form.Location}
+              onChange={(e) => setForm((s) => ({ ...s, Location: e.target.value }))}
+              className="w-full h-11 rounded-2xl border border-blue-200 bg-white px-3 text-sm outline-none focus:ring-4 focus:ring-blue-100"
+              placeholder="เช่น SUT อาคาร..."
+            />
+          </div>
+
+          <div className="sm:col-span-2 space-y-1">
+            <label className="text-xs font-semibold text-slate-600">Description</label>
+            <textarea
+              value={form.Description}
+              onChange={(e) => setForm((s) => ({ ...s, Description: e.target.value }))}
+              rows={4}
+              className="w-full rounded-2xl border border-blue-200 bg-white px-3 py-2 text-sm outline-none focus:ring-4 focus:ring-blue-100 resize-none"
+              placeholder="อธิบายเพิ่มเติม (optional)"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={requestClose}
+            className="w-full h-11 rounded-2xl border border-blue-200 bg-white text-blue-700 text-sm font-extrabold
+                       hover:bg-blue-50 active:scale-[0.99] transition focus:outline-none focus:ring-4 focus:ring-blue-100"
+            type="button"
+          >
+            Cancel
+          </button>
+
+          <button
+            onClick={handleUpdate}
+            disabled={submitting}
+            className={`w-full h-11 rounded-2xl text-sm font-extrabold transition focus:outline-none focus:ring-4 ${
+              submitting
+                ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.99] focus:ring-blue-200"
+            }`}
+            type="button"
+          >
+            {submitting ? "Saving..." : "Save"}
+          </button>
         </div>
       </div>
-
-      {/* Scoped CSS สำหรับ AntD Select / Upload ถ้าใช้ร่วมใน modal นี้ในอนาคต */}
-      <style>{`
-        .ev-scope .ev-select .ant-select-selector {
-          border-radius: 0.75rem !important;
-          border-color: #e2e8f0 !important;
-          height: 44px !important;
-          padding: 0 12px !important;
-          display: flex;
-          align-items: center;
-          background-color: #ffffff !important;
-        }
-        .ev-scope .ev-select:hover .ant-select-selector {
-          border-color: #cbd5e1 !important;
-        }
-        .ev-scope .ev-select.ant-select-focused .ant-select-selector {
-          border-color: #2563eb !important;
-          box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25) !important;
-        }
-        .ev-scope .ev-select-dropdown {
-          border-radius: 0.75rem !important;
-          overflow: hidden !important;
-        }
-      `}</style>
     </div>
   );
+
+  /* ============================
+     ✅ Desktop Modal (Blue-White Theme)
+  ============================ */
+  const DesktopModal = (
+    <div
+      className={`fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 px-3 transition-opacity duration-300 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="absolute inset-0" onClick={requestClose} />
+
+      <div
+        className={`relative w-[min(96vw,760px)] max-h-[92vh] bg-white shadow-xl border border-blue-100 rounded-3xl overflow-hidden
+                    transition-transform duration-300 ${
+                      visible ? "translate-y-0 scale-100" : "translate-y-3 scale-[0.98]"
+                    }`}
+      >
+        {/* ✅ BLUE HEADER */}
+        <div className="bg-blue-600 text-white">
+          <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center flex-shrink-0">
+                <Sun size={18} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold truncate">Edit Solar</p>
+                <p className="text-xs text-white/80 truncate">แก้ไขข้อมูล Solar และบันทึกการเปลี่ยนแปลง</p>
+              </div>
+            </div>
+
+            {/* ✅ White Close Button */}
+            <button
+              onClick={requestClose}
+              className="h-10 px-4 rounded-2xl bg-white text-blue-700 text-sm font-extrabold
+                         shadow-sm hover:bg-white/90 active:scale-[0.99] transition
+                         focus:outline-none focus:ring-4 focus:ring-white/40"
+              type="button"
+            >
+              <span className="inline-flex items-center gap-2">
+                <X size={16} />
+                CLOSE
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* body */}
+        <div className="max-h-[calc(92vh-72px)] overflow-y-auto">{Content}</div>
+      </div>
+    </div>
+  );
+
+  const MobileSheet = (
+    <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true">
+      <div
+        className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${
+          visible ? "opacity-100" : "opacity-0"
+        }`}
+        onClick={requestClose}
+      />
+      <div
+        className={`absolute inset-x-0 bottom-0 bg-white shadow-2xl border-t border-slate-200 rounded-t-3xl
+                    transition-transform duration-300 ${visible ? "translate-y-0" : "translate-y-full"}`}
+        style={{
+          paddingBottom: "env(safe-area-inset-bottom)",
+          maxHeight: "90dvh",
+        }}
+      >
+        <div className="pt-2 pb-1">
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-slate-300" />
+        </div>
+
+        <div className="px-4 pb-3 flex items-center justify-between">
+          <button className="text-blue-600 font-extrabold" onClick={requestClose} type="button">
+            close
+          </button>
+          <div className="text-slate-900 font-extrabold">Edit Solar</div>
+        </div>
+
+        <div className="overflow-y-auto" style={{ maxHeight: "80dvh" }}>
+          {Content}
+        </div>
+      </div>
+    </div>
+  );
+
+  return isMobile ? MobileSheet : DesktopModal;
 };
 
 export default EditSolarModal;
