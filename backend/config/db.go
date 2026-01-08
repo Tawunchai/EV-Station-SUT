@@ -72,6 +72,8 @@ func SetupDatabase() {
 	// ✅ AutoMigrate ทุกครั้ง (อัปสเคม่า) — แต่ยังไม่ seed ถ้าไม่ใช่ DB ใหม่
 	if err := db.AutoMigrate(
 		&entity.SolarRealtimeData{},
+		&entity.Meter{},
+		&entity.MeterRealtimeData{},
 		&entity.Brand{},
 		&entity.Hardware{},
 		&entity.EnergySource{},
@@ -163,11 +165,13 @@ func seedMasters(db *gorm.DB) {
 
 	// Banking (ตัวอย่าง)
 	Hardware := entity.Hardware{
-		Name: "Hardware One",
-		UrlWebsocket:   "wss://api.evstation-sut.it.com/hardware/",
-		HardwarePoint:   "hardware_001",
+		Name:          "Hardware One",
+		UrlWebsocket:  "wss://api.evstation-sut.it.com/hardware/",
+		HardwarePoint: "hardware_001",
 	}
 	db.FirstOrCreate(&Hardware, &entity.Hardware{HardwarePoint: "hardware_001"})
+
+	MeterID := uint(1)
 
 	s1 := entity.Solar{
 		Name:         "Solar Cell",
@@ -177,10 +181,43 @@ func seedMasters(db *gorm.DB) {
 		Description: "Main solar panel for EV project",
 		Picture:     "uploads/user/solarpic.jpg",
 		Location:    "Building A, Roof Floor",
+		MeterID:     &MeterID,
 	}
 
 	// สร้างถ้ายังไม่มี
 	db.FirstOrCreate(&s1, entity.Solar{Name: "Solar Cell"})
+
+	m1 := entity.Meter{
+		Name:         "Meter Solar",
+		UrlWebsocket: "wss://api.evstation-sut.it.com/meter/",
+		MeterPoint:   "meter_001",
+
+		Description: "Main meter for EV project",
+	}
+
+	// สร้างถ้ายังไม่มี
+	db.FirstOrCreate(&m1, entity.Meter{Name: "Meter Solar"})
+
+	// ตัวอย่างเพิ่ม MeterRealtimeData (seed / test data)
+
+	t1, _ := time.Parse(time.RFC3339Nano, "2025-11-18T13:30:01.628179+07:00")
+
+	d1 := entity.MeterRealtimeData{
+		DeviceID:  "meter_001", // ให้ตรงกับ MeterPoint หรือ device_id ที่ payload ส่งมา
+		Timestamp: t1,
+
+		W:    1523.45, // Watt
+		Var:  120.30,  // var
+		VA:   1530.00, // VA
+		Vrms: 230.12,  // V
+		Irms: 6.62,    // A
+	}
+
+	// ✅ สร้างถ้ายังไม่มี (ยึด DeviceID + Timestamp เป็น key กันซ้ำ)
+	db.FirstOrCreate(
+		&d1,
+		entity.MeterRealtimeData{DeviceID: d1.DeviceID, Timestamp: d1.Timestamp},
+	)
 
 	// Methods (แก้คำสะกดให้ตรงกัน)
 	method1 := entity.Method{Medthod: "QR Payment"}
@@ -462,7 +499,7 @@ func seedContent(db *gorm.DB) {
 		UrlWebsocket: "wss://api.evstation-sut.it.com/ocpp/",
 		ChargePoint:  "CP_1",
 		EmployeeID:   &emp.ID,
-		HardwareID: 1,
+		HardwareID:   1,
 	}
 
 	// ✅ ใช้ Where() เพื่อป้องกันซ้ำตาม Name
@@ -670,11 +707,11 @@ func SeedPayments(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error
 			quantity2 := float64(price2) / ev2.Price
 
 			evcp1 := entity.EVChargingPayment{
-				EVchargingID: 1,
-				PaymentID:    payment.ID,
-				Price:        float64(price1),
-				Power:        quantity1,
-				Percent:      20.00,
+				EVchargingID:   1,
+				PaymentID:      payment.ID,
+				Price:          float64(price1),
+				Power:          quantity1,
+				Percent:        20.00,
 				RemainingPower: 5,
 			}
 			if err := db.FirstOrCreate(
@@ -685,11 +722,11 @@ func SeedPayments(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error
 			}
 
 			evcp2 := entity.EVChargingPayment{
-				EVchargingID: 2,
-				PaymentID:    payment.ID,
-				Price:        float64(price2),
-				Power:        quantity2,
-				Percent:      80.00,
+				EVchargingID:   2,
+				PaymentID:      payment.ID,
+				Price:          float64(price2),
+				Power:          quantity2,
+				Percent:        80.00,
 				RemainingPower: 2,
 			}
 			if err := db.FirstOrCreate(
@@ -794,7 +831,7 @@ func seedSolarRealtimeData(db *gorm.DB, deviceID string) error {
 
 		// ===== ค่าที่ไม่ซ้ำเดิม =====
 		// เพิ่มทีละนิดให้ไม่ชนกัน
-		powerIn := 3198.04 + float64(i)*17.3   // ไม่ซ้ำ
+		powerIn := 3198.04 + float64(i)*17.3  // ไม่ซ้ำ
 		powerOut := 2800.50 + float64(i)*15.7 // ไม่ซ้ำ
 		battPct := 88.14 + float64(i)*0.7     // ไม่ซ้ำ
 

@@ -10,6 +10,7 @@ import {
   FiDownload,
   FiTrash2,
   FiSearch,
+  FiActivity, // ✅ ADD (Meter icon)
 } from "react-icons/fi";
 import { FaCarSide } from "react-icons/fa";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -746,8 +747,8 @@ const Index: React.FC = () => {
   const updatedTime = lastStatusTime
     ? lastStatusTime.toLocaleTimeString("th-TH")
     : solarData?.payload?.timestamp
-    ? new Date(solarData.payload.timestamp).toLocaleTimeString("th-TH")
-    : "Waiting...";
+      ? new Date(solarData.payload.timestamp).toLocaleTimeString("th-TH")
+      : "Waiting...";
 
   const loadPower = powerOut;
   const batteryLabel = battery > 0 ? `${battery.toFixed(0)}%` : "None";
@@ -857,11 +858,10 @@ const Index: React.FC = () => {
       case "status":
         return (
           <span
-            className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
-              isError
-                ? "bg-red-50 text-red-700 border border-red-200"
-                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-            }`}
+            className={`px-2 py-1 rounded-full text-[10px] font-semibold ${isError
+              ? "bg-red-50 text-red-700 border border-red-200"
+              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+              }`}
           >
             {statusStr}
           </span>
@@ -896,35 +896,54 @@ const Index: React.FC = () => {
             </div>
           </div>
 
-          {/* ขวา: สถานะ Online/Offline + สถานะ Text */}
-          <div className="flex flex-col items-end text-[11px] sm:text-xs gap-1">
+
+          <div className="flex items-center gap-2 text-[11px] sm:text-xs">
+            {/* ✅ Meter Button (Prominent - White) */}
+            <button
+              type="button"
+              onClick={() =>
+                navigate("/admin/meter", {
+                  state: {
+                    solarPoint: solar?.SolarPoint ?? null,
+                    solar, // optional
+                  },
+                })
+              }
+              disabled={!solar?.SolarPoint}
+              className={`relative inline-flex items-center gap-2 rounded-xl px-3 py-1.5 border font-semibold transition
+    ${!solar?.SolarPoint
+                  ? "bg-white/10 text-white/50 border-white/20 cursor-not-allowed"
+                  : "bg-white text-blue-700 border-white/40 shadow-md shadow-black/10 ring-1 ring-white/60 hover:bg-white/95 hover:shadow-lg hover:shadow-black/15 active:scale-[0.98]"
+                }`}
+              title={!solar?.SolarPoint ? "ไม่พบ SolarPoint" : "ไปหน้า Meter"}
+            >
+              {/* จุดเด่นเล็ก ๆ (pulse) */}
+              {solar?.SolarPoint && (
+                <span className="absolute -top-1 -right-1 h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+                </span>
+              )}
+
+              <FiActivity className="text-[14px] text-blue-700" />
+              <span>Meter</span>
+
+              {/* badge เล็ก ๆ */}
+              <span className="ml-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-blue-700 border border-blue-100">
+                LIVE
+              </span>
+            </button>
+
+            {/* เดิม: Online/Offline */}
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
               <FiSun
                 className={
-                  isOffline
-                    ? "text-red-300"
-                    : isLive
-                    ? "text-yellow-300"
-                    : "text-blue-100"
+                  isOffline ? "text-red-300" : isLive ? "text-yellow-300" : "text-blue-100"
                 }
               />
               <span>
-                {isOffline
-                  ? "Offline"
-                  : isLive
-                  ? "Receiving data..."
-                  : "Waiting signal..."}
+                {isOffline ? "Offline" : isLive ? "Receiving data..." : "Waiting signal..."}
               </span>
-            </span>
-
-            <span
-              className={`px-2 py-0.5 rounded-full border font-semibold ${
-                isOffline
-                  ? "bg-red-500/20 text-red-100 border-red-300/50"
-                  : "bg-emerald-500/20 text-emerald-100 border-emerald-300/50"
-              }`}
-            >
-              {isOffline ? "Offline" : displayStatus}
             </span>
           </div>
         </div>
@@ -944,9 +963,8 @@ const Index: React.FC = () => {
                     Realtime Solar Status
                   </p>
                   <p
-                    className={`text-3xl md:text-4xl font-extrabold tracking-tight ${
-                      isOffline ? "text-red-500" : "text-sky-700"
-                    }`}
+                    className={`text-3xl md:text-4xl font-extrabold tracking-tight ${isOffline ? "text-red-500" : "text-sky-700"
+                      }`}
                   >
                     {isOffline ? "Offline" : displayStatus}
                   </p>
@@ -986,11 +1004,10 @@ const Index: React.FC = () => {
                       {item.icon}
                     </div>
                     <span
-                      className={`text-[10px] md:text-xs px-2 py-1 rounded-full font-semibold ${
-                        item.status === "ON"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : "bg-slate-50 text-slate-500 border border-slate-200"
-                      }`}
+                      className={`text-[10px] md:text-xs px-2 py-1 rounded-full font-semibold ${item.status === "ON"
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        : "bg-slate-50 text-slate-500 border border-slate-200"
+                        }`}
                     >
                       {item.status}
                     </span>
@@ -1530,11 +1547,10 @@ const Index: React.FC = () => {
                 type="button"
                 onClick={handleDeleteSelected}
                 disabled={selectedIds.length === 0}
-                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] md:text-xs border ${
-                  selectedIds.length === 0
-                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-                }`}
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] md:text-xs border ${selectedIds.length === 0
+                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                  : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                  }`}
               >
                 <FiTrash2 className="text-red-500" />
                 ลบที่เลือก ({selectedIds.length})
@@ -1571,11 +1587,10 @@ const Index: React.FC = () => {
                         return (
                           <th
                             key={col.key}
-                            className={`px-3 py-2 font-semibold text-slate-700 border-b border-sky-100 ${
-                              col.align === "right"
-                                ? "text-right"
-                                : "text-left"
-                            }`}
+                            className={`px-3 py-2 font-semibold text-slate-700 border-b border-sky-100 ${col.align === "right"
+                              ? "text-right"
+                              : "text-left"
+                              }`}
                           >
                             {col.label}
                           </th>
@@ -1672,11 +1687,10 @@ const Index: React.FC = () => {
                         return (
                           <th
                             key={col.key}
-                            className={`px-3 py-2 font-semibold text-slate-700 border-b border-sky-100 ${
-                              col.align === "right"
-                                ? "text-right"
-                                : "text-left"
-                            }`}
+                            className={`px-3 py-2 font-semibold text-slate-700 border-b border-sky-100 ${col.align === "right"
+                              ? "text-right"
+                              : "text-left"
+                              }`}
                           >
                             {col.label}
                           </th>
@@ -1754,11 +1768,10 @@ const Index: React.FC = () => {
                   setCurrentPage((prev) => Math.max(1, prev - 1))
                 }
                 disabled={currentPage === 1}
-                className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${
-                  currentPage === 1
-                    ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
-                    : "border-sky-200 text-sky-700 bg-white hover:bg-sky-50"
-                }`}
+                className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${currentPage === 1
+                  ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
+                  : "border-sky-200 text-sky-700 bg-white hover:bg-sky-50"
+                  }`}
               >
                 ย้อนกลับ
               </button>
@@ -1774,11 +1787,10 @@ const Index: React.FC = () => {
                   currentPage === totalPages ||
                   filteredHistoryData.length === 0
                 }
-                className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${
-                  currentPage === totalPages || filteredHistoryData.length === 0
-                    ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
-                    : "border-sky-200 text-sky-700 bg-white hover:bg-sky-50"
-                }`}
+                className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${currentPage === totalPages || filteredHistoryData.length === 0
+                  ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
+                  : "border-sky-200 text-sky-700 bg-white hover:bg-sky-50"
+                  }`}
               >
                 ถัดไป
               </button>

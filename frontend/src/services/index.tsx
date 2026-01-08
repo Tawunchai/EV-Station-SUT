@@ -2408,6 +2408,7 @@ export const connectSolarSocket = (
   // ⭐ ใส่ deviceID ใน query param
   const ws = new WebSocket(`${apiUrl}/solar/frontend?deviceID=${deviceId}`);
 
+
   ws.onopen = () => {
     console.log(
       `✅ Connected to Go Solar WebSocket Server for device: ${deviceId}`
