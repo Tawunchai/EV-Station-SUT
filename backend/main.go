@@ -252,6 +252,9 @@ func main() {
 		// ⭐ NEW: API ขอสถานะตู้
 		public.GET("/ocpp/status/:chargerID", ocpp.GetChargerStatusHandler)
 
+		public.GET("/ocpp/snapshot/:chargerID", ocpp.GetChargerSnapshotHandler)
+		public.GET("/ocpp/snapshots", ocpp.ListChargerSnapshotsHandler)
+
 		// 🌞 Solar WebSocket Routes
 		public.GET("/solar/:deviceID", solar.HandleSolar)   // สำหรับพี่คุณส่งข้อมูลเข้ามา
 		public.GET("/solar/frontend", solar.HandleFrontend) // สำหรับเว็บคุณรับข้อมูลแบบ real-time

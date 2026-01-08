@@ -291,7 +291,7 @@ const Index: React.FC = () => {
     }
 
     if ((user.Coin || 0) < totalAmount) {
-      message.error("Insufficient Coins");
+      message.warning("Insufficient Coins");
       return;
     }
 

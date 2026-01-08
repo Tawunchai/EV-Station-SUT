@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Tawunchai/work-project/config"
@@ -559,7 +560,6 @@ func DeletePaymentCoins(c *gin.Context) {
 	})
 }
 
-// DELETE /payments
 func DeletePayment(c *gin.Context) {
 	var ids []uint
 
@@ -572,42 +572,76 @@ func DeletePayment(c *gin.Context) {
 	}
 
 	db := config.DB()
-	var payments []entity.Payment
 
-	// ดึงข้อมูลทั้งหมดที่ต้องลบ
-	if err := db.Find(&payments, ids).Error; err != nil {
+	// เก็บ path รูปไว้ลบหลัง commit
+	var picturePaths []string
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var payments []entity.Payment
+
+		// ดึงข้อมูล Payment ทั้งหมดที่จะลบ (เพื่อเอา picture)
+		if err := tx.Find(&payments, ids).Error; err != nil {
+			return err
+		}
+
+		// collect รูป (เอาไว้ลบหลัง commit)
+		for _, p := range payments {
+			if p.Picture != "" {
+				// กัน path แปลก ๆ นิดนึง
+				clean := filepath.Clean(p.Picture)
+
+				// อนุญาตเฉพาะโฟลเดอร์นี้ตามที่คุณต้องการ
+				// NOTE: ใช้ strings.HasPrefix เพราะ filepath.HasPrefix ไม่มีใน std
+				if strings.HasPrefix(clean, "uploads/payment") {
+					picturePaths = append(picturePaths, clean)
+				}
+			}
+		}
+
+		// ✅ 1) ลบ ChargingSession ที่ผูกกับ PaymentID เหล่านี้ก่อน
+		if err := tx.
+			Where("payment_id IN ?", ids).
+			Delete(&entity.ChargingSession{}).Error; err != nil {
+			return err
+		}
+
+		// ✅ 2) ลบ Payment
+		if err := tx.Delete(&entity.Payment{}, ids).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "ไม่สามารถดึงข้อมูลได้",
+			"error": "ไม่สามารถลบข้อมูลได้",
+			"detail": err.Error(),
 		})
 		return
 	}
 
-	// ลบรูปภาพทั้งหมด (ถ้ามี)
-	for _, payment := range payments {
-		if payment.Picture != "" && filepath.HasPrefix(payment.Picture, "uploads/payment") {
-			if _, err := os.Stat(payment.Picture); err == nil {
-				if removeErr := os.Remove(payment.Picture); removeErr != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"error": "ไม่สามารถลบรูปภาพได้: " + removeErr.Error(),
-					})
-					return
-				}
+	// ✅ ลบรูปภาพหลัง commit (best-effort)
+	var failedFiles []string
+	for _, p := range picturePaths {
+		if _, err := os.Stat(p); err == nil {
+			if removeErr := os.Remove(p); removeErr != nil {
+				failedFiles = append(failedFiles, p)
 			}
 		}
 	}
 
-	// ลบข้อมูลในฐานข้อมูลทั้งหมด
-	if err := db.Delete(&entity.Payment{}, ids).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "ไม่สามารถลบข้อมูลได้",
-		})
-		return
+	resp := gin.H{
+		"message": "ลบ Payment สำเร็จ และลบ ChargingSession ที่ผูกกับ PaymentID แล้ว",
+		"deleted": ids,
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "ลบ Payment ทั้งหมดสำเร็จพร้อมลบรูปภาพ",
-		"deleted": ids,
-	})
+	if len(failedFiles) > 0 {
+		resp["warning"] = "ลบข้อมูลใน DB สำเร็จ แต่ลบรูปบางไฟล์ไม่สำเร็จ"
+		resp["failed_files"] = failedFiles
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // ✅ GetDataPaymentByRef: ตรวจสอบว่ามี ref นี้ใน Payment หรือ PaymentCoin หรือไม่

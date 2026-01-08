@@ -33,7 +33,11 @@ const EvModal: React.FC<{
 }> = ({ open, onClose, children }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+    >
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
@@ -58,7 +62,10 @@ type RowType = {
   CustomerName: string;
   CustomerEmail: string;
   CustomerImage: string;
-  Date: string;
+
+  // ✅ เปลี่ยนจาก Date -> CreatedAt
+  CreatedAt: string;
+
   Amount: number;
   Method: string;
   ReferenceNumber: string;
@@ -74,7 +81,10 @@ interface PaymentHistoryTableProps {
 /* ==========================
    MAIN COMPONENT
 ========================== */
-const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role }) => {
+const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({
+  data,
+  role,
+}) => {
   const [rows, setRows] = useState<RowType[]>([]);
   const [searchText, setSearchText] = useState("");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -102,11 +112,21 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
 
   /* ==========================
      Map Data → Rows
+     ✅ ตอนโหลดข้อมูล: ใช้ CreatedAt (fallback ได้)
   ========================== */
   useEffect(() => {
     if (data && data.length > 0) {
       const mapped: RowType[] = data.map((p, idx) => {
         const name = `${p.User?.FirstName ?? ""} ${p.User?.LastName ?? ""}`.trim();
+
+        // ✅ รองรับหลายชื่อ field กันพลาด (CreatedAt/createdAt/Date)
+        const createdAtRaw =
+          (p as any).CreatedAt ?? (p as any).createdAt ?? (p as any).Date ?? p.Date;
+
+        const createdAtISO = createdAtRaw
+          ? new Date(createdAtRaw).toISOString()
+          : "";
+
         return {
           key: p.ID!,
           Index: idx + 1,
@@ -114,9 +134,12 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
           CustomerName: name || "-",
           CustomerEmail: p.User?.Email || "-",
           CustomerImage: /^https?:\/\//i.test(p.User?.Profile || "")
-            ? p.User?.Profile!
+            ? (p.User?.Profile as string)
             : `${apiUrlPicture}${p.User?.Profile || ""}`,
-          Date: p.Date ? new Date(p.Date).toISOString() : "",
+
+          // ✅ ใช้ CreatedAt
+          CreatedAt: createdAtISO,
+
           Amount: Number(p.Amount ?? 0),
           Method: p.Method?.Medthod || "",
           ReferenceNumber: p.ReferenceNumber || "-",
@@ -125,11 +148,14 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
         };
       });
 
+      // ✅ sort ล่าสุดก่อนตาม CreatedAt
       const sorted = mapped.sort((a, b) => {
-        return new Date(b.Date).getTime() - new Date(a.Date).getTime();
+        return new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime();
       });
 
       setRows(sorted);
+    } else {
+      setRows([]);
     }
   }, [data]);
 
@@ -142,7 +168,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
 
     return rows.filter((r) =>
       [r.CustomerName, r.CustomerEmail, r.Method, r.ReferenceNumber].some((f) =>
-        f.toLowerCase().includes(q)
+        (f || "").toLowerCase().includes(q)
       )
     );
   }, [rows, searchText]);
@@ -187,7 +213,10 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
   const renderMethodBadge = (method: string) => {
     if (method === "QR Payment") {
       return (
-        <Tag color="blue" className="px-2 py-1 rounded-md text-white bg-blue-600 border-none">
+        <Tag
+          color="blue"
+          className="px-2 py-1 rounded-md text-white bg-blue-600 border-none"
+        >
           {method}
         </Tag>
       );
@@ -222,6 +251,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
 
   /* ==========================
      Export CSV (ทุกคนใช้ได้)
+     ✅ เปลี่ยน Date -> CreatedAt
   ========================== */
   const handleExportCSV = async () => {
     try {
@@ -241,7 +271,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
         "ID",
         "Name",
         "Email",
-        "Date",
+        "CreatedAt",
         "Amount",
         "Method",
         "Reference",
@@ -253,7 +283,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
         r.ID,
         r.CustomerName,
         r.CustomerEmail,
-        formatDate(r.Date),
+        formatDate(r.CreatedAt),
         r.Amount,
         r.Method,
         r.ReferenceNumber,
@@ -265,8 +295,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
         ...rowsCsv.map((cols) =>
           cols
             .map((v) => {
-              const val =
-                v === null || v === undefined ? "" : String(v).replace(/"/g, '""');
+              const val = v === null || v === undefined ? "" : String(v).replace(/"/g, '""');
               return /[",\n]/.test(val) ? `"${val}"` : val;
             })
             .join(",")
@@ -279,10 +308,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
 
       saveAs(
         blob,
-        `payment_history_${new Date()
-          .toISOString()
-          .slice(0, 19)
-          .replace(/[:T]/g, "-")}.csv`
+        `payment_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`
       );
 
       message.success("ส่งออก CSV สำเร็จ");
@@ -314,9 +340,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
       }
 
       const zip = new JSZip();
-      const folder = zip.folder(
-        `payment_proofs_${new Date().toISOString().slice(0, 10)}`
-      )!;
+      const folder = zip.folder(`payment_proofs_${new Date().toISOString().slice(0, 10)}`)!;
 
       for (const r of withPics) {
         const url = `${apiUrlPicture}${r.Picture}`;
@@ -345,6 +369,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
 
   /* ==========================
      Columns
+     ✅ เปลี่ยน Date & Time ให้ใช้ CreatedAt
   ========================== */
   const columns: ColumnsType<RowType> = [
     {
@@ -367,38 +392,40 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
       ),
     },
     {
-      title: "Date & Time",
-      dataIndex: "Date",
+      title: "CreatedAt",
+      dataIndex: "CreatedAt",
       width: 180,
       render: (v: string) => {
         if (!v) return "-";
         const d = new Date(v);
         if (isNaN(d.getTime())) return "-";
-        return `${String(d.getDate()).padStart(2, "0")}/${String(
-          d.getMonth() + 1
-        ).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(
+        return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(
           2,
           "0"
-        )}:${String(d.getMinutes()).padStart(2, "0")}`;
+        )}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(
+          d.getMinutes()
+        ).padStart(2, "0")}`;
       },
     },
     {
       title: "Amount (฿)",
       dataIndex: "Amount",
       width: 130,
-      render: (v) => <span className="font-semibold text-blue-700">{v.toLocaleString()}</span>,
+      render: (v: number) => (
+        <span className="font-semibold text-blue-700">{Number(v || 0).toLocaleString()}</span>
+      ),
     },
     {
       title: "Method",
       dataIndex: "Method",
       width: 130,
-      render: (v) => renderMethodBadge(v),
+      render: (v: string) => renderMethodBadge(v),
     },
     {
       title: "Reference",
       dataIndex: "ReferenceNumber",
       width: 150,
-      render: (v) => (
+      render: (v: string) => (
         <span className="font-mono bg-blue-50 text-blue-800 px-2 py-1 rounded border border-blue-100">
           {v}
         </span>
@@ -503,7 +530,10 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
             pageSize: pageSize,
             showSizeChanger: true,
             pageSizeOptions: ["5", "10", "20", "50", "100"],
-            onShowSizeChange: (_, size) => setPageSize(size),
+            onShowSizeChange: (_, size) => {
+              setCurrentPage(1);
+              setPageSize(size);
+            },
             onChange: (page, size) => {
               setCurrentPage(page);
               setPageSize(size);
@@ -536,7 +566,7 @@ const PaymentHistoryTable: React.FC<PaymentHistoryTableProps> = ({ data, role })
             <button
               onClick={confirmDelete}
               disabled={confirmLoading}
-              className="min-w-[96px] h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              className="min-w-[96px] h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
             >
               {confirmLoading ? "กำลังลบ..." : "ลบ"}
             </button>
