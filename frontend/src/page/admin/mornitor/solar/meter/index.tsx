@@ -14,6 +14,7 @@ import {
   FiTrash2,
   FiX,
 } from "react-icons/fi";
+import { message } from "antd";
 import type { SolarInterface } from "../../../../../interface/ISolar";
 
 // ✅ your services
@@ -182,7 +183,7 @@ const FullWidthLineChart: React.FC<{
     const steps = 6;
     const arr: Array<{ y: number; v: number }> = [];
     for (let i = 0; i <= steps; i++) {
-      const t = i / steps; // 0..1 from top to bottom in value-space (but y-axis is inverted visually)
+      const t = i / steps;
       const v = hi - (hi - lo) * t;
       const y = 18 + (h - 46) * t;
       arr.push({ y, v });
@@ -197,10 +198,8 @@ const FullWidthLineChart: React.FC<{
     const localX = e.clientX - rect.left;
     setMouseX(localX);
 
-    // map localX (0..rect.width) -> viewBox X (0..w)
     const viewX = (localX / rect.width) * w;
 
-    // find nearest index by x distance
     let best = 0;
     let bestDist = Infinity;
     for (let i = 0; i < points.length; i++) {
@@ -213,19 +212,15 @@ const FullWidthLineChart: React.FC<{
     setHoverIdx(best);
   };
 
-  const onMouseLeave = () => {
-    setHoverIdx(null);
-  };
+  const onMouseLeave = () => setHoverIdx(null);
 
   const hoverPoint = hoverIdx !== null ? points[hoverIdx] : null;
   const hoverX = hoverIdx !== null ? xOf(hoverIdx) : 0;
   const hoverY = hoverPoint ? yOf(hoverPoint.y) : 0;
 
-  // tooltip position (CSS px)
   const tooltipLeft = useMemo(() => {
     if (!wrapRef.current) return 0;
     const rect = wrapRef.current.getBoundingClientRect();
-    // keep tooltip within bounds
     const raw = mouseX;
     return clamp(raw, 90, rect.width - 90);
   }, [mouseX]);
@@ -256,7 +251,6 @@ const FullWidthLineChart: React.FC<{
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
       >
-        {/* Tooltip (HTML) */}
         {hoverPoint && (
           <div
             className="absolute z-10 -translate-x-1/2"
@@ -274,7 +268,6 @@ const FullWidthLineChart: React.FC<{
         )}
 
         <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[260px]">
-          {/* axes */}
           <line
             x1="55"
             y1={h - 28}
@@ -290,7 +283,6 @@ const FullWidthLineChart: React.FC<{
             stroke="rgba(100,116,139,0.35)"
           />
 
-          {/* dense grid + y labels */}
           {yTicks.map((t, i) => (
             <g key={i}>
               <line
@@ -311,7 +303,6 @@ const FullWidthLineChart: React.FC<{
             </g>
           ))}
 
-          {/* empty state */}
           {points.length === 0 && (
             <text
               x={w / 2}
@@ -324,7 +315,6 @@ const FullWidthLineChart: React.FC<{
             </text>
           )}
 
-          {/* series path */}
           <path
             d={path || ""}
             fill="none"
@@ -332,7 +322,6 @@ const FullWidthLineChart: React.FC<{
             strokeWidth="3"
           />
 
-          {/* dots */}
           {points.map((p, i) => {
             const cx = xOf(i);
             const cy = yOf(p.y);
@@ -348,7 +337,6 @@ const FullWidthLineChart: React.FC<{
             );
           })}
 
-          {/* hover vertical line + emphasize */}
           {hoverPoint && (
             <g>
               <line
@@ -358,18 +346,8 @@ const FullWidthLineChart: React.FC<{
                 y2={h - 28}
                 stroke="rgba(2,132,199,0.25)"
               />
-              <circle
-                cx={hoverX}
-                cy={hoverY}
-                r="7"
-                fill="rgba(2,132,199,0.12)"
-              />
-              <circle
-                cx={hoverX}
-                cy={hoverY}
-                r="5"
-                fill="rgba(2,132,199,0.95)"
-              />
+              <circle cx={hoverX} cy={hoverY} r="7" fill="rgba(2,132,199,0.12)" />
+              <circle cx={hoverX} cy={hoverY} r="5" fill="rgba(2,132,199,0.95)" />
             </g>
           )}
         </svg>
@@ -390,13 +368,25 @@ const ValueCard: React.FC<{
   value: any;
   unit?: string;
   digits?: number;
-}> = ({ label, value, unit, digits = 2 }) => {
+  caps?: boolean;
+  valueClassName?: string;
+}> = ({ label, value, unit, digits = 2, caps = true, valueClassName }) => {
   return (
     <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+      <div
+        className={[
+          "text-[11px] tracking-[0.18em] text-slate-500",
+          caps ? "uppercase" : "",
+        ].join(" ")}
+      >
         {label}
       </div>
-      <div className="mt-1 text-2xl font-extrabold text-sky-800">
+      <div
+        className={[
+          "mt-1 font-extrabold text-sky-800",
+          valueClassName ? valueClassName : "text-2xl",
+        ].join(" ")}
+      >
         {prettyNum(value, digits)}
       </div>
       <div className="text-[12px] text-slate-500">{unit ?? ""}</div>
@@ -477,7 +467,7 @@ const ConfirmModal: React.FC<{
             disabled={loading}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition inline-flex items-center gap-2 ${
               loading ? "cursor-not-allowed opacity-70" : "hover:opacity-95 active:scale-[0.99]"
-            } ${danger ? "bg-red-600 text-white" : "bg-sky-600 text-white"}`}
+            } ${danger ? "bg-blue-600 text-white" : "bg-sky-600 text-white"}`}
           >
             {danger && <FiTrash2 />}
             {loading ? "Working..." : confirmText}
@@ -547,6 +537,7 @@ const Meter: React.FC = () => {
   // selection + delete modal
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<"selected" | "all">("selected");
   const [deleting, setDeleting] = useState(false);
 
   const stopSocket = () => {
@@ -696,7 +687,6 @@ const Meter: React.FC = () => {
 
     if (base.length === 0) return;
 
-    // 5 แถวล่าสุด แล้ว reverse เพื่อให้เวลาเพิ่มไปทางขวา
     const seed = base.slice(0, 5).reverse();
 
     const pts: ChartPoint[] = seed.map((r) => {
@@ -779,9 +769,7 @@ const Meter: React.FC = () => {
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, safePage, pageSize]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [q, pageSize]);
+  useEffect(() => setPage(1), [q, pageSize]);
 
   // selection helpers
   const isAllPageSelected = useMemo(() => {
@@ -812,8 +800,15 @@ const Meter: React.FC = () => {
 
   const selectedCount = selectedIds.size;
 
-  const openDeleteModal = () => {
+  const openDeleteSelectedModal = () => {
     if (selectedCount <= 0) return;
+    setConfirmMode("selected");
+    setConfirmOpen(true);
+  };
+
+  const openDeleteAllModal = () => {
+    if (!rows || rows.length === 0) return;
+    setConfirmMode("all");
     setConfirmOpen(true);
   };
 
@@ -825,14 +820,43 @@ const Meter: React.FC = () => {
     try {
       const result = await DeleteMeterRealtimeDataByIDs(ids, false);
       if (!result) {
-        alert("Delete failed (no response).");
+        message.error("Delete failed (no response).");
         return;
       }
+
       setConfirmOpen(false);
+      message.success(`Delete ${ids.length} Data Success`);
+
       await fetchRealtimeRows();
-      if (!wsHasDataRef.current) setWSeries([]); // ให้ seed ใหม่ได้
+      setSelectedIds(new Set());
+      if (!wsHasDataRef.current) setWSeries([]);
     } catch (e: any) {
-      alert(e?.message || "Delete failed.");
+      message.error(e?.message || "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const doDeleteAll = async () => {
+    const ids = (rows || []).map((r) => Number(r.ID)).filter((n) => Number.isFinite(n));
+    if (ids.length === 0) return;
+
+    setDeleting(true);
+    try {
+      const result = await DeleteMeterRealtimeDataByIDs(ids, false);
+      if (!result) {
+        message.error("Delete failed (no response).");
+        return;
+      }
+
+      setConfirmOpen(false);
+      message.success("Delete All Data Success");
+
+      await fetchRealtimeRows();
+      setSelectedIds(new Set());
+      if (!wsHasDataRef.current) setWSeries([]);
+    } catch (e: any) {
+      message.error(e?.message || "Delete all failed.");
     } finally {
       setDeleting(false);
     }
@@ -851,7 +875,6 @@ const Meter: React.FC = () => {
       {/* ✅ Header (blue like before) */}
       <header className="sticky top-0 z-20 bg-blue-600 text-white shadow-sm">
         <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          {/* Left */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate(-1)}
@@ -873,7 +896,6 @@ const Meter: React.FC = () => {
             </div>
           </div>
 
-          {/* Right */}
           <div className="flex items-center gap-2 text-[11px] sm:text-xs">
             <span className={statusPill}>
               {connState === "connected" ? (
@@ -904,31 +926,49 @@ const Meter: React.FC = () => {
       {/* Confirm Delete Modal */}
       <ConfirmModal
         open={confirmOpen}
-        title="Delete selected records?"
         danger
         loading={deleting}
-        confirmText={`Delete (${selectedCount})`}
+        title={
+          confirmMode === "all" ? "Delete ALL records?" : "Delete selected records?"
+        }
+        confirmText={
+          confirmMode === "all"
+            ? `Delete All (${rows.length})`
+            : `Delete (${selectedCount})`
+        }
         cancelText="Cancel"
         onCancel={() => {
           if (!deleting) setConfirmOpen(false);
         }}
-        onConfirm={doDeleteSelected}
+        onConfirm={confirmMode === "all" ? doDeleteAll : doDeleteSelected}
         description={
-          <div className="space-y-3">
-            <div>
-              You are about to delete <span className="font-semibold">{selectedCount}</span>{" "}
-              realtime record(s). This action cannot be undone.
-            </div>
-
-            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-[12px] text-slate-700">
-              <div className="font-semibold mb-1">Selected IDs</div>
-              <div className="max-h-28 overflow-auto font-mono">
-                {Array.from(selectedIds)
-                  .sort((a, b) => a - b)
-                  .join(", ")}
+          confirmMode === "all" ? (
+            <div className="space-y-3">
+              <div>
+                You are about to delete <span className="font-semibold">{rows.length}</span>{" "}
+                record(s) (ALL). This action cannot be undone.
+              </div>
+              <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-[12px] text-blue-700">
+                Tip: หากต้องการลบเฉพาะบางรายการ ให้เลือกแล้วกด Delete Selected
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                You are about to delete <span className="font-semibold">{selectedCount}</span>{" "}
+                realtime record(s). This action cannot be undone.
+              </div>
+
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-[12px] text-slate-700">
+                <div className="font-semibold mb-1">Selected IDs</div>
+                <div className="max-h-28 overflow-auto font-mono">
+                  {Array.from(selectedIds)
+                    .sort((a, b) => a - b)
+                    .join(", ")}
+                </div>
+              </div>
+            </div>
+          )
         }
       />
 
@@ -967,7 +1007,8 @@ const Meter: React.FC = () => {
                 <button
                   onClick={async () => {
                     const ok = await copyToClipboard(meterPoint);
-                    if (!ok) alert("Copy failed.");
+                    if (!ok) message.error("Copy failed.");
+                    else message.success("Copied");
                   }}
                   className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.99] transition"
                   title="Copy MeterPoint"
@@ -981,7 +1022,8 @@ const Meter: React.FC = () => {
                 <button
                   onClick={async () => {
                     const ok = await copyToClipboard(frontendWsUrl);
-                    if (!ok) alert("Copy failed.");
+                    if (!ok) message.error("Copy failed.");
+                    else message.success("Copied");
                   }}
                   className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.99] transition"
                   title="Copy WS URL (frontend subscribe)"
@@ -994,7 +1036,6 @@ const Meter: React.FC = () => {
           </div>
         </div>
 
-        {/* ✅ Full-width Line Chart with dots + hover tooltip + denser Y axis */}
         <FullWidthLineChart title="Realtime Power Chart" points={wSeries} unit="W" />
 
         {/* ✅ Latest Realtime Values */}
@@ -1011,11 +1052,17 @@ const Meter: React.FC = () => {
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
             <ValueCard label="W" value={summary.w} unit="Watt" digits={3} />
+            <ValueCard label="Vrms" value={summary.vrms} unit="Volt" digits={2} caps={false} />
+            <ValueCard label="Irms" value={summary.irms} unit="Ampere" digits={3} caps={false} />
             <ValueCard label="VA" value={summary.va} unit="Volt-Ampere" digits={3} />
             <ValueCard label="VAR" value={summary.varv} unit="Reactive" digits={3} />
-            <ValueCard label="Vrms" value={summary.vrms} unit="Volt" digits={2} />
-            <ValueCard label="Irms" value={summary.irms} unit="Ampere" digits={3} />
-            <ValueCard label="Status" value={statusText} unit="Connection" digits={0} />
+            <ValueCard
+              label="Status"
+              value={statusText}
+              unit="Connection"
+              digits={0}
+              valueClassName="text-base sm:text-lg"
+            />
           </div>
         </div>
 
@@ -1036,8 +1083,8 @@ const Meter: React.FC = () => {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search: id, createdAt, device_id, timestamp, w, va, var, vrms, irms..."
-                  className="w-[360px] max-w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="Search: id, Date & Time, device_id, timestamp, w, va, var, vrms, irms..."
+                  className="w-[300px] max-w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
                 />
               </div>
 
@@ -1062,20 +1109,19 @@ const Meter: React.FC = () => {
                 Refresh
               </button>
 
-              {/* Download CSV (filtered) */}
+              {/* Download CSV (filtered) - ✅ เปลี่ยน ID เป็น No + ลบ device_id/timestamp ออก */}
               <button
                 onClick={() => {
-                  const exportRows = filteredRows.map((r) => ({
-                    ID: r.ID,
-                    CreatedAt: r.CreatedAt ?? "",
-                    device_id: r.device_id,
-                    timestamp: r.timestamp,
-                    w: r.w,
-                    var: r.var,
-                    va: r.va,
-                    vrms: r.vrms,
-                    irms: r.irms,
+                  const exportRows = filteredRows.map((r, idx) => ({
+                    No: idx + 1,
+                    "Date & Time": r.CreatedAt ?? "",
+                    W: r.w,
+                    VAR: r.var,
+                    VA: r.va,
+                    Vrms: r.vrms,
+                    Irms: r.irms,
                   }));
+
                   downloadCsv(
                     `meter_realtime_${new Date().toISOString().slice(0, 10)}.csv`,
                     exportRows
@@ -1087,9 +1133,24 @@ const Meter: React.FC = () => {
                 Download CSV
               </button>
 
-              {/* Bulk delete */}
+              {/* ✅ Delete All */}
               <button
-                onClick={openDeleteModal}
+                onClick={openDeleteAllModal}
+                disabled={!rows || rows.length === 0}
+                className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition border ${
+                  !rows || rows.length === 0
+                    ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-red-600 text-white border-red-600 hover:bg-red-700 active:scale-[0.99]"
+                }`}
+                title="Delete ALL data"
+              >
+                <FiTrash2 />
+                Delete All
+              </button>
+
+              {/* Bulk delete selected */}
+              <button
+                onClick={openDeleteSelectedModal}
                 disabled={selectedCount <= 0}
                 className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition border ${
                   selectedCount <= 0
@@ -1134,8 +1195,8 @@ const Meter: React.FC = () => {
                           />
                         </th>
 
-                        <th className="py-3 px-3">ID</th>
-                        <th className="py-3 px-3">CreatedAt</th>
+                        <th className="py-3 px-3">No</th>
+                        <th className="py-3 px-3">Date & Time</th>
 
                         <th className="py-3 px-3 text-right">W</th>
                         <th className="py-3 px-3 text-right">VAR</th>
@@ -1147,23 +1208,29 @@ const Meter: React.FC = () => {
                     </thead>
 
                     <tbody>
-                      {pagedRows.map((r) => {
-                        const id = Number(r.ID);
-                        const checked = selectedIds.has(id);
+                      {pagedRows.map((r, idx) => {
+                        const realId = Number(r.ID);
+                        const checked = selectedIds.has(realId);
+                        const displayNo = (safePage - 1) * pageSize + idx + 1;
 
                         return (
-                          <tr key={String(id)} className="border-b last:border-b-0 hover:bg-sky-50/40">
+                          <tr
+                            key={String(realId)}
+                            className="border-b last:border-b-0 hover:bg-sky-50/40"
+                          >
                             <td className="py-3 px-3">
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={(e) => toggleRow(id, e.target.checked)}
+                                onChange={(e) => toggleRow(realId, e.target.checked)}
                                 className="h-4 w-4 accent-sky-600"
-                                aria-label={`Select row ${id}`}
+                                aria-label={`Select row id ${realId}`}
                               />
                             </td>
 
-                            <td className="py-3 px-3 font-mono text-[12px] text-slate-700">{id}</td>
+                            <td className="py-3 px-3 font-mono text-[12px] text-slate-700">
+                              {displayNo}
+                            </td>
 
                             <td className="py-3 px-3 text-[12px] text-slate-600">
                               {safeIsoDate(r.CreatedAt)}
@@ -1191,7 +1258,8 @@ const Meter: React.FC = () => {
                                   onClick={async () => {
                                     const payload = JSON.stringify(r, null, 2);
                                     const ok = await copyToClipboard(payload);
-                                    if (!ok) alert("Copy failed.");
+                                    if (!ok) message.error("Copy failed.");
+                                    else message.success("Copied");
                                   }}
                                   className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
                                   title="Copy row JSON"

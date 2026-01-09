@@ -206,9 +206,13 @@ const Index: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState<boolean>(false);
 
-  // Modal ลบข้อมูล
+  // Modal ลบข้อมูล (Selected)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // ✅ Modal ลบข้อมูลทั้งหมด (Filtered/ทั้งหมด)
+  const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   // page
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -553,6 +557,20 @@ const Index: React.FC = () => {
     });
   }, [apiHistoryData, selectedIds]);
 
+  // ✅ เตรียมรายการ “ลบทั้งหมด” = ลบทั้งหมดตามผลกรอง (ถ้าไม่ได้กรองก็เท่ากับทั้งหมด)
+  const deleteAllTargetRows = useMemo<SolarHistoryItem[]>(() => {
+    return filteredHistoryData ?? [];
+  }, [filteredHistoryData]);
+
+  const deleteAllNumericIds = useMemo<number[]>(() => {
+    if (!deleteAllTargetRows || deleteAllTargetRows.length === 0) return [];
+    return deleteAllTargetRows
+      .map((row) => getRowId(row))
+      .filter((id): id is string => !!id)
+      .map((id) => Number(id))
+      .filter((n) => !Number.isNaN(n));
+  }, [deleteAllTargetRows]);
+
   // ---------- Export CSV (เฉพาะ Filtered) ---------- //
   const exportToCsv = (rows: SolarHistoryItem[], fileName: string) => {
     if (!rows || rows.length === 0) {
@@ -662,7 +680,16 @@ const Index: React.FC = () => {
     setIsDeleteModalOpen(true);
   };
 
-  // ฟังก์ชันที่ถูกเรียกจริงตอนกด "ลบ" ใน Modal
+  // ✅ ลบทั้งหมด (ตามผลกรอง/ทั้งหมด)
+  const handleDeleteAll = () => {
+    if (!deleteAllNumericIds || deleteAllNumericIds.length === 0) {
+      message.info("ไม่มีข้อมูลสำหรับลบ");
+      return;
+    }
+    setIsDeleteAllModalOpen(true);
+  };
+
+  // ฟังก์ชันที่ถูกเรียกจริงตอนกด "ลบ" ใน Modal (Selected)
   const performDeleteSelected = async () => {
     if (selectedIds.length === 0) {
       message.info("กรุณาเลือกแถวที่ต้องการลบก่อน");
@@ -688,7 +715,7 @@ const Index: React.FC = () => {
         return;
       }
 
-      message.success("Deletion successful");
+      message.success("Deletion Successful");
 
       const idsToDeleteStr = numericIds.map(String);
 
@@ -722,6 +749,55 @@ const Index: React.FC = () => {
       message.error("เกิดข้อผิดพลาดระหว่างลบข้อมูล");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // ✅ ฟังก์ชันที่ถูกเรียกจริงตอนกด "ลบทั้งหมด" ใน Modal (All)
+  const performDeleteAll = async () => {
+    if (!deleteAllNumericIds || deleteAllNumericIds.length === 0) {
+      message.info("ไม่มีข้อมูลสำหรับลบ");
+      setIsDeleteAllModalOpen(false);
+      return;
+    }
+
+    try {
+      setIsDeletingAll(true);
+      const ok = await DeleteSolarRealtimeDataByIDs(deleteAllNumericIds);
+      if (!ok) {
+        message.error("Deletion failed");
+        return;
+      }
+
+      message.success("Deletion ALL Successful");
+
+      const idsToDeleteStr = deleteAllNumericIds.map(String);
+
+      setApiHistoryData((prev) => {
+        if (!prev) return prev;
+        return prev.filter((item) => {
+          const rid = getRowId(item);
+          if (!rid) return true;
+          return !idsToDeleteStr.includes(rid);
+        });
+      });
+
+      setChartHistoryData((prev) => {
+        if (!prev) return prev;
+        return prev.filter((item) => {
+          const rid = getRowId(item);
+          if (!rid) return true;
+          return !idsToDeleteStr.includes(rid);
+        });
+      });
+
+      setSelectedIds([]);
+      setSelectAll(false);
+      setIsDeleteAllModalOpen(false);
+    } catch (err) {
+      console.error("Delete all error:", err);
+      message.error("เกิดข้อผิดพลาดระหว่างลบข้อมูลทั้งหมด");
+    } finally {
+      setIsDeletingAll(false);
     }
   };
 
@@ -896,7 +972,6 @@ const Index: React.FC = () => {
             </div>
           </div>
 
-
           <div className="flex items-center gap-2 text-[11px] sm:text-xs">
             {/* ✅ Meter Button (Prominent - White) */}
             <button
@@ -938,11 +1013,19 @@ const Index: React.FC = () => {
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
               <FiSun
                 className={
-                  isOffline ? "text-red-300" : isLive ? "text-yellow-300" : "text-blue-100"
+                  isOffline
+                    ? "text-red-300"
+                    : isLive
+                      ? "text-yellow-300"
+                      : "text-blue-100"
                 }
               />
               <span>
-                {isOffline ? "Offline" : isLive ? "Receiving data..." : "Waiting signal..."}
+                {isOffline
+                  ? "Offline"
+                  : isLive
+                    ? "Receiving data..."
+                    : "Waiting signal..."}
               </span>
             </span>
           </div>
@@ -1293,10 +1376,7 @@ const Index: React.FC = () => {
                 {batteryChartData.length > 0 ? (
                   <div className="w-full h-64 md:h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={batteryChartData}
-                        margin={{ left: -10 }}
-                      >
+                      <AreaChart data={batteryChartData} margin={{ left: -10 }}>
                         <CartesianGrid
                           strokeDasharray="3 3"
                           stroke="rgba(148,163,184,0.4)"
@@ -1319,10 +1399,7 @@ const Index: React.FC = () => {
                             fontSize: 11,
                           }}
                         />
-                        <Legend
-                          wrapperStyle={{ fontSize: 11 }}
-                          iconType="circle"
-                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
                         <Area
                           type="monotone"
                           dataKey="battery"
@@ -1373,10 +1450,7 @@ const Index: React.FC = () => {
                 {powerChartData.length > 0 ? (
                   <div className="w-full h-64 md:h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={powerChartData}
-                        margin={{ left: -10 }}
-                      >
+                      <AreaChart data={powerChartData} margin={{ left: -10 }}>
                         <CartesianGrid
                           strokeDasharray="3 3"
                           stroke="rgba(148,163,184,0.4)"
@@ -1399,10 +1473,7 @@ const Index: React.FC = () => {
                             fontSize: 11,
                           }}
                         />
-                        <Legend
-                          wrapperStyle={{ fontSize: 11 }}
-                          iconType="circle"
-                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
                         <Area
                           type="monotone"
                           dataKey="power_in"
@@ -1468,6 +1539,25 @@ const Index: React.FC = () => {
                   className="bg-transparent text-[11px] md:text-xs outline-none text-slate-700 placeholder:text-slate-400 w-40 md:w-52"
                 />
               </div>
+
+              {/* ✅ Delete All (อยู่แถวเดียวกับ Search) */}
+              <button
+                type="button"
+                onClick={handleDeleteAll}
+                disabled={deleteAllNumericIds.length === 0}
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] md:text-xs border ${deleteAllNumericIds.length === 0
+                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                  : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                  }`}
+                title={
+                  deleteAllNumericIds.length === 0
+                    ? "ไม่มีข้อมูลสำหรับลบ"
+                    : "ลบข้อมูลทั้งหมด (ตามผลกรอง/ทั้งหมด)"
+                }
+              >
+                <FiTrash2 className="text-red-500" />
+                ลบทั้งหมด ({deleteAllNumericIds.length})
+              </button>
 
               {/* Date range selector */}
               <div className="relative">
@@ -1581,9 +1671,7 @@ const Index: React.FC = () => {
                         />
                       </th>
                       {TABLE1_COLUMNS.map((colKey) => {
-                        const col = ALL_COLUMNS.find(
-                          (c) => c.key === colKey
-                        )!;
+                        const col = ALL_COLUMNS.find((c) => c.key === colKey)!;
                         return (
                           <th
                             key={col.key}
@@ -1681,9 +1769,7 @@ const Index: React.FC = () => {
                   <thead className="bg-sky-50 sticky top-0 z-10">
                     <tr>
                       {TABLE2_COLUMNS.map((colKey) => {
-                        const col = ALL_COLUMNS.find(
-                          (c) => c.key === colKey
-                        )!;
+                        const col = ALL_COLUMNS.find((c) => c.key === colKey)!;
                         return (
                           <th
                             key={col.key}
@@ -1764,9 +1850,7 @@ const Index: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  setCurrentPage((prev) => Math.max(1, prev - 1))
-                }
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
                 className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${currentPage === 1
                   ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
@@ -1784,8 +1868,7 @@ const Index: React.FC = () => {
                   setCurrentPage((prev) => Math.min(totalPages, prev + 1))
                 }
                 disabled={
-                  currentPage === totalPages ||
-                  filteredHistoryData.length === 0
+                  currentPage === totalPages || filteredHistoryData.length === 0
                 }
                 className={`px-3 py-1 rounded-lg border text-[11px] md:text-xs ${currentPage === totalPages || filteredHistoryData.length === 0
                   ? "border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed"
@@ -1801,7 +1884,7 @@ const Index: React.FC = () => {
         <div className="h-10" />
       </main>
 
-      {/* ✅ Modal ยืนยันการลบข้อมูล */}
+      {/* ✅ Modal ยืนยันการลบข้อมูล (Selected) */}
       <Modal
         open={isDeleteModalOpen}
         onCancel={() => {
@@ -1809,9 +1892,7 @@ const Index: React.FC = () => {
         }}
         onOk={performDeleteSelected}
         okText={
-          selectedIds.length > 0
-            ? `ลบ ${selectedIds.length} รายการ`
-            : "ลบข้อมูล"
+          selectedIds.length > 0 ? `ลบ ${selectedIds.length} รายการ` : "ลบข้อมูล"
         }
         okButtonProps={{
           type: "primary",
@@ -1868,6 +1949,81 @@ const Index: React.FC = () => {
               )}
             </div>
           )}
+          <p className="mt-2 text-[11px] text-blue-500">
+            การลบนี้ไม่สามารถย้อนกลับได้ กรุณาตรวจสอบให้แน่ใจก่อนดำเนินการลบ
+          </p>
+        </div>
+      </Modal>
+
+      {/* ✅ Modal ยืนยันการลบข้อมูลทั้งหมด (All / Filtered) */}
+      <Modal
+        open={isDeleteAllModalOpen}
+        onCancel={() => {
+          if (!isDeletingAll) setIsDeleteAllModalOpen(false);
+        }}
+        onOk={performDeleteAll}
+        okText={
+          deleteAllNumericIds.length > 0
+            ? `ลบทั้งหมด ${deleteAllNumericIds.length} รายการ`
+            : "ลบทั้งหมด"
+        }
+        okButtonProps={{
+          type: "primary",
+          danger: false,
+          style: {
+            backgroundColor: "#1677ff",
+            borderColor: "#1677ff",
+          },
+        }}
+        cancelText="ยกเลิก"
+        confirmLoading={isDeletingAll}
+        centered
+        title={
+          <div className="flex items-center gap-2">
+            <ExclamationCircleOutlined className="text-blue-500" />
+            <span>ยืนยันการลบข้อมูลทั้งหมด</span>
+          </div>
+        }
+      >
+        <div className="space-y-2 text-[12px] md:text-sm text-slate-700">
+          <p>
+            คุณกำลังจะลบข้อมูล Solar realtime ทั้งหมดตามผลกรองจำนวน{" "}
+            <span className="font-semibold text-blue-600">
+              {deleteAllNumericIds.length}
+            </span>{" "}
+            เรคคอร์ด
+          </p>
+
+          {deleteAllTargetRows.length > 0 && (
+            <div className="mt-2 border border-sky-100 rounded-lg bg-sky-50/40 max-h-40 overflow-auto">
+              <div className="px-3 py-2 text-[11px] font-semibold text-slate-600 border-b border-sky-100">
+                ตัวอย่างข้อมูลที่จะถูกลบ
+              </div>
+              <ul className="text-[11px] text-slate-700 divide-y divide-sky-100">
+                {deleteAllTargetRows.slice(0, 5).map((row, idx) => (
+                  <li
+                    key={idx}
+                    className="px-3 py-1.5 flex justify-between gap-2"
+                  >
+                    <span className="truncate">
+                      {getRecordTime(row)} — {getRecordStatus(row)}
+                    </span>
+                    <span className="flex-shrink-0 text-slate-500">
+                      {typeof row.power_in === "number"
+                        ? `${row.power_in.toFixed(1)} W`
+                        : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {deleteAllTargetRows.length > 5 && (
+                <div className="px-3 py-1 text-[10px] text-slate-500">
+                  ...และอีก {deleteAllTargetRows.length - 5} รายการ
+                </div>
+              )}
+            </div>
+          )}
+
           <p className="mt-2 text-[11px] text-blue-500">
             การลบนี้ไม่สามารถย้อนกลับได้ กรุณาตรวจสอบให้แน่ใจก่อนดำเนินการลบ
           </p>
