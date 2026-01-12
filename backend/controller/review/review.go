@@ -45,6 +45,7 @@ func CreateReview(c *gin.Context) {
 	review := entity.Review{
 		Rating:     input.Rating,
 		Comment:    input.Comment,
+		Status:     true,
 		ReviewDate: time.Now(),
 		UserID:     &input.UserID,
 	}

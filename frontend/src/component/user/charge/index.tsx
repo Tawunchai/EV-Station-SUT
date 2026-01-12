@@ -791,6 +791,37 @@ const ChargingEV = () => {
     }, 750);
   };
 
+  // ✅ NEW: helper หลังจบ session (Complete/Cancel) → ถ้ายังไม่เคยรีวิวให้เปิดรีวิว
+  const openReviewOrSummary = useCallback(
+    async (successMsg: string) => {
+      // ถ้าไม่มี userID ก็กลับสรุปไปก่อน (กัน edge-case)
+      if (!userID) {
+        message.success(successMsg);
+        setTimeout(goToSummary, 1000);
+        return;
+      }
+
+      try {
+        const reviews = await GetReviewByUserID(userID);
+
+        if (reviews && reviews.length > 0) {
+          message.success(successMsg);
+          setTimeout(goToSummary, 1000);
+        } else {
+          // ✅ ยังไม่เคย review → เปิด modal
+          message.success(successMsg);
+          setShowReviewModal(true);
+        }
+      } catch (err) {
+        // ถ้าเช็ครีวิวพัง ก็ยังให้ไหลต่อไปสรุปได้
+        console.warn("⚠️ GetReviewByUserID failed (fallback to summary):", err);
+        message.success(successMsg);
+        setTimeout(goToSummary, 1000);
+      }
+    },
+    [userID] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   // ===========================================================
   // ✅ คำนวณ remaining_power จริงตามสัดส่วนที่ "ซื้อ" (ใช้ตอน Cancel เท่านั้น)
   // ===========================================================
@@ -853,7 +884,7 @@ const ChargingEV = () => {
   };
 
   // ===========================================================
-  // ⭐ Cancel (ใช้ CancelSessionSolarGrid)
+  // ⭐ Cancel (ใช้ CancelSessionSolarGrid) + ✅ เปิดรีวิวถ้ายังไม่เคยรีวิว
   // ===========================================================
   const confirmCancel = async () => {
     // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ทำอะไร
@@ -876,25 +907,28 @@ const ChargingEV = () => {
     }
 
     try {
+      // ✅ หยุดตู้ก่อน
       await remoteStopCharging({ chargerId });
 
+      // ✅ ตัด session + คืน remaining ไป Solar/Grid
       await CancelSessionSolarGrid(Number(paymentID), payload);
 
-      message.success("Canceled successfully");
-
+      // ✅ ปิด persist แล้ว reset state
       setPersistEnabled(false);
 
       setCharging(false);
       setIsComplete(false);
       setEnergy(0);
       setTime(0);
-      setChargedKwhVal(0); // ✅ เพิ่มบรรทัดนี้
+      setChargedKwhVal(0);
       setSessionStartTime(null);
+      setSessionEndTime(null);
       setCancelModalOpen(false);
 
       clearLocalStorageState();
 
-      setTimeout(goToSummary, 1000);
+      // ✅ NEW: ถ้ายังไม่เคยรีวิว ให้เปิด modal รีวิว (เหมือน handleComplete)
+      await openReviewOrSummary("Canceled successfully");
     } catch (err: any) {
       console.error("❌ Cancel error:", err?.response?.data || err);
       const msg =
@@ -1119,9 +1153,7 @@ const ChargingEV = () => {
                 </div>
               </div>
 
-              <h3 className="text-xl font-bold text-gray-900 tracking-tight">
-                Want to Stop charging?
-              </h3>
+              <h3 className="text-xl font-bold text-gray-900 tracking-tight">Want to Stop charging?</h3>
 
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[280px]">
                 If you confirm, charging will be stopped immediately and the remaining power will be
@@ -1269,9 +1301,7 @@ const ChargingEV = () => {
               <div className="flex-1 flex flex-col items-stretch gap-3 min-w-[160px]">
                 <div className="rounded-xl bg-blue-50 px-4 py-3">
                   <div className="text-[11px] text-blue-900/70">Percent</div>
-                  <div className="text-3xl font-extrabold text-blue-700">
-                    {energyClamped.toFixed(2)}%
-                  </div>
+                  <div className="text-3xl font-extrabold text-blue-700">{energyClamped.toFixed(2)}%</div>
                 </div>
 
                 <div className="rounded-xl bg-gray-50 px-4 py-3">

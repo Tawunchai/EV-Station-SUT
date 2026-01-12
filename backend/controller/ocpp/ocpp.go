@@ -322,7 +322,7 @@ func buildSnapshot(db *gorm.DB, chargerID string, reason string) ChargerSnapshot
 	st, ok := chargerStatuses[chargerID]
 	statusMu.Unlock()
 	if !ok {
-		st = ChargerStatus{ChargerID: chargerID}
+		st = ChargerStatus{ ChargerID: chargerID}
 	}
 
 	// 2) tx (memory)
