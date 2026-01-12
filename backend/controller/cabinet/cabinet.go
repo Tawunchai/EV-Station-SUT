@@ -83,6 +83,9 @@ func CreateEVCabinet(c *gin.Context) {
 	// ⭐ ใหม่: HardwareID
 	hardwareIDStr := c.PostForm("hardwareID")
 
+	// ⭐ เพิ่ม: StopPolicy
+	stopPolicyStr := c.PostForm("stopPolicy")
+
 	latitude, _ := strconv.ParseFloat(latitudeStr, 64)
 	longitude, _ := strconv.ParseFloat(longitudeStr, 64)
 
@@ -106,6 +109,17 @@ func CreateEVCabinet(c *gin.Context) {
 		hardwareID = uint(parsedHardwareID)
 	}
 
+	// แปลง StopPolicy (ถ้าส่งมา)
+	var stopPolicy float64
+	if stopPolicyStr != "" {
+		parsedStopPolicy, err := strconv.ParseFloat(stopPolicyStr, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "StopPolicy ไม่ถูกต้อง"})
+			return
+		}
+		stopPolicy = parsedStopPolicy
+	}
+
 	ev := entity.EVCabinet{
 		Name:         name,
 		Description:  description,
@@ -116,6 +130,7 @@ func CreateEVCabinet(c *gin.Context) {
 		Latitude:     latitude,
 		Longitude:    longitude,
 		Image:        filePath,
+		StopPolicy:   stopPolicy, // ⭐ เพิ่มบันทึก StopPolicy
 		EmployeeID:   employeeID,
 		HardwareID:   hardwareID, // ⭐ ผูก Hardware ตอนสร้าง
 	}
@@ -199,6 +214,16 @@ func UpdateEVCabinetByID(c *gin.Context) {
 		}
 	}
 
+	// ⭐ เพิ่ม: อัปเดต StopPolicy
+	if v := c.PostForm("stopPolicy"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "StopPolicy ไม่ถูกต้อง"})
+			return
+		}
+		ev.StopPolicy = f
+	}
+
 	// ⭐ ใหม่: อัปเดต UrlWebsocket และ ChargePoint
 	if v := c.PostForm("urlWebsocket"); v != "" {
 		ev.UrlWebsocket = v
@@ -227,6 +252,7 @@ func UpdateEVCabinetByID(c *gin.Context) {
 		"data":    ev,
 	})
 }
+
 
 // ✅ ลบข้อมูล EVCabinet ตาม ID (ไม่ลบรูปในเครื่อง)
 func DeleteEVCabinetByID(c *gin.Context) {

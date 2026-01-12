@@ -15,7 +15,8 @@ type EVCabinet struct {
 	ChargePoint string
 	Latitude    float64 
 	Longitude   float64
-	Image       string  
+	Image       string
+	StopPolicy  float64 
 
 	// ⭐ Many-to-Many กลับฝ่าย EVcharging
     EVchargings []EVcharging `gorm:"many2many:ev_cabinet_ev_chargings;"` 

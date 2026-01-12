@@ -571,6 +571,75 @@ const ChargingEV = () => {
     return () => ws.close();
   }, [hardwarePoint]);
 
+  // ✅ สีแบตเตอรี่ ตาม % energy
+  const batteryGradient = useMemo(() => {
+    if (energyClamped < 20) return "linear-gradient(180deg, #f87171, #ef4444)";
+    if (energyClamped < 40) return "linear-gradient(180deg, #fb923c, #f97316)";
+    if (energyClamped < 60) return "linear-gradient(180deg, #fbbf24, #f59e0b)";
+    if (energyClamped < 80) return "linear-gradient(180deg, #a3e635, #84cc16)";
+    return "linear-gradient(180deg, #34d399, #22c55e)";
+  }, [energyClamped]);
+
+  // ✅ UI STATUS OVERRIDE
+  const uiOcppStatus = useMemo(() => {
+    if (ocppStatus === "Interruption") return "Interruption";
+    if (ocppStatus === "SuspendedEV") return "SuspendedEV";
+    if (isComplete) return "Finishing";
+    return ocppStatus || "Unknown";
+  }, [ocppStatus, isComplete]);
+
+  const { statusLabel, statusClass } = useMemo(() => {
+    const s = uiOcppStatus || "Unknown";
+    let cls = "bg-gray-100 text-gray-700 border border-gray-200";
+
+    switch (s) {
+      case "Available":
+        cls = "bg-green-50 text-green-700 border border-green-200";
+        break;
+      case "Preparing":
+        cls = "bg-amber-50 text-amber-700 border border-amber-200";
+        break;
+      case "Charging":
+        cls = "bg-sky-50 text-sky-700 border border-sky-200";
+        break;
+      case "Unavailable":
+      case "Faulted":
+        cls = "bg-red-50 text-red-700 border border-red-200";
+        break;
+      case "Finishing":
+        cls = "bg-purple-50 text-purple-700 border border-purple-200";
+        break;
+      case "SuspendedEV":
+        cls = "bg-gray-50 text-gray-800 border border-gray-200";
+        break;
+      case "Interruption":
+        cls = "bg-orange-900/5 text-orange-500 border border-orange-400";
+        break;
+      default:
+        cls = "bg-gray-50 text-gray-700 border border-gray-200";
+        break;
+    }
+
+    return { statusLabel: s, statusClass: cls };
+  }, [uiOcppStatus]);
+
+  const showBubbles = statusLabel === "Charging";
+  const isChargingAnim = statusLabel === "Charging";
+
+  // ✅ NEW: ถ้า Status = Finishing แล้ว "ล็อกเวลา" ทันที (หยุด time ไม่ให้เพิ่มต่อ)
+  useEffect(() => {
+    if (!sessionValid || !sessionStartTime) return;
+    if (freezeInterruptionRef.current) return;
+
+    if (statusLabel === "Finishing") {
+      // ถ้ายังไม่มี endTime ให้ set ครั้งเดียว เพื่อให้ time หยุดนิ่งจริง ๆ
+      if (!sessionEndTime) {
+        setSessionEndTime(new Date());
+      }
+      setCharging(false);
+    }
+  }, [statusLabel, sessionValid, sessionStartTime, sessionEndTime]);
+
   // 👉 นับเวลาโดยอิงจาก sessionStartTime + สถานะ OCPP
   useEffect(() => {
     if (!sessionValid || !sessionStartTime) return;
@@ -584,6 +653,14 @@ const ChargingEV = () => {
         );
         setTime(sec);
       }
+      return;
+    }
+
+    // ✅ NEW: ถ้า Finishing → time ต้องหยุดทันที
+    if (statusLabel === "Finishing") {
+      const end = sessionEndTime ?? new Date(); // เผื่อเฟรมแรกก่อน endTime ถูก set
+      const sec = Math.max(0, Math.floor((end.getTime() - sessionStartTime.getTime()) / 1000));
+      setTime(sec);
       return;
     }
 
@@ -626,7 +703,7 @@ const ChargingEV = () => {
     updateElapsed();
     const intervalId = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(intervalId);
-  }, [sessionValid, sessionStartTime, sessionEndTime, ocppStatus]);
+  }, [sessionValid, sessionStartTime, sessionEndTime, ocppStatus, statusLabel]);
 
   // ⭐ คำนวณ % จาก MeterValues (หรือจาก Snapshot ที่ setCurrentEnergyWh)
   useEffect(() => {
@@ -712,62 +789,7 @@ const ChargingEV = () => {
     } catch (err) {
       console.error("❌ Cannot save charging state from localStorage:", err);
     }
-  }, [storageKey, energyClamped, chargedKwhVal, isComplete]);
-
-  // ✅ สีแบตเตอรี่ ตาม % energy
-  const batteryGradient = useMemo(() => {
-    if (energyClamped < 20) return "linear-gradient(180deg, #f87171, #ef4444)";
-    if (energyClamped < 40) return "linear-gradient(180deg, #fb923c, #f97316)";
-    if (energyClamped < 60) return "linear-gradient(180deg, #fbbf24, #f59e0b)";
-    if (energyClamped < 80) return "linear-gradient(180deg, #a3e635, #84cc16)";
-    return "linear-gradient(180deg, #34d399, #22c55e)";
-  }, [energyClamped]);
-
-  // ✅ UI STATUS OVERRIDE
-  const uiOcppStatus = useMemo(() => {
-    if (ocppStatus === "Interruption") return "Interruption";
-    if (ocppStatus === "SuspendedEV") return "SuspendedEV";
-    if (isComplete) return "Finishing";
-    return ocppStatus || "Unknown";
-  }, [ocppStatus, isComplete]);
-
-  const { statusLabel, statusClass } = useMemo(() => {
-    const s = uiOcppStatus || "Unknown";
-    let cls = "bg-gray-100 text-gray-700 border border-gray-200";
-
-    switch (s) {
-      case "Available":
-        cls = "bg-green-50 text-green-700 border border-green-200";
-        break;
-      case "Preparing":
-        cls = "bg-amber-50 text-amber-700 border border-amber-200";
-        break;
-      case "Charging":
-        cls = "bg-sky-50 text-sky-700 border border-sky-200";
-        break;
-      case "Unavailable":
-      case "Faulted":
-        cls = "bg-red-50 text-red-700 border border-red-200";
-        break;
-      case "Finishing":
-        cls = "bg-purple-50 text-purple-700 border border-purple-200";
-        break;
-      case "SuspendedEV":
-        cls = "bg-gray-50 text-gray-800 border border-gray-200";
-        break;
-      case "Interruption":
-        cls = "bg-orange-900/5 text-orange-500 border border-orange-400";
-        break;
-      default:
-        cls = "bg-gray-50 text-gray-700 border border-gray-200";
-        break;
-    }
-
-    return { statusLabel: s, statusClass: cls };
-  }, [uiOcppStatus]);
-
-  const showBubbles = statusLabel === "Charging";
-  const isChargingAnim = statusLabel === "Charging";
+  }, [storageKey, energyClamped, chargedKwhVal, isComplete, persistEnabled]);
 
   const clearLocalStorageState = () => {
     if (!storageKey) return;
@@ -975,6 +997,7 @@ const ChargingEV = () => {
 
   // ===========================================================
   // ⭐ Finish (❌ ไม่เรียก CancelSessionSolarGrid)
+  // ✅ NEW: ถ้า status = Finishing (จาก socket) แม้ยังไม่ครบ 100% ก็ให้กด Finish ได้
   // ===========================================================
   const handleComplete = async () => {
     // ✅ ถ้า freeze อยู่ (Interruption) → ไม่ให้ finish
@@ -991,7 +1014,9 @@ const ChargingEV = () => {
       return;
     }
 
-    if (!isComplete) {
+    // ✅ NEW: อนุญาตให้ Finish ได้เมื่อ statusLabel === "Finishing"
+    // (แม้ isComplete ยัง false)
+    if (!isComplete && statusLabel !== "Finishing") {
       message.error("You can complete only when charging reaches 100%");
       return;
     }
@@ -1047,6 +1072,7 @@ const ChargingEV = () => {
 
   // ===========================================================
   // ✅ เงื่อนไขปุ่ม
+  // ✅ NEW: ถ้า statusLabel === "Finishing" (จาก socket) แม้ยังไม่ครบ 100% ก็มีปุ่ม Finish ให้กด
   // ===========================================================
   const startDisabled =
     freezeInterruption || hasStarted || isComplete || statusLabel !== "Preparing" || !chargerId;
@@ -1057,7 +1083,9 @@ const ChargingEV = () => {
     !isComplete &&
     (statusLabel === "Charging" || statusLabel === "SuspendedEV");
 
-  const canCompleteBase = !freezeInterruption && !!hasStarted && !!isComplete;
+  // ✅ NEW: เพิ่มเงื่อนไข Finishing
+  const canCompleteBase =
+    !freezeInterruption && !!hasStarted && (Boolean(isComplete) || statusLabel === "Finishing");
 
   const canCancel = canCancelBase && !canCompleteBase;
   const canComplete = canCompleteBase && !canCancelBase;
@@ -1153,7 +1181,9 @@ const ChargingEV = () => {
                 </div>
               </div>
 
-              <h3 className="text-xl font-bold text-gray-900 tracking-tight">Want to Stop charging?</h3>
+              <h3 className="text-xl font-bold text-gray-900 tracking-tight">
+                Want to Stop charging?
+              </h3>
 
               <p className="text-sm text-gray-600 mt-2 leading-relaxed max-w-[280px]">
                 If you confirm, charging will be stopped immediately and the remaining power will be
@@ -1211,7 +1241,9 @@ const ChargingEV = () => {
             <div className="flex flex-col md:flex-row md:items-center md:gap-2">
               <div className="flex items-center gap-2">
                 <FaBolt className="h-5 w-5 text.white" />
-                <span className="text-sm md:text-base font-semibold tracking-wide">EV Charging</span>
+                <span className="text-sm md:text-base font-semibold tracking-wide">
+                  EV Charging
+                </span>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1301,7 +1333,9 @@ const ChargingEV = () => {
               <div className="flex-1 flex flex-col items-stretch gap-3 min-w-[160px]">
                 <div className="rounded-xl bg-blue-50 px-4 py-3">
                   <div className="text-[11px] text-blue-900/70">Percent</div>
-                  <div className="text-3xl font-extrabold text-blue-700">{energyClamped.toFixed(2)}%</div>
+                  <div className="text-3xl font-extrabold text-blue-700">
+                    {energyClamped.toFixed(2)}%
+                  </div>
                 </div>
 
                 <div className="rounded-xl bg-gray-50 px-4 py-3">

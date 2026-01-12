@@ -11,10 +11,7 @@ import {
   ListHardwares,
   ListCabinetsEV,
 } from "../../../../../services";
-import {
-  getCurrentUser,
-  initUserProfile,
-} from "../../../../../services/httpLogin";
+import { getCurrentUser, initUserProfile } from "../../../../../services/httpLogin";
 import type { CabinetType } from "../../EV";
 
 type ModalUpdateCabinetProps = {
@@ -43,6 +40,10 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
   const [longitude, setLongitude] = useState<string>("");
   const [urlWebsocket, setUrlWebsocket] = useState<string>("");
   const [chargePoint, setChargePoint] = useState<string>("");
+
+  // ⭐ เพิ่ม: StopPolicy (string เพื่อให้กรอกง่าย)
+  const [stopPolicy, setStopPolicy] = useState<string>("");
+
   const [fileList, setFileList] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [employeeID, setEmployeeID] = useState<number | null>(null);
@@ -63,17 +64,18 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
   );
 
   const validate = () => {
-    if (!name.trim())
-      return message.error("Please enter cabinet name"), false;
-    if (!location.trim())
-      return message.error("Please enter location"), false;
-    if (!status.trim())
-      return message.error("Please select status"), false;
+    if (!name.trim()) return message.error("Please enter cabinet name"), false;
+    if (!location.trim()) return message.error("Please enter location"), false;
+    if (!status.trim()) return message.error("Please select status"), false;
 
     if (latitude && isNaN(Number(latitude)))
       return message.error("Latitude must be a number"), false;
     if (longitude && isNaN(Number(longitude)))
       return message.error("Longitude must be a number"), false;
+
+    // ⭐ Validate StopPolicy (optional แต่ถ้ากรอกต้องเป็นตัวเลข)
+    if (stopPolicy.trim() !== "" && isNaN(Number(stopPolicy)))
+      return message.error("StopPolicy must be a number"), false;
 
     // If there are hardware options but none selected → force selection
     if (hardwareOptions.length > 0 && !selectedHardwareID) {
@@ -91,9 +93,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
       if (currentUser && currentUser.employee_id) {
         setEmployeeID(currentUser.employee_id);
       } else {
-        message.warning(
-          "Employee ID not found. Please log in again."
-        );
+        message.warning("Employee ID not found. Please log in again.");
       }
     } catch {
       message.error("Unable to load user data.");
@@ -104,10 +104,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
   const fetchHardwareData = async (currentCabinetID?: number | null) => {
     setHardwareLoading(true);
     try {
-      const [hardwares, cabinets] = await Promise.all([
-        ListHardwares(),
-        ListCabinetsEV(),
-      ]);
+      const [hardwares, cabinets] = await Promise.all([ListHardwares(), ListCabinetsEV()]);
 
       const usedHardwareIDs = new Set<number>();
 
@@ -126,21 +123,20 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
       const options: HardwareOption[] = Array.isArray(hardwares)
         ? hardwares
-            .filter((hw: any) => {
-              const idNum = Number(hw.ID);
-              // Exclude hardware used by other cabinets
-              return !usedHardwareIDs.has(idNum);
-            })
-            .map((hw: any) => {
-              const idNum = Number(hw.ID);
-              const rawName =
-                typeof hw.Name === "string" ? hw.Name.trim() : "";
-              const nameLabel = rawName || `Hardware #${idNum}`;
-              return {
-                value: String(idNum),
-                label: nameLabel,
-              };
-            })
+          .filter((hw: any) => {
+            const idNum = Number(hw.ID);
+            // Exclude hardware used by other cabinets
+            return !usedHardwareIDs.has(idNum);
+          })
+          .map((hw: any) => {
+            const idNum = Number(hw.ID);
+            const rawName = typeof hw.Name === "string" ? hw.Name.trim() : "";
+            const nameLabel = rawName || `Hardware #${idNum}`;
+            return {
+              value: String(idNum),
+              label: nameLabel,
+            };
+          })
         : [];
 
       setHardwareOptions(options);
@@ -170,17 +166,21 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
     setStatus(initial?.Status ?? "");
     setDescription(initial?.Description ?? "");
     setLatitude(
-      initial?.Latitude !== undefined && initial?.Latitude !== null
-        ? String(initial.Latitude)
-        : ""
+      initial?.Latitude !== undefined && initial?.Latitude !== null ? String(initial.Latitude) : ""
     );
     setLongitude(
-      initial?.Longitude !== undefined && initial?.Longitude !== null
-        ? String(initial.Longitude)
-        : ""
+      initial?.Longitude !== undefined && initial?.Longitude !== null ? String(initial.Longitude) : ""
     );
     setUrlWebsocket(initial?.UrlWebsocket ?? "");
     setChargePoint(initial?.ChargePoint ?? "");
+
+    // ⭐ Init StopPolicy จาก initial
+    setStopPolicy(
+      initial?.StopPolicy !== undefined && initial?.StopPolicy !== null
+        ? String(initial.StopPolicy)
+        : ""
+    );
+
     setSubmitting(false);
 
     if (initial?.Image) {
@@ -216,6 +216,12 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
       formData.append("longitude", longitude.trim());
       formData.append("urlWebsocket", urlWebsocket.trim());
       formData.append("chargePoint", chargePoint.trim());
+
+      // ⭐ ส่ง StopPolicy ไปอัปเดต (backend รับ "stopPolicy")
+      // ถ้าไม่กรอก จะไม่ส่ง (จะไม่ไปทับค่าเดิม เพราะ controller update เฉพาะ v != "")
+      if (stopPolicy.trim() !== "") {
+        formData.append("stopPolicy", stopPolicy.trim());
+      }
 
       if (employeeID) {
         formData.append("employeeID", String(employeeID));
@@ -256,15 +262,12 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
       });
     }
     const imgWindow = window.open(src as string);
-    imgWindow?.document.write(
-      `<img src="${src}" style="max-width: 100%;" />`
-    );
+    imgWindow?.document.write(`<img src="${src}" style="max-width: 100%;" />`);
   };
 
   if (!open) return null;
 
-  const noAvailableHardware =
-    !hardwareLoading && hardwareOptions.length === 0;
+  const noAvailableHardware = !hardwareLoading && hardwareOptions.length === 0;
 
   return (
     <div
@@ -297,12 +300,8 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
                 <FaChargingStation className="opacity-90" />
               </div>
               <div>
-                <h2 className="text-base md:text-lg font-semibold">
-                  Edit EV Cabinet
-                </h2>
-                <p className="text-[11px] text-blue-100">
-                  Update cabinet details and hardware link.
-                </p>
+                <h2 className="text-base md:text-lg font-semibold">Edit EV Cabinet</h2>
+                <p className="text-[11px] text-blue-100">Update cabinet details and hardware link.</p>
               </div>
             </div>
             <button
@@ -343,9 +342,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
                   }}
                   maxCount={1}
                 >
-                  {fileList.length < 1 && (
-                    <div className="text-blue-500 text-sm">Upload</div>
-                  )}
+                  {fileList.length < 1 && <div className="text-blue-500 text-sm">Upload</div>}
                 </Upload>
               </ImgCrop>
             </div>
@@ -354,9 +351,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Cabinet Name */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  Cabinet name
-                </span>
+                <span className="text-xs text-slate-600">Cabinet name</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. DC Cabinet #1"
@@ -367,9 +362,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
               {/* Location */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  Location
-                </span>
+                <span className="text-xs text-slate-600">Location</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. Building A, Floor 1"
@@ -398,9 +391,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
               {/* Description */}
               <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs text-slate-600">
-                  Description
-                </span>
+                <span className="text-xs text-slate-600">Description</span>
                 <textarea
                   rows={3}
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
@@ -412,9 +403,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
               {/* WebSocket URL */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  WebSocket URL
-                </span>
+                <span className="text-xs text-slate-600">WebSocket URL</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. wss://example.com/ocpp/CP_1"
@@ -425,9 +414,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
               {/* Charge Point ID */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  Charge Point ID
-                </span>
+                <span className="text-xs text-slate-600">Charge Point ID</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. CP_1, ESP32-01"
@@ -438,9 +425,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
               {/* Latitude */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  Latitude
-                </span>
+                <span className="text-xs text-slate-600">Latitude</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. 13.7563"
@@ -452,9 +437,7 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
 
               {/* Longitude */}
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-slate-600">
-                  Longitude
-                </span>
+                <span className="text-xs text-slate-600">Longitude</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. 100.5018"
@@ -464,11 +447,24 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
                 />
               </label>
 
+              {/* StopPolicy */}
+              <label className="flex flex-col gap-1 md:col-span-2">
+                <span className="text-xs text-slate-600">StopPolicy</span>
+                <input
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  placeholder="e.g. 10"
+                  inputMode="decimal"
+                  value={stopPolicy}
+                  onChange={(e) => setStopPolicy(e.target.value)}
+                />
+                <span className="text-[11px] text-slate-400">
+                  Numeric value for cabinet stop policy (optional).
+                </span>
+              </label>
+
               {/* Hardware Select */}
               <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs text-slate-600">
-                  Hardware (link to this cabinet)
-                </span>
+                <span className="text-xs text-slate-600">Hardware (link to this cabinet)</span>
 
                 {hardwareLoading ? (
                   <div className="w-full h-10 rounded-xl bg-slate-100 animate-pulse" />
@@ -511,11 +507,10 @@ const ModalUpdateCabinet: React.FC<ModalUpdateCabinetProps> = ({
             <button
               onClick={handleSubmit}
               disabled={submitting || (hardwareOptions.length > 0 && !selectedHardwareID)}
-              className={`px-4 h-10 rounded-xl text-white text-sm font-semibold shadow-sm transition active:scale-[0.99] ${
-                submitting || (hardwareOptions.length > 0 && !selectedHardwareID)
+              className={`px-4 h-10 rounded-xl text-white text-sm font-semibold shadow-sm transition active:scale-[0.99] ${submitting || (hardwareOptions.length > 0 && !selectedHardwareID)
                   ? "bg-blue-300 cursor-not-allowed"
                   : "bg-blue-600 hover:bg-blue-700"
-              }`}
+                }`}
             >
               {submitting ? "Saving..." : "Save"}
             </button>
