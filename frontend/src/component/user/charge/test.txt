@@ -11,6 +11,7 @@ import {
   GetCabinetByID, // ⭐ ดึงข้อมูลตู้ชาร์จตาม ID
   CancelSessionSolarGrid,
   UpdateSessionStatusByPaymentID,
+  GetOcppSnapshotByChargerID,
 } from "../../../services";
 import {
   connectOcppSocket,
@@ -221,13 +222,16 @@ const ChargingEV = () => {
     }
 
     let targetSession: any | undefined;
+    console.log("🔍 กำลังหาว่า session :", sessions);
 
-    if (sessions.length > 2 && chargerId) {
+    if (sessions.length > 1 && chargerId) {
       targetSession = sessions.find(
         (s: any) =>
           s?.Payment?.EVCabinet?.ChargePoint && s.Payment.EVCabinet.ChargePoint === chargerId
       );
     }
+
+    console.log("🔍 session after filter by chargerId:", targetSession);
 
     if (!targetSession) {
       targetSession = sessions.find((s: any) => Boolean(s?.Status)) ?? sessions[0];
@@ -367,6 +371,29 @@ const ChargingEV = () => {
       }
     };
     fetchInitialStatus();
+  }, [chargerId]);
+
+  // ✅ NEW: เข้าหน้านี้แล้วดึง Snapshot เอา "แค่ energy_wh" มาเป็น currentEnergyWh
+  // เพื่อให้ % สามารถคำนวณได้ทันทีแม้ยังไม่ทันได้ MeterValues ผ่าน WS
+  useEffect(() => {
+    const fetchSnapshotEnergy = async () => {
+      try {
+        if (!chargerId) return;
+        if (freezeInterruptionRef.current) return;
+
+        const res: any = await GetOcppSnapshotByChargerID(chargerId);
+        const energyWh = Number(res?.snapshot?.meter?.energy_wh);
+
+        if (Number.isFinite(energyWh)) {
+          setCurrentEnergyWh(energyWh);
+          console.log("⚡ [Snapshot] meter.energy_wh:", energyWh);
+        }
+      } catch (err) {
+        console.error("❌ GetOcppSnapshotByChargerID error:", err);
+      }
+    };
+
+    fetchSnapshotEnergy();
   }, [chargerId]);
 
   // 👉 ฟัง WebSocket OCPP
@@ -601,7 +628,7 @@ const ChargingEV = () => {
     return () => window.clearInterval(intervalId);
   }, [sessionValid, sessionStartTime, sessionEndTime, ocppStatus]);
 
-  // ⭐ คำนวณ % จาก MeterValues
+  // ⭐ คำนวณ % จาก MeterValues (หรือจาก Snapshot ที่ setCurrentEnergyWh)
   useEffect(() => {
     if (startEnergyWh == null || totalPurchasedKwh == null || currentEnergyWh == null) return;
 
@@ -861,11 +888,13 @@ const ChargingEV = () => {
       setIsComplete(false);
       setEnergy(0);
       setTime(0);
-      setChargedKwhVal(0);          // ✅ เพิ่มบรรทัดนี้
+      setChargedKwhVal(0); // ✅ เพิ่มบรรทัดนี้
       setSessionStartTime(null);
       setCancelModalOpen(false);
 
       clearLocalStorageState();
+
+      
 
       setTimeout(goToSummary, 1000);
     } catch (err: any) {
@@ -1176,13 +1205,14 @@ const ChargingEV = () => {
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-md w-full">
             <div className="mb-4 flex items-center justify-between">
               <h2
-                className={`flex items-center gap-2 text-base font-semibold text-blue-900 ${isChargingAnim ? "charging-title" : ""
-                  }`}
+                className={`flex items-center gap-2 text-base font-semibold text-blue-900 ${
+                  isChargingAnim ? "charging-title" : ""
+                }`}
                 style={
                   isChargingAnim
                     ? ({
-                      ["--titleGlow" as any]: batteryGradient,
-                    } as React.CSSProperties)
+                        ["--titleGlow" as any]: batteryGradient,
+                      } as React.CSSProperties)
                     : undefined
                 }
               >
@@ -1190,12 +1220,13 @@ const ChargingEV = () => {
               </h2>
 
               <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${charging
+                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  charging
                     ? "bg-green-50 text-green-700 ring-1 ring-green-200"
                     : isComplete
-                      ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                      : "bg-gray-50 text-gray-600 ring-1 ring-gray-200"
-                  }`}
+                    ? "bg-green-50 text-green-700 ring-1 ring-green-200"
+                    : "bg-gray-50 text-gray-600 ring-1 ring-gray-200"
+                }`}
               >
                 {charging ? "CHARGING" : isComplete ? "COMPLETE" : "IDLE"}
               </span>
@@ -1284,10 +1315,8 @@ const ChargingEV = () => {
                   onClick={handleStart}
                   disabled={startDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold text-white
-                    ${startDisabled
-                      ? "bg-blue-300 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-700"
-                    }`}
+                    ${startDisabled ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}
+                  `}
                 >
                   Start
                 </button>
@@ -1298,9 +1327,10 @@ const ChargingEV = () => {
                   }}
                   disabled={cancelDisabled}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${cancelDisabled
-                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                      : "bg-red-500 text-white hover:bg-red-600"
+                    ${
+                      cancelDisabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : "bg-red-500 text-white hover:bg-red-600"
                     }`}
                 >
                   Stop
@@ -1310,9 +1340,10 @@ const ChargingEV = () => {
                   disabled={completeDisabled}
                   onClick={handleComplete}
                   className={`w-full rounded-xl px-3 py-3 text-sm font-semibold
-                    ${completeDisabled
-                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                      : "bg-green-600 text-white hover:bg-green-700"
+                    ${
+                      completeDisabled
+                        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                        : "bg-green-600 text-white hover:bg-green-700"
                     }`}
                 >
                   Finish

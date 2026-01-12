@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -161,7 +162,7 @@ func SetupDatabase() {
 	userID := uint(1)
 	methodID := uint(1)
 	cabinetID := uint(1)
-	if err := SeedPayments(db, userID, methodID, cabinetID); err != nil {
+	if err := SeedPayment(db, userID, methodID, cabinetID); err != nil {
 		log.Fatalf("Seed payments failed: %v", err)
 	}
 
@@ -206,7 +207,7 @@ func seedMasters(db *gorm.DB) {
 		SolarPoint:   "solar_001",
 
 		Description: "Main solar panel for EV project",
-		Picture:     "uploads/user/solarpic.jpg",
+		Picture:     "uploads/solar/solarpic.jpg",
 		Location:    "Building A, Roof Floor",
 		MeterID:     &MeterID,
 	}
@@ -294,60 +295,24 @@ func SeedIfUsersEmpty(db *gorm.DB) {
 		Username:    "user1",
 		FirstName:   "Thipawan",
 		LastName:    "Fungsuwannarak",
-		Email:       "janis.green@example.com",
+		Email:       "thipwan@g.sut.ac.th",
 		Password:    hashedPassword,
 		Profile:     "uploads/user/Main-User.jpg",
 		PhoneNumber: "0856613088",
-		Coin:        10000,
-		GenderID:    1,
-		UserRoleID:  3,
-	}
-	user2 := entity.User{
-		Username:    "user2",
-		FirstName:   "Chris",
-		LastName:    "Taylor",
-		Email:       "chris.taylor@example.com",
-		Password:    hashedPassword,
-		Profile:     "uploads/user/avatar2.jpg",
-		PhoneNumber: "0895845671",
 		Coin:        0,
 		GenderID:    2,
-		UserRoleID:  3,
-	}
-	user3 := entity.User{
-		Username:    "user3",
-		FirstName:   "Alex",
-		LastName:    "Smith",
-		Email:       "alex.smith@example.com",
-		Password:    hashedPassword,
-		Profile:     "uploads/user/avatar3.png",
-		PhoneNumber: "0938473272",
-		Coin:        0,
-		GenderID:    1,
 		UserRoleID:  3,
 	}
 	admin1 := entity.User{
 		Username:    "admin1",
-		FirstName:   "Kanyapron",
-		LastName:    "KD",
-		Email:       "Kanyapron@gmail.com",
+		FirstName:   "Phansak",
+		LastName:    "Saisiang",
+		Email:       "mistersangdad@gmail.com",
 		Password:    hashedPassword,
 		Profile:     "uploads/user/avatar4.jpg",
-		PhoneNumber: "0981183501",
+		PhoneNumber: "0825691426",
 		Coin:        0,
 		GenderID:    1,
-		UserRoleID:  1,
-	}
-	admin2 := entity.User{
-		Username:    "admin2",
-		FirstName:   "Tawunchai",
-		LastName:    "Burakhon",
-		Email:       "Smoke@gmail.com",
-		Password:    hashedPassword,
-		Profile:     "uploads/user/avatar1.jpg",
-		PhoneNumber: "0981183502",
-		Coin:        0,
-		GenderID:    2,
 		UserRoleID:  1,
 	}
 	employeeUser := entity.User{
@@ -367,29 +332,12 @@ func SeedIfUsersEmpty(db *gorm.DB) {
 	if err := db.Create(&user1).Error; err != nil {
 		log.Fatal(err)
 	}
-	if err := db.Create(&user2).Error; err != nil {
-		log.Fatal(err)
-	}
-	if err := db.Create(&user3).Error; err != nil {
-		log.Fatal(err)
-	}
 	if err := db.Create(&admin1).Error; err != nil {
-		log.Fatal(err)
-	}
-	if err := db.Create(&admin2).Error; err != nil {
 		log.Fatal(err)
 	}
 	if err := db.Create(&employeeUser).Error; err != nil {
 		log.Fatal(err)
 	}
-
-	// Cars (ตัวอย่าง many-to-many: ตรวจโครงสร้าง struct ของคุณให้สอดคล้อง)
-	car1 := entity.Car{Brand: "Tesla", ModelCar: "Model 3", LicensePlate: "กข 0001", SpecialNumber: true, City: "กรุงเทพมหานคร", User: []entity.User{user1}}
-	car2 := entity.Car{Brand: "BYD", ModelCar: "Atto 3", LicensePlate: "กข 0002", SpecialNumber: false, City: "กรุงเทพมหานคร", User: []entity.User{user2}}
-	car3 := entity.Car{Brand: "MG", ModelCar: "ZS EV", LicensePlate: "กข 0003", SpecialNumber: false, City: "กรุงเทพมหานคร", User: []entity.User{user2}}
-	db.FirstOrCreate(&car1, entity.Car{LicensePlate: car1.LicensePlate})
-	db.FirstOrCreate(&car2, entity.Car{LicensePlate: car2.LicensePlate})
-	db.FirstOrCreate(&car3, entity.Car{LicensePlate: car3.LicensePlate})
 
 	// Employees (อ้าง UserID จริง ไม่ hard-code)
 	emp1 := entity.Employee{
@@ -399,13 +347,6 @@ func SeedIfUsersEmpty(db *gorm.DB) {
 		Salary:     25000,
 		UserID:     &admin1.ID,
 	}
-	emp2 := entity.Employee{
-		Bio:        "Admin Korean",
-		Experience: "100 years of experience as an admin with Tesla company",
-		Education:  "Master degree of marketing at Harvard university",
-		Salary:     50000,
-		UserID:     &admin2.ID,
-	}
 	emp3 := entity.Employee{
 		Bio:        "Staff Thailand",
 		Experience: "5 years of experience with Tesla company",
@@ -414,7 +355,6 @@ func SeedIfUsersEmpty(db *gorm.DB) {
 		UserID:     &employeeUser.ID,
 	}
 	db.FirstOrCreate(&emp1, entity.Employee{UserID: &admin1.ID})
-	db.FirstOrCreate(&emp2, entity.Employee{UserID: &admin2.ID})
 	db.FirstOrCreate(&emp3, entity.Employee{UserID: &employeeUser.ID})
 }
 
@@ -435,78 +375,47 @@ func seedContent(db *gorm.DB) {
 	// GettingStarted
 	getting1 := entity.GettingStarted{
 		Picture:     "uploads/getting_started/gettingone.png",
-		Title:       "Get ready",
-		Description: "Park your car so that the charging port is as close to the charging station as possible, then turn off the engine and drivetrain and select the charging port that matches your car's port.",
+		Title:       "Step 1",
+		Description: "เตรียมหัวชาร์จจากเครื่องชาร์จ",
 		EmployeeID:  empIDPtr,
 	}
 	getting2 := entity.GettingStarted{
 		Picture:     "uploads/getting_started/gettingtwo.png",
-		Title:       "Start connecting and charging",
-		Description: "Insert the charger head firmly into the vehicle's port until it locks into place. Press the Start button on the app or on the charger's screen to begin the charging process.",
+		Title:       "Step 2",
+		Description: "เสียบหัวชาร์จเข้าตัวรถให้แน่น",
 		EmployeeID:  empIDPtr,
 	}
 	getting3 := entity.GettingStarted{
 		Picture:     "uploads/getting_started/gettingthree.png",
-		Title:       "End charging and store cable",
-		Description: "When the charge reaches the desired level, press the Cancel or Finish button on the charger or in the app to stop charging.",
+		Title:       "Step 3",
+		Description: "กดปุ่ม Start และมอนิเตอร์จนสิ้นสุดการชาร์จ",
 		EmployeeID:  empIDPtr,
 	}
-	db.FirstOrCreate(&getting1, entity.GettingStarted{Title: "Get ready"})
-	db.FirstOrCreate(&getting2, entity.GettingStarted{Title: "Start connecting and charging"})
-	db.FirstOrCreate(&getting3, entity.GettingStarted{Title: "End charging and store cable"})
+	db.FirstOrCreate(&getting1, entity.GettingStarted{Title: "Step 1"})
+	db.FirstOrCreate(&getting2, entity.GettingStarted{Title: "Step 2"})
+	db.FirstOrCreate(&getting3, entity.GettingStarted{Title: "Step 3"})
 
 	// News
 	news1 := entity.New{
 		Picture:     "uploads/new/news1.png",
-		Title:       "Personalized Profession Online Tutor on Your Schedule 1",
-		Description: "Lorem ipsum dolor sit amet consectetur adipisicing elit. Necessitatibus atque voluptas labore nemo ipsam voluptatum maxime facere hic...",
+		Title:       "เปิดแล้ววันนี้ SUT EV Station สถานีชาร์จรถยนต์ไฟฟ้า ณ มหาวิทยาลัยเทคโนโลยีสุรนารี",
+		Description: "เปิดให้ทดลองชาร์จแล้ว วันนี้!! SUT EV Station\nสามารถชาร์จรถยนต์ไฟฟ้าจากพลังงานแสงอาทิตย์ได้แล้ววันนี้\nวันนี้ ถึง 31 มกราคม 2569\n(DelTa 7.4 kW AC Type 2)",
 		EmployeeID:  empIDPtr,
 	}
-	news2 := entity.New{
-		Picture:     "uploads/new/news2.png",
-		Title:       "Personalized Profession Online Tutor on Your Schedule 2",
-		Description: "Lorem ipsum dolor sit amet consectetur adipisicing elit. Necessitatibus atque voluptas labore nemo ipsam voluptatum maxime facere hic...",
-		EmployeeID:  empIDPtr,
-	}
-	db.FirstOrCreate(&news1, entity.New{Title: "Personalized Profession Online Tutor on Your Schedule 1"})
-	db.FirstOrCreate(&news2, entity.New{Title: "Personalized Profession Online Tutor on Your Schedule 2"})
+	db.FirstOrCreate(&news1, entity.New{Title: "เปิดแล้ววันนี้ SUT EV Station สถานีชาร์จรถยนต์ไฟฟ้า ณ มหาวิทยาลัยเทคโนโลยีสุรนารี"})
 
 	// Reviews (ตัวอย่างใช้ UserID = 1,2,3 ถ้ามี)
-	uid1, uid2, uid3 := uint(1), uint(2), uint(3)
-	review1 := &entity.Review{
-		Rating:     5,
-		Comment:    "The charging station was spotless and the charging speed was excellent. The waiting area was comfortable and even had outlets for my phone. Super convenient!",
-		ReviewDate: time.Now(),
-		Status:     true,
-		UserID:     &uid1,
-	}
-	review2 := &entity.Review{
-		Rating:     4,
-		Comment:    "Stable charging and clear pricing. The staff responded quickly to my questions. It would be perfect if there were a few more parking spots.",
-		ReviewDate: time.Now(),
-		Status:     true,
-		UserID:     &uid2,
-	}
-	review3 := &entity.Review{
-		Rating:     3,
-		Comment:    "The station works fine and the charging is okay, but the waiting area could be improved. Overall acceptable for a quick stop.",
-		ReviewDate: time.Now(),
-		Status:     true,
-		UserID:     &uid3,
-	}
-	db.FirstOrCreate(review1, &entity.Review{UserID: &uid1})
-	db.FirstOrCreate(review2, &entity.Review{UserID: &uid2})
-	db.FirstOrCreate(review3, &entity.Review{UserID: &uid3})
-
+	uid1 := uint(1)
+	
 	service := &entity.Service{
-		Email:      "support@evstation.example",
-		Phone:      "+66 2 123 4567",
-		Location:   "12th Floor, EV Station Tower Building, Sukhumvit Road, Bangkok 10110",
-		MapURL:     "https://maps.google.com/?q=EV+Station+Tower",
+		Email:      "mistersangdad@gmail.com",
+		Phone:      "+66 0825691426",
+		Location:   "111 University Avenue, Muang, Nakhon Ratchasima 30000",
+		MapURL:     "https://www.google.com/maps?q=มหาวิทยาลัยเทคโนโลยีสุรนารี",
 		EmployeeID: &emp.ID,
 	}
 
-	db.FirstOrCreate(service, entity.Service{Email: "support@evstation.example"})
+	db.FirstOrCreate(service, entity.Service{Email: "mistersangdad@gmail.com"})
 
 	send := &entity.SendEmail{
 		Email:   "b6534240@g.sut.ac.th",
@@ -549,38 +458,6 @@ func seedContent(db *gorm.DB) {
 		EVCabinetID: &cabinetID,
 		StartDate:   booking1.StartDate,
 		EndDate:     booking1.EndDate,
-		IsEmailSent: true,
-	})
-
-	// User 2 (13:00 - 15:00)
-	booking2 := &entity.Booking{
-		StartDate:   time.Date(year, month, day, 13, 0, 0, 0, loc),
-		EndDate:     time.Date(year, month, day, 15, 0, 0, 0, loc),
-		UserID:      &uid2,
-		EVCabinetID: &cabinetID,
-		IsEmailSent: true,
-	}
-	db.FirstOrCreate(booking2, entity.Booking{
-		UserID:      &uid2,
-		EVCabinetID: &cabinetID,
-		StartDate:   booking2.StartDate,
-		EndDate:     booking2.EndDate,
-		IsEmailSent: true,
-	})
-
-	// User 3 (19:00 - 20:00)
-	booking3 := &entity.Booking{
-		StartDate:   time.Date(year, month, day, 19, 0, 0, 0, loc),
-		EndDate:     time.Date(year, month, day, 20, 0, 0, 0, loc),
-		UserID:      &uid3,
-		EVCabinetID: &cabinetID,
-		IsEmailSent: true,
-	}
-	db.FirstOrCreate(booking3, entity.Booking{
-		UserID:      &uid3,
-		EVCabinetID: &cabinetID,
-		StartDate:   booking3.StartDate,
-		EndDate:     booking3.EndDate,
 		IsEmailSent: true,
 	})
 
@@ -661,15 +538,7 @@ func seedContent(db *gorm.DB) {
 		Picture:         "uploads/paymentcoin/1752515960262810900.jpg",
 		UserID:          uint(1),
 	}
-	payment2 := entity.PaymentCoin{
-		Date:            time.Now().Add(-24 * time.Hour),
-		Amount:          250.50,
-		ReferenceNumber: "REF2024071402",
-		Picture:         "uploads/paymentcoin/1752515960262810900.jpg",
-		UserID:          uint(1),
-	}
 	db.FirstOrCreate(&payment1, entity.PaymentCoin{ReferenceNumber: "REF2024071401"})
-	db.FirstOrCreate(&payment2, entity.PaymentCoin{ReferenceNumber: "REF2024071402"})
 
 	// Reports — แนว EV Station
 	userID1 := uint(1)
@@ -687,85 +556,103 @@ func seedContent(db *gorm.DB) {
 
 // ----------------------------- Seed Payments -----------------------------
 
-func SeedPayments(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error {
-	var count int64
-	if err := db.Model(&entity.Payment{}).Count(&count).Error; err != nil {
-		return fmt.Errorf("failed to count payments: %w", err)
-	}
-	if count > 0 {
-		fmt.Println("Payments already seeded, skipping creation.")
-		return nil
-	}
+func SeedPayment(db *gorm.DB, userID uint, methodID uint, cabinetID uint) error {
+	fmt.Println("Seeding SINGLE Payment for production...")
 
-	fmt.Println("Seeding Payments for 12 months (20 days each)...")
+	// =========================
+	// 1️⃣ ตรวจสอบ Payment ID = 1
+	// =========================
+	var payment entity.Payment
+	err := db.First(&payment, 1).Error
+	if err == nil {
+		fmt.Println("✅ Payment ID = 1 already exists, skipping Payment creation.")
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 
-	for month := 1; month <= 12; month++ {
-		for day := 1; day <= 20; day++ { // ✅ แก้จาก 10 → 20 วัน
-			createdAt := time.Date(2025, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+		createdAt := time.Now().UTC()
 
-			price1 := 50 + day*2
-			price2 := 100 + month*3
-			amount := price1 + price2
+		price1 := 50
+		price2 := 100
+		amount := price1 + price2
 
-			payment := entity.Payment{
-				Date:            createdAt,
-				Amount:          float64(amount),
-				ReferenceNumber: fmt.Sprintf("REF-%02d%02d", month, day),
-				Picture:         "uploads/payment/1752001589231877900.jpg",
-				UserID:          &userID,
-				MethodID:        &methodID,
-				EVCabinetID:     &cabinetID,
-			}
-
-			if err := db.Create(&payment).Error; err != nil {
-				return fmt.Errorf("failed to create payment: %w", err)
-			}
-
-			// 🔍 ดึงข้อมูล EVcharging 1, 2
-			var ev1, ev2 entity.EVcharging
-			if err := db.First(&ev1, 1).Error; err != nil {
-				return fmt.Errorf("failed to find EVcharging 1: %w", err)
-			}
-			if err := db.First(&ev2, 2).Error; err != nil {
-				return fmt.Errorf("failed to find EVcharging 2: %w", err)
-			}
-
-			quantity1 := float64(price1) / ev1.Price
-			quantity2 := float64(price2) / ev2.Price
-
-			evcp1 := entity.EVChargingPayment{
-				EVchargingID:   1,
-				PaymentID:      payment.ID,
-				Price:          float64(price1),
-				Power:          quantity1,
-				Percent:        20.00,
-				RemainingPower: 5,
-			}
-			if err := db.FirstOrCreate(
-				&evcp1,
-				entity.EVChargingPayment{EVchargingID: 1, PaymentID: payment.ID},
-			).Error; err != nil {
-				return fmt.Errorf("failed to create evchargingpayment 1: %w", err)
-			}
-
-			evcp2 := entity.EVChargingPayment{
-				EVchargingID:   2,
-				PaymentID:      payment.ID,
-				Price:          float64(price2),
-				Power:          quantity2,
-				Percent:        80.00,
-				RemainingPower: 2,
-			}
-			if err := db.FirstOrCreate(
-				&evcp2,
-				entity.EVChargingPayment{EVchargingID: 2, PaymentID: payment.ID},
-			).Error; err != nil {
-				return fmt.Errorf("failed to create evchargingpayment 2: %w", err)
-			}
+		payment = entity.Payment{
+			Date:            createdAt,
+			Amount:          float64(amount),
+			ReferenceNumber: "REF-PROD-0001",
+			Picture:         "uploads/payment/1752001589231877900.jpg",
+			UserID:          &userID,
+			MethodID:        &methodID,
+			EVCabinetID:     &cabinetID,
 		}
+
+		if err := db.Create(&payment).Error; err != nil {
+			return fmt.Errorf("failed to create payment: %w", err)
+		}
+
+		fmt.Println("✅ Created Payment ID =", payment.ID)
+	} else {
+		return fmt.Errorf("failed to query payment: %w", err)
 	}
 
-	fmt.Println("✅ Successfully seeded payments for all 12 months (20 days each).")
+	// =========================
+	// 2️⃣ ดึง EVcharging 1 และ 2
+	// =========================
+	var ev1, ev2 entity.EVcharging
+	if err := db.First(&ev1, 1).Error; err != nil {
+		return fmt.Errorf("failed to find EVcharging 1: %w", err)
+	}
+	if err := db.First(&ev2, 2).Error; err != nil {
+		return fmt.Errorf("failed to find EVcharging 2: %w", err)
+	}
+
+	// =========================
+	// 3️⃣ EVChargingPayment #1
+	// =========================
+	quantity1 := float64(50) / ev1.Price
+
+	evcp1 := entity.EVChargingPayment{
+		EVchargingID:   1,
+		PaymentID:      payment.ID,
+		Price:          50,
+		Power:          quantity1,
+		Percent:        20.0,
+		RemainingPower: 5,
+	}
+
+	if err := db.FirstOrCreate(
+		&evcp1,
+		entity.EVChargingPayment{
+			EVchargingID: 1,
+			PaymentID:    payment.ID,
+		},
+	).Error; err != nil {
+		return fmt.Errorf("failed to create evchargingpayment 1: %w", err)
+	}
+
+	// =========================
+	// 4️⃣ EVChargingPayment #2
+	// =========================
+	quantity2 := float64(100) / ev2.Price
+
+	evcp2 := entity.EVChargingPayment{
+		EVchargingID:   2,
+		PaymentID:      payment.ID,
+		Price:          100,
+		Power:          quantity2,
+		Percent:        80.0,
+		RemainingPower: 2,
+	}
+
+	if err := db.FirstOrCreate(
+		&evcp2,
+		entity.EVChargingPayment{
+			EVchargingID: 2,
+			PaymentID:    payment.ID,
+		},
+	).Error; err != nil {
+		return fmt.Errorf("failed to create evchargingpayment 2: %w", err)
+	}
+
+	fmt.Println("✅ Successfully seeded production payment data.")
 	return nil
 }
 
@@ -852,7 +739,7 @@ func seedSolarRealtimeData(db *gorm.DB, deviceID string) error {
 		return fmt.Errorf("parse time error: %w", err)
 	}
 
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 5; i++ {
 		// เวลาห่างกัน 10 วินาที
 		ts := baseTime.Add(time.Duration(i*10) * time.Second)
 
