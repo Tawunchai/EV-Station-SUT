@@ -72,6 +72,7 @@ export type CabinetType = {
   UrlWebsocket?: string | null;
   ChargePoint?: string | null;
   HardwareID?: number | null;
+  StopPolicy?: number | null;
 };
 
 // ---------- Small Centered Modal Wrapper ----------
@@ -242,6 +243,7 @@ const EV: React.FC = () => {
             UrlWebsocket: c.UrlWebsocket ?? null,
             ChargePoint: c.ChargePoint ?? null,
             HardwareID: c.HardwareID ?? null, // ⭐ map มาด้วย
+            StopPolicy: c.StopPolicy ?? null,
           }))
         );
       } else {
@@ -662,8 +664,8 @@ const EV: React.FC = () => {
                         cab.Status?.toLowerCase().includes("active")
                           ? "green"
                           : cab.Status?.toLowerCase().includes("maintenance")
-                          ? "orange"
-                          : "default"
+                            ? "orange"
+                            : "default"
                       }
                       className="mt-1"
                     >
@@ -841,8 +843,8 @@ const EV: React.FC = () => {
                           cab.Status?.toLowerCase().includes("active")
                             ? "green"
                             : cab.Status?.toLowerCase().includes("maintenance")
-                            ? "orange"
-                            : "default"
+                              ? "orange"
+                              : "default"
                         }
                       >
                         {cab.Status}

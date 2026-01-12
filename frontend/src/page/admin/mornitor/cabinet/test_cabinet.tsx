@@ -23,14 +23,26 @@ type ConnectorState = {
   soc: number; // battery %
   isPluggedIn: boolean;
   isLocked: boolean;
-  powerKw: number;
+
+  // ✅ UI display
+  powerKw: number; // fix while charging
   energyKWh: number;
+
   startedAt: number | null;
   transactionId: number | null;
+
+  // ✅ for Energy.Active.Import.Register (Wh)
   meterWh: number;
 };
 
 type OcppRawMessage = [number, string, ...any[]];
+
+const FIXED_POWER_KW = 3.70;
+
+// ✅ ค่าคงที่เพื่อให้ payload คล้ายของจริง (ปรับได้ตามต้องการ)
+const FIXED_VOLTAGE_V = 222.86;
+const FIXED_CURRENT_IMPORT_A = 30.45;
+const FIXED_CURRENT_OFFERED_A = 32.0;
 
 const initialConnectorState: ConnectorState = {
   status: "Available",
@@ -138,7 +150,18 @@ const TestCabinet: React.FC = () => {
     ];
     appendLog(`[SYSTEM] StatusNotification → ${status}`);
     sendOcppMessage(msg);
-    updateConnector((prev) => ({ ...prev, status }));
+
+    // ✅ ปรับ powerKw ตามสถานะ
+    updateConnector((prev) => ({
+      ...prev,
+      status,
+      powerKw:
+        status === "Charging"
+          ? FIXED_POWER_KW
+          : status === "Finishing"
+            ? 0
+            : prev.powerKw,
+    }));
   };
 
   /** ---------- Meter Values Loop ---------- */
@@ -150,65 +173,143 @@ const TestCabinet: React.FC = () => {
     }
   };
 
+  // ✅ สร้าง MeterValues payload ให้เหมือนของจริง (หลาย sampledValue)
+  const buildMeterValuesPayload = (params: {
+    txId: number;
+    meterWh: number;
+    soc: number;
+  }) => {
+    const { txId, meterWh, soc } = params;
+
+    return {
+      connectorId: 1,
+      transactionId: txId,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            // Voltage
+            {
+              context: "Sample.Periodic",
+              format: "Raw",
+              location: "Body",
+              measurand: "Voltage",
+              phase: "L1-N",
+              unit: "V",
+              value: FIXED_VOLTAGE_V.toFixed(2),
+            },
+            // Current.Import
+            {
+              context: "Sample.Periodic",
+              format: "Raw",
+              location: "Body",
+              measurand: "Current.Import",
+              phase: "L1",
+              unit: "A",
+              value: FIXED_CURRENT_IMPORT_A.toFixed(2),
+            },
+            // Power.Active.Import (✅ FIX)
+            {
+              context: "Sample.Periodic",
+              format: "Raw",
+              location: "Body",
+              measurand: "Power.Active.Import",
+              phase: "L1-N",
+              unit: "kW",
+              value: FIXED_POWER_KW.toFixed(2),
+            },
+            // Energy.Active.Import.Register
+            {
+              context: "Sample.Periodic",
+              format: "Raw",
+              location: "Body",
+              measurand: "Energy.Active.Import.Register",
+              phase: "L1-N",
+              unit: "Wh",
+              value: String(Math.max(0, Math.floor(meterWh))),
+            },
+            // SoC
+            {
+              context: "Sample.Periodic",
+              format: "Raw",
+              location: "EV",
+              measurand: "SoC",
+              unit: "Percent",
+              value: String(Math.max(0, Math.min(100, Math.floor(soc)))),
+            },
+            // Current.Offered
+            {
+              context: "Sample.Periodic",
+              format: "Raw",
+              location: "Body",
+              measurand: "Current.Offered",
+              phase: "L1",
+              unit: "A",
+              value: FIXED_CURRENT_OFFERED_A.toFixed(2),
+            },
+          ],
+        },
+      ],
+    };
+  };
+
   const sendMeterValues = () => {
     const state = connectorRef.current;
 
     if (!state.transactionId) {
-      appendLog(
-        "[SYSTEM] No active transaction. Stopping MeterValues loop."
-      );
+      appendLog("[SYSTEM] No active transaction. Stopping MeterValues loop.");
       stopMeterLoop();
       return;
     }
 
+    // ✅ จำลอง SoC / Energy / MeterWh (Power fix)
     if (state.status === "Charging" && state.soc < 100) {
       const nextSoc = Math.min(100, state.soc + 2); // +2% / รอบ
       const nextMeterWh = state.meterWh + 100; // +100Wh / รอบ
-      const nextEnergyKWh = state.energyKWh + 0.1; // สมมุติ 0.1kWh / รอบ
+      const nextEnergyKWh = state.energyKWh + 0.1; // +0.1kWh / รอบ
 
       updateConnector((prev) => ({
         ...prev,
         soc: nextSoc,
         meterWh: nextMeterWh,
         energyKWh: nextEnergyKWh,
-        powerKw: nextEnergyKWh, // ผูก Output Power = Energy
+        powerKw: FIXED_POWER_KW,
       }));
 
-      if (nextSoc < 100) {
-        const msg: OcppRawMessage = [
-          2,
-          generateUUID(),
-          "MeterValues",
-          {
-            connectorId: 1,
-            transactionId: state.transactionId,
-            meterValue: [
-              {
-                timestamp: new Date().toISOString(),
-                sampledValue: [
-                  {
-                    value: nextMeterWh,
-                    context: "Sample.Periodic",
-                    measurand: "Energy.Active.Import.Register",
-                    unit: "Wh",
-                  },
-                ],
-              },
-            ],
-          },
-        ];
-        sendOcppMessage(msg);
+      const msg: OcppRawMessage = [
+        2,
+        generateUUID(),
+        "MeterValues",
+        buildMeterValuesPayload({
+          txId: state.transactionId,
+          meterWh: nextMeterWh,
+          soc: nextSoc,
+        }),
+      ];
+      sendOcppMessage(msg);
+
+      // ✅ ถ้าเต็ม 100 ให้ transition ไป SuspendedEV
+      if (nextSoc >= 100) {
+        appendLog(
+          "[SYSTEM] Battery full (100%), simulating transition to SuspendedEV."
+        );
+        sendStatusNotification("SuspendedEV");
+        return;
       }
-    } else if (state.soc >= 100 && state.status === "Charging") {
+
+      return;
+    }
+
+    if (state.soc >= 100 && state.status === "Charging") {
       appendLog(
         "[SYSTEM] Battery full (100%), simulating transition to SuspendedEV."
       );
       sendStatusNotification("SuspendedEV");
       return;
-    } else if (state.status !== "Charging") {
-      appendLog(
-        "[SYSTEM] Status changed from Charging. Stopping MeterValues loop."
-      );
+    }
+
+    if (state.status !== "Charging") {
+      appendLog("[SYSTEM] Status changed from Charging. Stopping MeterValues loop.");
       stopMeterLoop();
       return;
     }
@@ -216,13 +317,11 @@ const TestCabinet: React.FC = () => {
 
   const startMeterLoop = () => {
     stopMeterLoop();
-    appendLog(
-      "[SYSTEM] MeterValues loop started (simulate SoC & energy every 2s)"
-    );
+    appendLog("[SYSTEM] MeterValues loop started (simulate SoC & energy every 5s)");
 
     meterIntervalRef.current = window.setInterval(() => {
       sendMeterValues();
-    }, 15000);
+    }, 5000);
   };
 
   /** ---------- Connect / Disconnect ---------- */
@@ -275,7 +374,6 @@ const TestCabinet: React.FC = () => {
         try {
           msg = JSON.parse(event.data);
         } catch {
-          // ถ้าเป็นข้อความธรรมดา (เช่น "ready") ก็ข้าม
           return;
         }
 
@@ -326,9 +424,7 @@ const TestCabinet: React.FC = () => {
 
         setTimeout(() => sendStatusNotification("Available"), 500);
       } else {
-        appendLog(
-          "[SYSTEM] BootNotification rejected. Please check configuration."
-        );
+        appendLog("[SYSTEM] BootNotification rejected. Please check configuration.");
       }
     }
 
@@ -346,7 +442,7 @@ const TestCabinet: React.FC = () => {
           ...prev,
           transactionId: txId,
           status: "Charging",
-          powerKw: 0,
+          powerKw: FIXED_POWER_KW,
           energyKWh: 0,
           soc: baseSoc,
           startedAt: Date.now(),
@@ -358,7 +454,8 @@ const TestCabinet: React.FC = () => {
       startMeterLoop();
     }
 
-    // StopTransaction.conf → ใช้ตอน status เป็น Finishing
+    // StopTransaction.conf
+    // ✅ REQUIREMENT: ค้าง status = Finishing จนกว่าจะ Unplug EV
     if ("idTagInfo" in payload) {
       const current = connectorRef.current;
       if (current.status !== "Finishing") {
@@ -368,26 +465,28 @@ const TestCabinet: React.FC = () => {
         return;
       }
 
-      appendLog("[SYSTEM] StopTransaction confirmed.");
+      appendLog("[SYSTEM] StopTransaction confirmed. Keep status = Finishing until Unplug EV.");
 
+      // ✅ เคลียร์ transaction แต่คง Finishing + คง SoC/Energy/MeterWh ไว้ให้ดูต่อได้
       updateConnector((prev) => {
-        const nextStatus = prev.isPluggedIn ? "Preparing" : "Available";
         const next: ConnectorState = {
           ...prev,
-          status: nextStatus,
+          status: "Finishing",
           transactionId: null,
           powerKw: 0,
-          soc: 0,
-          energyKWh: 0,
-          meterWh: 0,
-          startedAt: null,
+          // ✅ ไม่รีเซ็ต soc/energy/meterWh ตาม requirement (คงไว้)
+          // soc: prev.soc,
+          // energyKWh: prev.energyKWh,
+          // meterWh: prev.meterWh,
         };
         return next;
       });
 
       stopMeterLoop();
-      const latest = connectorRef.current;
-      sendStatusNotification(latest.isPluggedIn ? "Preparing" : "Available");
+
+      // ✅ ไม่ส่ง Preparing/Available ใน conf นี้
+      // ถ้าต้องการย้ำ Finishing กับ server ก็ทำได้ (แต่โดยปกติเราส่งไปแล้วตอนกด stop)
+      // sendStatusNotification("Finishing");
     }
   };
 
@@ -428,14 +527,13 @@ const TestCabinet: React.FC = () => {
 
       case "RemoteStopTransaction": {
         const txId = payload?.transactionId;
-        appendLog(
-          `[SYSTEM] RemoteStopTransaction requested for TxID ${txId}.`
-        );
+        appendLog(`[SYSTEM] RemoteStopTransaction requested for TxID ${txId}.`);
         if (connectorRef.current.transactionId === txId) {
           responsePayload = { status: "Accepted" };
 
           stopMeterLoop();
           setTimeout(() => {
+            // ✅ สั่งหยุด → Finishing และค้างไว้จน Unplug
             sendStatusNotification("Finishing");
             setTimeout(() => sendStopTransaction(), 800);
           }, 400);
@@ -478,10 +576,18 @@ const TestCabinet: React.FC = () => {
   /** ---------- Local Start/Stop Transaction (Buttons) ---------- */
   const sendStartTransaction = () => {
     const state = connectorRef.current;
+
+    // ✅ ถ้ายังค้าง Finishing อยู่ ห้ามเริ่มใหม่จนกว่าจะ Unplug
+    if (state.status === "Finishing") {
+      appendLog("[ERROR] Cannot start: status is Finishing. Please Unplug EV to reset to Available.");
+      return;
+    }
+
     if (state.transactionId) {
       appendLog("[ERROR] StartTransaction: already active");
       return;
     }
+
     const msg: OcppRawMessage = [
       2,
       generateUUID(),
@@ -534,41 +640,35 @@ const TestCabinet: React.FC = () => {
       if (state.status === "Available") {
         sendStatusNotification("Preparing");
       }
-    } else {
-      appendLog("[SYSTEM] EV: Unplugged / ดึงปลั๊กออกแล้ว");
-
-      if (state.transactionId) {
-        appendLog(
-          "[SYSTEM] Unplug while charging, forcing StopTransaction (Finishing)."
-        );
-        stopMeterLoop();
-        sendStatusNotification("Finishing");
-        setTimeout(() => sendStopTransaction(), 500);
-      } else {
-        sendStatusNotification("Available");
-      }
-
-      updateConnector((prev) => ({
-        ...prev,
-        isPluggedIn: false,
-        transactionId: null,
-        powerKw: 0,
-        soc: 0,
-        energyKWh: 0,
-        meterWh: 0,
-        startedAt: null,
-        status: "Available",
-      }));
+      return;
     }
+
+    // ✅ Unplug
+    appendLog("[SYSTEM] EV: Unplugged / ดึงปลั๊กออกแล้ว");
+
+    // ถ้ายังมี transaction (unplug ระหว่างชาร์จ) → บังคับ StopTransaction
+    if (state.transactionId) {
+      appendLog("[SYSTEM] Unplug while charging, forcing StopTransaction (Finishing).");
+      stopMeterLoop();
+      sendStatusNotification("Finishing");
+      setTimeout(() => sendStopTransaction(), 500);
+    }
+
+    // ✅ REQUIREMENT: เมื่อ Unplug แล้วต้องเป็น Available เสมอ (รีเซ็ต)
+    stopMeterLoop();
+    updateConnector(() => ({
+      ...initialConnectorState,
+      status: "Available",
+      isPluggedIn: false,
+    }));
+    sendStatusNotification("Available");
   };
 
   const handleToggleLock = () => {
     updateConnector((prev) => {
       const locked = !prev.isLocked;
       appendLog(
-        locked
-          ? "[SYSTEM] EV: Locked / ล็อกรถแล้ว"
-          : "[SYSTEM] EV: Unlocked / ปลดล็อกรถแล้ว"
+        locked ? "[SYSTEM] EV: Locked / ล็อกรถแล้ว" : "[SYSTEM] EV: Unlocked / ปลดล็อกรถแล้ว"
       );
       return { ...prev, isLocked: locked };
     });
@@ -582,6 +682,10 @@ const TestCabinet: React.FC = () => {
     }
     if (state.isLocked) {
       appendLog("[ERROR] Cannot start: EV is locked");
+      return;
+    }
+    if (state.status === "Finishing") {
+      appendLog("[ERROR] Cannot start: status is Finishing. Please Unplug EV to reset to Available.");
       return;
     }
     if (state.transactionId) {
@@ -599,13 +703,17 @@ const TestCabinet: React.FC = () => {
       appendLog("[ERROR] No active transaction to stop");
       return;
     }
-    appendLog("[SYSTEM] Requesting StopTransaction from local button");
+
+    appendLog("[SYSTEM] Requesting StopTransaction (keep Finishing until Unplug EV)");
+
+    // ✅ REQUIREMENT: สั่งหยุด → Finishing และค้างไว้
     sendStatusNotification("Finishing");
     stopMeterLoop();
     setTimeout(() => sendStopTransaction(), 500);
 
     updateConnector((prev) => ({
       ...prev,
+      status: "Finishing",
       powerKw: 0,
     }));
   };
@@ -728,10 +836,11 @@ const TestCabinet: React.FC = () => {
               <button
                 onClick={handleConnect}
                 disabled={isConnected}
-                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 ${isConnected
+                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 ${
+                  isConnected
                     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "bg-sky-600 hover:bg-sky-500 text-white shadow-sm"
-                  }`}
+                }`}
               >
                 <FiWifi />
                 Connect
@@ -739,10 +848,11 @@ const TestCabinet: React.FC = () => {
               <button
                 onClick={handleDisconnect}
                 disabled={!isConnected}
-                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold ${!isConnected
+                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold ${
+                  !isConnected
                     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "bg-rose-500 hover:bg-rose-400 text-white shadow-sm"
-                  }`}
+                }`}
               >
                 Disconnect
               </button>
@@ -759,31 +869,10 @@ const TestCabinet: React.FC = () => {
                 SoC Status <span className="text-[11px]">(สถานะแบตเตอรี่)</span>
               </p>
               <div className="relative w-40 h-40 sm:w-52 sm:h-52">
-                <svg
-                  viewBox="0 0 200 200"
-                  className="w-full h-full"
-                  aria-label="State of Charge"
-                >
-                  {/* Track วงนอก (Grid) */}
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r={outerRadius}
-                    fill="none"
-                    stroke="#E2E8F0"
-                    strokeWidth="10"
-                  />
-                  {/* Track วงใน (Solar) */}
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r={innerRadius}
-                    fill="none"
-                    stroke="#E2E8F0"
-                    strokeWidth="10"
-                  />
+                <svg viewBox="0 0 200 200" className="w-full h-full" aria-label="State of Charge">
+                  <circle cx="100" cy="100" r={outerRadius} fill="none" stroke="#E2E8F0" strokeWidth="10" />
+                  <circle cx="100" cy="100" r={innerRadius} fill="none" stroke="#E2E8F0" strokeWidth="10" />
 
-                  {/* วงนอก Grid */}
                   <circle
                     cx="100"
                     cy="100"
@@ -797,8 +886,6 @@ const TestCabinet: React.FC = () => {
                     transform="rotate(-90 100 100)"
                     className="transition-all duration-500"
                   />
-
-                  {/* วงใน Solar */}
                   <circle
                     cx="100"
                     cy="100"
@@ -814,35 +901,19 @@ const TestCabinet: React.FC = () => {
                   />
 
                   <defs>
-                    <linearGradient
-                      id="gridGrad"
-                      x1="0"
-                      y1="0"
-                      x2="1"
-                      y2="0"
-                    >
+                    <linearGradient id="gridGrad" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#0ea5e9" />
                       <stop offset="50%" stopColor="#0284c7" />
                       <stop offset="100%" stopColor="#0369a1" />
                     </linearGradient>
-                    <linearGradient
-                      id="solarGrad"
-                      x1="0"
-                      y1="0"
-                      x2="1"
-                      y2="0"
-                    >
-                      {/* ส้มอ่อน → ส้มกลาง → ส้มเข้ม */}
-                      <stop offset="0%" stopColor="#fed7aa" />   {/* orange-200 */}
-                      <stop offset="50%" stopColor="#fb923c" />  {/* orange-400 */}
-                      <stop offset="100%" stopColor="#ea580c" /> {/* orange-600 */}
+                    <linearGradient id="solarGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#fed7aa" />
+                      <stop offset="50%" stopColor="#fb923c" />
+                      <stop offset="100%" stopColor="#ea580c" />
                     </linearGradient>
                   </defs>
 
-                  {/* วงกลมพื้นกลาง */}
                   <circle cx="100" cy="100" r={48} fill="#F8FAFC" />
-
-                  {/* ตัวเลข % */}
                   <text
                     x="50%"
                     y="50%"
@@ -856,7 +927,6 @@ const TestCabinet: React.FC = () => {
                 </svg>
               </div>
 
-              {/* Energy Info */}
               <p className="mt-2 text-xs text-slate-500">
                 Energy delivered:{" "}
                 <span className="font-semibold text-black">
@@ -877,19 +947,14 @@ const TestCabinet: React.FC = () => {
 
             {/* Right Status + Buttons */}
             <div className="flex-1 flex flex-col gap-4 justify-between">
-              {/* EVSE Status */}
               <div>
-                <p className="text-xs sm:text-sm text-slate-500 mb-1">
-                  EVSE Status
-                </p>
+                <p className="text-xs sm:text-sm text-slate-500 mb-1">EVSE Status</p>
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center">
                     <BsLightningChargeFill className="text-sky-600 text-xl" />
                   </div>
                   <div>
-                    <p
-                      className={`text-sm sm:text-base font-semibold ${evseStatusColor}`}
-                    >
+                    <p className={`text-sm sm:text-base font-semibold ${evseStatusColor}`}>
                       {connector.status}
                     </p>
                     <p className="text-[11px] text-slate-500">
@@ -911,9 +976,7 @@ const TestCabinet: React.FC = () => {
                         {connector.isPluggedIn ? "Plugged In" : "Not plugged"}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        {connector.isPluggedIn
-                          ? "เสียบปลั๊กแล้ว"
-                          : "ยังไม่เสียบปลั๊ก"}
+                        {connector.isPluggedIn ? "เสียบปลั๊กแล้ว" : "ยังไม่เสียบปลั๊ก"}
                       </p>
                     </div>
                   </div>
@@ -922,9 +985,7 @@ const TestCabinet: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-white border border-emerald-100 flex items-center justify-center">
                       <FiPower
-                        className={
-                          connector.isLocked ? "text-rose-500" : "text-emerald-500"
-                        }
+                        className={connector.isLocked ? "text-rose-500" : "text-emerald-500"}
                       />
                     </div>
                     <div>
@@ -945,7 +1006,7 @@ const TestCabinet: React.FC = () => {
                   <div>
                     <p className="text-[11px] text-slate-500">Output Power</p>
                     <p className="font-semibold text-sky-700">
-                      {connector.powerKw.toFixed(1)} kW
+                      {connector.powerKw.toFixed(2)} kW
                     </p>
                   </div>
                   <FiBatteryCharging className="text-sky-500 text-lg" />
@@ -982,20 +1043,22 @@ const TestCabinet: React.FC = () => {
                 <button
                   onClick={handleRequestStart}
                   disabled={!canStart}
-                  className={`rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 ${canStart
+                  className={`rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 ${
+                    canStart
                       ? "bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm"
                       : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    }`}
+                  }`}
                 >
                   Request Start
                 </button>
                 <button
                   onClick={handleRequestStop}
                   disabled={!canStop}
-                  className={`rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 ${canStop
+                  className={`rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 ${
+                    canStop
                       ? "bg-rose-500 hover:bg-rose-400 text-white shadow-sm"
                       : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    }`}
+                  }`}
                 >
                   Request Stop
                 </button>
@@ -1047,10 +1110,7 @@ const TestCabinet: React.FC = () => {
                       : "";
 
                   return (
-                    <p
-                      key={idx}
-                      className={`whitespace-pre-wrap ${colorClass}`}
-                    >
+                    <p key={idx} className={`whitespace-pre-wrap ${colorClass}`}>
                       {line}
                     </p>
                   );

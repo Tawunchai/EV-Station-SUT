@@ -193,6 +193,7 @@ func getLastRealStatus(chargerID string) (ChargerStatus, bool) {
 
 type MeterSnapshot struct {
 	EnergyWh      float64 `json:"energy_wh"`
+	PowerKW       float64 `json:"power_kw"` // ✅ NEW: ใช้ประกอบ StopPolicy (Power.Active.Import)
 	TransactionID int     `json:"transaction_id"`
 	Timestamp     string  `json:"timestamp"`
 }
@@ -322,7 +323,7 @@ func buildSnapshot(db *gorm.DB, chargerID string, reason string) ChargerSnapshot
 	st, ok := chargerStatuses[chargerID]
 	statusMu.Unlock()
 	if !ok {
-		st = ChargerStatus{ ChargerID: chargerID}
+		st = ChargerStatus{ChargerID: chargerID}
 	}
 
 	// 2) tx (memory)
@@ -331,7 +332,7 @@ func buildSnapshot(db *gorm.DB, chargerID string, reason string) ChargerSnapshot
 	// 3) meter (memory)
 	meter, hasMeter := getLastMeter(chargerID)
 	if !hasMeter {
-		meter = MeterSnapshot{EnergyWh: 0, TransactionID: 0, Timestamp: ""}
+		meter = MeterSnapshot{EnergyWh: 0, PowerKW: 0, TransactionID: 0, Timestamp: ""}
 	}
 
 	// ปรับ meter.tx ให้สอดคล้องกับ tx ล่าสุดถ้ามี
@@ -646,6 +647,113 @@ func broadcastTextToFrontendRoom(roomID, s string) {
 }
 
 // ============================================================================
+// ✅ NEW: StopPolicy Cache + Runtime (Power.Active.Import)
+// - โหลด StopPolicy แค่ตอนเริ่ม session (ตอนส่ง RemoteStartTransaction) แล้ว cache ไว้
+// - Runtime: นับ 5 ครั้งเมื่อ Power.Active.Import < StopPolicy
+//   ถ้าใน 1..5 มีครั้งใด > StopPolicy => เข้า “watch next 2 values”
+//     - ถ้าสองค่าถัดไปยัง > StopPolicy => reset (ไม่นับต่อ) จนกว่าจะต่ำกว่าอีกครั้ง (เริ่มนับใหม่)
+//     - ถ้ากลับมาต่ำกว่าในช่วง watch => ออกจาก watch และนับต่อ
+// - print log จะเริ่ม “เฉพาะตอนเริ่มต่ำกว่า StopPolicy ครั้งแรก” เท่านั้น
+// ============================================================================
+
+// ✅ แนะนำ: StopPolicy ใน DB ให้เก็บเป็น “kW” เพราะ Power.Active.Import ที่ตู้ส่งมาคือ kW
+type StopPolicyCache struct {
+	CabinetID  uint
+	ChargePoint string
+	StopPolicy float64
+	LoadedAt   time.Time
+}
+
+type StopPolicyRuntime struct {
+	Started     bool      // เริ่มนับแล้วหรือยัง (เริ่มเมื่อ power < policy ครั้งแรก)
+	LowCount    int       // นับจำนวนครั้งที่ power < policy (ไปถึง 5 แล้วหยุด)
+	WatchRemain int       // เหลือกี่ค่าที่ต้องดูต่อ (2 ค่า) หลังเจอค่ามากกว่า policy
+	LastEventAt time.Time // เพื่อ debug (ไม่ print ถ้าไม่ได้ started)
+}
+
+var (
+	stopPolicyCacheMu sync.Mutex
+	stopPolicyCache   = make(map[string]StopPolicyCache) // chargePoint(chargerID) -> cache
+
+	stopPolicyRtMu sync.Mutex
+	stopPolicyRt   = make(map[string]StopPolicyRuntime) // chargePoint -> runtime
+)
+
+func resetStopPolicyRuntime(chargePoint string) {
+	if chargePoint == "" {
+		return
+	}
+	stopPolicyRtMu.Lock()
+	delete(stopPolicyRt, chargePoint)
+	stopPolicyRtMu.Unlock()
+}
+
+func getStopPolicyRuntime(chargePoint string) StopPolicyRuntime {
+	stopPolicyRtMu.Lock()
+	defer stopPolicyRtMu.Unlock()
+	return stopPolicyRt[chargePoint]
+}
+
+func setStopPolicyRuntime(chargePoint string, rt StopPolicyRuntime) {
+	stopPolicyRtMu.Lock()
+	stopPolicyRt[chargePoint] = rt
+	stopPolicyRtMu.Unlock()
+}
+
+func cacheStopPolicyForChargePoint(chargePoint string, cabID uint, policy float64) {
+	if chargePoint == "" {
+		return
+	}
+	stopPolicyCacheMu.Lock()
+	stopPolicyCache[chargePoint] = StopPolicyCache{
+		CabinetID:   cabID,
+		ChargePoint: chargePoint,
+		StopPolicy:  policy,
+		LoadedAt:    time.Now().UTC(),
+	}
+	stopPolicyCacheMu.Unlock()
+}
+
+func getCachedStopPolicy(chargePoint string) (StopPolicyCache, bool) {
+	stopPolicyCacheMu.Lock()
+	defer stopPolicyCacheMu.Unlock()
+	c, ok := stopPolicyCache[chargePoint]
+	return c, ok
+}
+
+// โหลด StopPolicy ด้วย charge_point = chargePoint (chargerID) แค่ครั้งเดียวตอนเริ่ม session
+func loadAndCacheStopPolicyOnce(db *gorm.DB, chargePoint string) (StopPolicyCache, error) {
+	if db == nil {
+		db = config.DB()
+	}
+	if chargePoint == "" {
+		return StopPolicyCache{}, fmt.Errorf("chargePoint is required")
+	}
+
+	// ถ้ามี cache อยู่แล้ว ให้คืนเลย (กัน query ซ้ำ)
+	if c, ok := getCachedStopPolicy(chargePoint); ok {
+		return c, nil
+	}
+
+	var cab entity.EVCabinet
+	// select เฉพาะ field ที่จำเป็น
+	if err := db.Select("id", "charge_point", "stop_policy").
+		Where("charge_point = ?", chargePoint).
+		First(&cab).Error; err != nil {
+		return StopPolicyCache{}, err
+	}
+
+	cacheStopPolicyForChargePoint(chargePoint, cab.ID, cab.StopPolicy)
+
+	return StopPolicyCache{
+		CabinetID:   cab.ID,
+		ChargePoint: cab.ChargePoint,
+		StopPolicy:  cab.StopPolicy,
+		LoadedAt:    time.Now().UTC(),
+	}, nil
+}
+
+// ============================================================================
 // 🔹 FRONTEND WebSocket (ดู log OCPP real-time) + ✅ command open/close/verbose
 // ============================================================================
 
@@ -773,6 +881,9 @@ func handleDisconnectAsInterruption(chargerID string) {
 	}
 
 	clearTransactionID(chargerID)
+
+	// ✅ reset runtime stop policy (กันค้างข้าม session)
+	resetStopPolicyRuntime(chargerID)
 
 	// ✅ SNAPSHOT
 	buildAndBroadcastSnapshot(chargerID, "disconnect_timeout_interruption")
@@ -1081,6 +1192,10 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 			// tx จบจริง -> เคลียร์ + snapshot
 			clearTransactionID(chargerID)
+
+			// ✅ reset runtime stop policy (กันค้างข้าม session)
+			resetStopPolicyRuntime(chargerID)
+
 			buildAndBroadcastSnapshot(chargerID, "status_finishing_or_faulted_closed")
 		}
 
@@ -1116,6 +1231,9 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 
 		clearTransactionID(chargerID)
 
+		// ✅ reset runtime stop policy (กันค้างข้าม session)
+		resetStopPolicyRuntime(chargerID)
+
 		response := []interface{}{
 			3,
 			messageID,
@@ -1142,9 +1260,12 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		txFromPayload := extractTransactionIDFromMeterValues(payload)
 		tsFromPayload := extractTimestampFromMeterValues(payload)
 
-		logf("🟨 [METERVALUES] chargePoint=%s energyWh=%.2f tx=%d ts=%s\n",
+		powerKW, _ := extractPowerActiveImport(payload)
+
+		logf("🟨 [METERVALUES] chargePoint=%s energyWh=%.2f powerKW=%.4f tx=%d ts=%s\n",
 			chargerID,
 			energyWh,
+			powerKW,
 			txFromPayload,
 			tsFromPayload,
 		)
@@ -1152,6 +1273,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		// ✅ อัปเดต last meter info ไว้ทำ snapshot เสมอ
 		setLastMeter(chargerID, MeterSnapshot{
 			EnergyWh:      energyWh,
+			PowerKW:       powerKW,
 			TransactionID: txFromPayload,
 			Timestamp:     tsFromPayload,
 		})
@@ -1286,6 +1408,24 @@ func SendRemoteStartTransaction(chargerID string, connectorID int, idTag string)
 	}
 	if idTag == "" {
 		idTag = "EV-SIM-001"
+	}
+
+	// ✅ โหลด StopPolicy แค่ครั้งเดียวตอนเริ่ม session และ reset runtime counter
+	// (ถ้าไม่มีตู้ใน DB หรือ stopPolicy=0 ก็แค่ไม่ทำ auto-stop จาก policy)
+	{
+		db := config.DB()
+		if c, err := loadAndCacheStopPolicyOnce(db, chargerID); err == nil {
+			// reset counter ทุกครั้งที่เริ่ม session ใหม่
+			resetStopPolicyRuntime(chargerID)
+
+			// ไม่จำเป็นต้อง print เสมอ (ถ้าจะดูให้เปิด verbose)
+			vlogf("🧩 [STOP-POLICY] (%s) loaded StopPolicy=%.4f kW (cabinetID=%d) at %s\n",
+				chargerID, c.StopPolicy, c.CabinetID, c.LoadedAt.Format(time.RFC3339))
+		} else {
+			// ไม่ให้กระทบ flow หลัก
+			vlogf("🧩 [STOP-POLICY] (%s) load StopPolicy failed (will ignore policy): %v\n", chargerID, err)
+			resetStopPolicyRuntime(chargerID)
+		}
 	}
 
 	messageID := fmt.Sprintf("remote-start-%s-%d", chargerID, time.Now().UnixNano())
@@ -1553,6 +1693,233 @@ func extractEnergyActiveImportRegister(payload map[string]interface{}) float64 {
 	}
 
 	return 0
+}
+
+// ============================================================================
+// ✅ NEW: ดึงค่า Power.Active.Import (kW) จาก MeterValues payload
+// ============================================================================
+
+func extractPowerActiveImport(payload map[string]interface{}) (float64, bool) {
+	meterValuesRaw, ok := payload["meterValue"].([]interface{})
+	if !ok || len(meterValuesRaw) == 0 {
+		return 0, false
+	}
+
+	mv0, ok := meterValuesRaw[0].(map[string]interface{})
+	if !ok {
+		return 0, false
+	}
+
+	sampledValuesRaw, ok := mv0["sampledValue"].([]interface{})
+	if !ok || len(sampledValuesRaw) == 0 {
+		return 0, false
+	}
+
+	for _, sv := range sampledValuesRaw {
+		m, ok := sv.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		measurand, _ := m["measurand"].(string)
+		if measurand != "Power.Active.Import" {
+			continue
+		}
+
+		// ปกติเป็น string ตามที่ตู้ส่งมา
+		if valStr, ok := m["value"].(string); ok && strings.TrimSpace(valStr) != "" {
+			f, err := strconv.ParseFloat(strings.TrimSpace(valStr), 64)
+			if err != nil {
+				logln("⚠️ parse Power.Active.Import (string) failed:", err)
+				return 0, false
+			}
+			return f, true
+		}
+
+		// เผื่อบางรุ่นส่งเป็น number
+		if valNum, ok := m["value"].(float64); ok {
+			return valNum, true
+		}
+	}
+
+	return 0, false
+}
+
+// ✅ NEW SIGNATURE: เพิ่ม currentEnergyWh
+// ✅ NEW SIGNATURE: เพิ่ม currentEnergyWh
+func applyStopPolicyAutoStopIfNeeded(db *gorm.DB, chargePoint string, sess entity.ChargingSession, meterPayload map[string]interface{}, currentEnergyWh float64) {
+	if db == nil {
+		db = config.DB()
+	}
+	if chargePoint == "" || sess.ID == 0 {
+		return
+	}
+	if !sess.Status {
+		return
+	}
+
+	// 1) stopPolicy จาก cache
+	cache, ok := getCachedStopPolicy(chargePoint)
+	if !ok {
+		if c, err := loadAndCacheStopPolicyOnce(db, chargePoint); err == nil {
+			cache = c
+			ok = true
+		}
+	}
+	if !ok {
+		return
+	}
+	stopPolicy := cache.StopPolicy
+	if stopPolicy <= 0 {
+		return
+	}
+
+	// 2) power จาก MeterValues
+	powerKW, hasPower := extractPowerActiveImport(meterPayload)
+	if !hasPower {
+		return
+	}
+
+	prefix := fmt.Sprintf("🛑 [STOP-POLICY] (%s) ", chargePoint)
+	rt := getStopPolicyRuntime(chargePoint)
+
+	// 3.1) ยังไม่เริ่มนับ -> เริ่มเมื่อ power < policy ครั้งแรก
+	if !rt.Started {
+		if powerKW < stopPolicy {
+			rt.Started = true
+			rt.LowCount = 1
+			rt.WatchRemain = 0
+			rt.LastEventAt = time.Now()
+
+			logf("%sSTART power=%.4fkW < policy=%.4fkW -> count=%d/5\n", prefix, powerKW, stopPolicy, rt.LowCount)
+			setStopPolicyRuntime(chargePoint, rt)
+		}
+		return
+	}
+
+	// 3.2) watch mode
+	if rt.WatchRemain > 0 {
+		if powerKW < stopPolicy {
+			rt.WatchRemain = 0
+			if rt.LowCount < 5 {
+				rt.LowCount++
+			}
+			rt.LastEventAt = time.Now()
+
+			logf("%sWATCH-RECOVER power=%.4fkW < policy=%.4fkW -> count=%d/5\n", prefix, powerKW, stopPolicy, rt.LowCount)
+			setStopPolicyRuntime(chargePoint, rt)
+		} else {
+			rt.WatchRemain--
+			rt.LastEventAt = time.Now()
+
+			logf("%sWATCH power=%.4fkW >= policy=%.4fkW -> remain=%d\n", prefix, powerKW, stopPolicy, rt.WatchRemain)
+
+			if rt.WatchRemain == 0 {
+				logf("%sRESET (watch failed) power still >= policy after 2 checks -> reset counter (was %d/5)\n",
+					prefix, rt.LowCount,
+				)
+				resetStopPolicyRuntime(chargePoint)
+				return
+			}
+			setStopPolicyRuntime(chargePoint, rt)
+		}
+	} else {
+		// 3.3) not watch
+		if powerKW < stopPolicy {
+			if rt.LowCount < 5 {
+				rt.LowCount++
+			}
+			rt.LastEventAt = time.Now()
+
+			logf("%sLOW power=%.4fkW < policy=%.4fkW -> count=%d/5\n", prefix, powerKW, stopPolicy, rt.LowCount)
+			setStopPolicyRuntime(chargePoint, rt)
+		} else {
+			rt.WatchRemain = 2
+			rt.LastEventAt = time.Now()
+
+			logf("%sSPIKE power=%.4fkW >= policy=%.4fkW at count=%d/5 -> watch next 2 values\n",
+				prefix, powerKW, stopPolicy, rt.LowCount,
+			)
+			setStopPolicyRuntime(chargePoint, rt)
+			return
+		}
+	}
+
+	// 4) TRIGGER count=5
+	rt = getStopPolicyRuntime(chargePoint)
+	if !rt.Started || rt.LowCount < 5 {
+		return
+	}
+
+	// กันยิงซ้ำต่อ session
+	if !markAutoStopped(sess.ID) {
+		return
+	}
+
+	// หา txID
+	txID, hasTx := getTransactionID(chargePoint)
+	if !hasTx || txID <= 0 {
+		txID = extractTransactionIDFromMeterValues(meterPayload)
+	}
+
+	logf("%sTRIGGER ✅ count=5/5 -> will REFUND + SAVE remaining BEFORE RemoteStop (sessionID=%d paymentID=%d txID=%d policy=%.4fkW)\n",
+		prefix, sess.ID, sess.PaymentID, txID, stopPolicy,
+	)
+
+	// ✅ A) คืนเงิน + เซฟ remaining_power
+	refRes, refundErr := RefundAndSaveRemainingOnStopPolicy(db, chargePoint, sess, currentEnergyWh)
+	if refundErr != nil {
+		logln(prefix+"❌ RefundAndSaveRemainingOnStopPolicy failed:", refundErr)
+	} else {
+		// ✅ ✅ เพิ่ม “server log” คืนเงินเท่าไหร่ (ตามที่คุณต้องการ)
+		logf("%sREFUND ✅ paymentID=%d userID=%d sessionID=%d purchased=%.2fkWh used=%.2fkWh remainingTotal=%.2fkWh refund=%.2f coin: %.2f -> %.2f\n",
+			prefix,
+			refRes.PaymentID, refRes.UserID, refRes.SessionID,
+			refRes.TotalPurchasedKwh, refRes.UsedKwh, refRes.RemainingTotalKwh,
+			refRes.RefundAmount, refRes.CoinBefore, refRes.CoinAfter,
+		)
+		for _, it := range refRes.Items {
+			logf("%sREFUND-ITEM evcharging_id=%d weight=%.2f%% remaining=%.2fkWh price=%.2f refund=%.2f (old=%.2f delta=%.2f)\n",
+				prefix,
+				it.EVchargingID, it.WeightPercent, it.RemainingKwh, it.PricePerKwh, it.RefundThisItem,
+				it.OldRemainingKwh, it.DeltaKwh,
+			)
+		}
+
+		// broadcast log ไป frontend เหมือนเดิม
+		broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
+			"[STOP-POLICY-REFUND] paymentID=%d userID=%d sessionID=%d remainingTotal=%.2fkWh refund=%.2f coin: %.2f -> %.2f\n",
+			refRes.PaymentID, refRes.UserID, refRes.SessionID, refRes.RemainingTotalKwh, refRes.RefundAmount, refRes.CoinBefore, refRes.CoinAfter,
+		))
+		for _, it := range refRes.Items {
+			broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
+				"[STOP-POLICY-REFUND-ITEM] evcharging_id=%d weight=%.2f%% remaining=%.2fkWh price=%.2f refund=%.2f (old=%.2f delta=%.2f)\n",
+				it.EVchargingID, it.WeightPercent, it.RemainingKwh, it.PricePerKwh, it.RefundThisItem, it.OldRemainingKwh, it.DeltaKwh,
+			))
+		}
+
+		buildAndBroadcastSnapshot(chargePoint, "stop_policy_refund_saved_before_remote_stop")
+	}
+
+	// ✅ B) ส่ง RemoteStop
+	if txID > 0 {
+		if err := SendRemoteStopTransaction(chargePoint, txID); err != nil {
+			logln(prefix+"❌ RemoteStop failed:", err)
+		} else {
+			broadcastLogTextToFrontendRoom(chargePoint, fmt.Sprintf(
+				"[AUTO-STOP-POLICY] chargePoint=%s sessionID=%d txID=%d policy=%.4fkW -> sent RemoteStop\n",
+				chargePoint, sess.ID, txID, stopPolicy,
+			))
+		}
+	} else {
+		logln(prefix + "⚠️ txID not found -> cannot send RemoteStop")
+	}
+
+	// ✅ C) เคลียร์ state
+	clearTransactionID(chargePoint)
+	resetStopPolicyRuntime(chargePoint)
+
+	buildAndBroadcastSnapshot(chargePoint, "auto_stop_policy_triggered_after_refund")
 }
 
 // ============================================================================
@@ -1964,6 +2331,9 @@ func safetyAutoStopWhenPaymentMissing(db *gorm.DB, chargePoint string, sessID ui
 	// เคลียร์ tx ใน memory กัน stale
 	clearTransactionID(chargePoint)
 
+	// reset runtime policy
+	resetStopPolicyRuntime(chargePoint)
+
 	// snapshot แจ้ง UI
 	buildAndBroadcastSnapshot(chargePoint, "safety_auto_stop_payment_missing")
 }
@@ -1976,6 +2346,7 @@ func safetyAutoStopWhenPaymentMissing(db *gorm.DB, chargePoint string, sessID ui
 // 3) 🧾 ITEM ... (แต่ละรายการ)
 // 4) 🧾 CALC ...
 // 5) 🧾 BROADCAST ...
+// + ✅ NEW: 🛑 [STOP-POLICY] ... จะเริ่ม print ต่อเมื่อเริ่มต่ำกว่า StopPolicy ครั้งแรก
 // ============================================================================
 
 func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint string, meterPayload map[string]interface{}, energyWh float64) error {
@@ -2016,6 +2387,11 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 		safetyAutoStopWhenPaymentMissing(db, chargePoint, sess.ID, meterPayload, "session.payment_id=0")
 		return nil
 	}
+
+	// ✅ NEW: StopPolicy AutoStop (Power.Active.Import)
+	// - ทำตรงนี้เพราะมี sess แล้ว และไม่ได้ query StopPolicy ซ้ำ (ใช้ cache)
+	applyStopPolicyAutoStopIfNeeded(db, chargePoint, sess, meterPayload, energyWh)
+
 
 	// ไม่ให้กระทบ flow หลัก
 	if err := extendSessionExpiresAtIfNeeded(db, &sess, chargePoint); err != nil {
@@ -2159,7 +2535,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 	logf("%sCALC startEnergyWh=%.2f totalPowerKwh=%.2f(totalWh=%.2f) endEnergyWh=%.2f currentWh=%.2f usedWh=%.2f used%%=%.2f remainingWh=%.2f remaining%%=%.2f\n",
 		debugPrefix, startEnergyWh, totalPowerKwh, totalPowerWh, endEnergyWh, energyWh, usedWh, usedPercent, remainingWh, remainingPercent)
 
-	// 6) auto stop (ถ้าต้องการลด log ต่อ ก็ปล่อยให้เป็น verbose ได้)
+	// 6) auto stop (percent-based เดิม)
 	if totalPowerWh > 0 && startEnergyWh > 0 && rawUsedPercent >= 100.0 {
 		if markAutoStopped(sess.ID) {
 			vlogf("%s🛑 AUTO STOP TRIGGERED (sessionID=%d usedRaw=%.4f%%)\n", debugPrefix, sess.ID, rawUsedPercent)
@@ -2193,6 +2569,9 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 				))
 			}
 
+			// ✅ reset runtime policy
+			resetStopPolicyRuntime(chargePoint)
+
 			// ✅ SNAPSHOT หลัง auto stop + close
 			buildAndBroadcastSnapshot(chargePoint, "auto_stop_closed")
 		}
@@ -2205,6 +2584,7 @@ func broadcastPaymentPowerByChargePointOnMeterValues(db *gorm.DB, chargePoint st
 
 		"meter_values": map[string]interface{}{
 			"energy_wh":      energyWh,
+			"power_kw":       func() float64 { v, _ := extractPowerActiveImport(meterPayload); return v }(),
 			"transaction_id": extractTransactionIDFromMeterValues(meterPayload),
 			"timestamp":      extractTimestampFromMeterValues(meterPayload),
 		},
@@ -2431,7 +2811,7 @@ func buildSnapshotMemoryOnly(chargerID string, reason string) ChargerSnapshot {
 	// 3) meter (memory)
 	meter, hasMeter := getLastMeter(chargerID)
 	if !hasMeter {
-		meter = MeterSnapshot{EnergyWh: 0, TransactionID: 0, Timestamp: ""}
+		meter = MeterSnapshot{EnergyWh: 0, PowerKW: 0, TransactionID: 0, Timestamp: ""}
 	}
 	if txID > 0 {
 		meter.TransactionID = txID
