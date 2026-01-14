@@ -431,7 +431,7 @@ func seedContent(db *gorm.DB) {
 		Status:       "Active",
 		Latitude:     14.8802,
 		Longitude:    102.018,
-		StopPolicy:   3.75,
+		StopPolicy:   4.50,
 		Image:        "uploads/cabinet/cabinet.jpg",
 		UrlWebsocket: "wss://api.evstation-sut.it.com/ocpp/",
 		ChargePoint:  "CP_1",
