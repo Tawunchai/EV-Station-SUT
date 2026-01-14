@@ -37,7 +37,7 @@ type ConnectorState = {
 
 type OcppRawMessage = [number, string, ...any[]];
 
-const FIXED_POWER_KW = 3.70;
+const FIXED_POWER_KW = 6.80;
 
 // ✅ ค่าคงที่เพื่อให้ payload คล้ายของจริง (ปรับได้ตามต้องการ)
 const FIXED_VOLTAGE_V = 222.86;

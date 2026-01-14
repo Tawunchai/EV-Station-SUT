@@ -424,7 +424,7 @@ const ModalCreateCabinet: React.FC<ModalCreateCabinetProps> = ({
 
               {/* StopPolicy */}
               <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-xs text-slate-600">StopPolicy</span>
+                <span className="text-xs text-slate-600">StopPolicy (Power Active)</span>
                 <input
                   className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="e.g. 10 (optional)"
