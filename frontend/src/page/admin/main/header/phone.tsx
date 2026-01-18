@@ -21,21 +21,48 @@ const PhoneDashboard = () => {
   const [totalAmount, setTotalAmount] = useState<number>(0);
   const [userCount, setUserCount] = useState<number>(0);
   const [employeeCount, setEmployeeCount] = useState<number>(0);
-  const [evPayments, setEvPayments] = useState<EVChargingPayListmentInterface[]>([]);
+  const [evPayments, setEvPayments] = useState<EVChargingPayListmentInterface[]>(
+    []
+  );
 
   const brandBlue = "#2563eb";
+
+  // ✅ ฟังก์ชันคำนวณ "เงินที่ใช้ไปแล้ว" โดยเอา RemainingPower มาคิดด้วย (ใช้ร่วมกันทั้งไฟล์)
+  const calcUsedBahtWithRemain = (payment: any) => {
+    const totalPower = Number(payment?.Power) || 0; // kWh ที่ซื้อ
+    const remainingPower = Math.max(0, Number(payment?.RemainingPower) || 0); // kWh ที่เหลือ
+    const usedPower = Math.max(0, totalPower - remainingPower);
+
+    const rate = Number(payment?.EVcharging?.Price) || 0; // บาท/kWh
+    const paidBaht = Number(payment?.Price) || 0; // บาทที่จ่ายจริง
+
+    let remainingBaht = rate > 0 ? remainingPower * rate : 0;
+    if (paidBaht > 0 && remainingBaht > paidBaht) remainingBaht = paidBaht;
+
+    let usedBaht = 0;
+    if (paidBaht > 0) {
+      usedBaht = Math.max(0, paidBaht - remainingBaht);
+    } else if (rate > 0) {
+      usedBaht = usedPower * rate;
+    }
+
+    return usedBaht;
+  };
 
   useEffect(() => {
     const load = async () => {
       const payRes = await ListPayments();
       if (payRes) {
         setPayments(payRes);
-        setTotalAmount(payRes.reduce((sum, p) => sum + (p.Amount || 0), 0));
+        // ❌ เดิม: Total Payment ใช้ Amount รวม (ยังไม่หัก remain)
+        // ✅ ตอนนี้จะไป setTotalAmount จาก EV ที่คิด remain แล้วแทน
       }
 
       const usersRes = await ListUsers();
       if (usersRes) {
-        setUserCount(usersRes.filter((u) => u.UserRole?.RoleName === "User").length);
+        setUserCount(
+          usersRes.filter((u) => u.UserRole?.RoleName === "User").length
+        );
         setEmployeeCount(
           usersRes.filter(
             (u) =>
@@ -46,22 +73,90 @@ const PhoneDashboard = () => {
       }
 
       const evRes = await ListEVChargingPayments();
-      if (evRes) setEvPayments(evRes);
+
+      // ✅ ถ้าไม่มีข้อมูล EV Charging -> Total Payment = 0 BATH + ยังต้องโชว์ Solar/Grid เป็น 0
+      if (!Array.isArray(evRes) || evRes.length === 0) {
+        setEvPayments([]);
+        setTotalAmount(0);
+        return;
+      }
+
+      setEvPayments(evRes);
+
+      // ✅ Total Payment = ยอด "ใช้ไปแล้วจริง" (คิด RemainingPower)
+      const usedBahtSum = evRes.reduce((sum, cur: any) => {
+        return sum + calcUsedBahtWithRemain(cur);
+      }, 0);
+
+      setTotalAmount(usedBahtSum);
     };
+
     load();
   }, []);
 
-  // รวมยอด EV ตามสถานี
-  const evSummary = Object.values(
-    evPayments.reduce((acc, cur) => {
-      const id = cur.EVcharging?.ID;
-      if (!id) return acc;
-      const name = cur.EVcharging?.Name ?? `Charger ${id}`;
-      acc[id] = acc[id] || { id, name, total: 0 };
-      acc[id].total += cur.Price;
+  // ✅ รายการที่ต้องแสดงเสมอ ถึงแม้ไม่มีข้อมูลใน DB/API
+  const DEFAULT_CHARGERS = [
+    { id: -101, name: "Solar" },
+    { id: -102, name: "Grid" },
+    // ถ้าคุณมีชื่อแบบ Solar+Grid ด้วย ให้เปิดบรรทัดนี้ได้
+    // { id: -103, name: "Solar + Grid" },
+  ];
+
+  // ✅ รวมยอด EV ตามสถานี (คิด RemainingPower ด้วย) + Solar/Grid ต้องขึ้นเสมอแม้ 0
+  // ✅ FIX: กัน Solar/Grid ซ้ำ โดย merge ด้วย "ชื่อ" ไม่ใช่ id
+  const evSummary = (() => {
+    // 1) base: ใส่ Solar/Grid ไว้ก่อนเสมอ (ยอด = 0)
+    const baseByKey = DEFAULT_CHARGERS.reduce((acc, item) => {
+      acc[`name:${item.name}`] = { id: item.id, name: item.name, total: 0 };
       return acc;
-    }, {} as Record<number, { id: number; name: string; total: number }>)
-  );
+    }, {} as Record<string, { id: number; name: string; total: number }>);
+
+    // 2) merge ข้อมูลจริงจาก evPayments
+    const merged = evPayments.reduce((acc, cur: any) => {
+      const realId = cur?.EVcharging?.ID;
+      if (!realId) return acc;
+
+      const realName = cur?.EVcharging?.Name ?? "";
+      const usedBaht = calcUsedBahtWithRemain(cur);
+
+      // ✅ ถ้าเป็น Solar/Grid → รวมเข้ากับ default เดิม (ไม่สร้างซ้ำ)
+      if (realName === "Solar" || realName === "Grid" || realName === "Solar + Grid") {
+        const key = `name:${realName}`;
+
+        if (!acc[key]) {
+          // เผื่อกรณีชื่อ "Solar + Grid" ไม่ได้ใส่ใน DEFAULT_CHARGERS
+          acc[key] = { id: realId, name: realName, total: 0 };
+        }
+
+        acc[key].total += usedBaht;
+        return acc;
+      }
+
+      // ✅ รายการอื่น ๆ → ใช้ id เป็น key ปกติ
+      const key = `id:${realId}`;
+      const name =
+        realName && realName.trim().length > 0 ? realName : `Charger ${realId}`;
+
+      if (!acc[key]) acc[key] = { id: realId, name, total: 0 };
+      acc[key].total += usedBaht;
+
+      return acc;
+    }, baseByKey);
+
+    // 3) คืนค่าเป็น array และจัดลำดับให้ Solar/Grid ขึ้นก่อน
+    const arr = Object.values(merged);
+
+    const order = ["Solar", "Grid", "Solar + Grid"];
+    arr.sort((a, b) => {
+      const ia = order.indexOf(a.name);
+      const ib = order.indexOf(b.name);
+      const ra = ia === -1 ? 999 : ia;
+      const rb = ib === -1 ? 999 : ib;
+      return ra - rb;
+    });
+
+    return arr;
+  })();
 
   const earningData = [
     {
@@ -74,14 +169,18 @@ const PhoneDashboard = () => {
       icon: <MdOutlineSupervisorAccount />,
       value: employeeCount,
     },
-    ...evSummary.map((ev) => ({
-      title: ev.name,
-      icon: <FaChargingStation />,
-      value: `฿ ${ev.total.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}`,
-    })),
+    ...evSummary.map((ev) => {
+      const safeTotal = Number(ev?.total) || 0;
+
+      return {
+        title: ev.name,
+        icon: <FaChargingStation />,
+        value: `฿ ${safeTotal.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
+      };
+    }),
   ];
 
   const handleDownloadCSV = async () => {
@@ -120,7 +219,10 @@ const PhoneDashboard = () => {
           <div>
             <p className="text-white/90 text-sm">Total Payment</p>
             <h1 className="text-3xl font-semibold text-white mt-1">
-              ฿ {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}{" "}
+              ฿{" "}
+              {totalAmount.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+              })}{" "}
               <span className="text-xs text-blue-100">BATH</span>
             </h1>
           </div>
