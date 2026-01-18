@@ -5,9 +5,10 @@ import (
 	"net/smtp"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Tawunchai/work-project/config"
 	"github.com/Tawunchai/work-project/entity"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ✅ ฟังก์ชันส่งอีเมลแจ้งเตือน
@@ -88,4 +89,67 @@ func sendEmailWithAppPassword(from, appPassword, to, subject, body string) error
 	auth := smtp.PlainAuth("", from, appPassword, "smtp.gmail.com")
 	msg := []byte(fmt.Sprintf("To: %s\r\nSubject: %s\r\n\r\n%s", to, subject, body))
 	return smtp.SendMail("smtp.gmail.com:587", auth, from, []string{to}, msg)
+}
+
+// ✅ ลบข้อมูล SolarRealtimeData + MeterRealtimeData ทุกๆ 3 เดือน (Hard Delete จริง)
+// - ใช้ Unscoped() = ลบจริง ไม่ใช่ soft delete
+// - ใช้ Transaction เพื่อความปลอดภัย
+func PurgeSolarAndMeterRealtimeData(c *gin.Context) {
+	db := config.DB()
+
+	var deletedSolar int64
+	var deletedMeter int64
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		// ✅ 1) ลบ SolarRealtimeData ทั้งหมด (Hard Delete)
+		resSolar := tx.
+			Session(&gorm.Session{AllowGlobalUpdate: true}).
+			Unscoped().
+			Delete(&entity.SolarRealtimeData{})
+		if resSolar.Error != nil {
+			return resSolar.Error
+		}
+		deletedSolar = resSolar.RowsAffected
+
+		// ✅ 2) ลบ MeterRealtimeData ทั้งหมด (Hard Delete)
+		resMeter := tx.
+			Session(&gorm.Session{AllowGlobalUpdate: true}).
+			Unscoped().
+			Delete(&entity.MeterRealtimeData{})
+		if resMeter.Error != nil {
+			return resMeter.Error
+		}
+		deletedMeter = resMeter.RowsAffected
+
+		return nil
+	})
+
+	if err != nil {
+		if c != nil {
+			c.JSON(500, gin.H{
+				"error":  "ไม่สามารถลบข้อมูล RealtimeData ได้",
+				"detail": err.Error(),
+			})
+		} else {
+			fmt.Printf("❌ Purge realtime data failed: %v\n", err)
+		}
+		return
+	}
+
+	// ✅ Success
+	resp := gin.H{
+		"message":        "✅ ลบข้อมูล SolarRealtimeData + MeterRealtimeData สำเร็จ (Hard Delete)",
+		"deleted_solar":  deletedSolar,
+		"deleted_meter":  deletedMeter,
+		"total_deleted":  deletedSolar + deletedMeter,
+		"delete_mode":    "HARD_DELETE_UNSCOPED",
+		"schedule_note":  "runs every 3 months",
+	}
+
+	if c != nil {
+		c.JSON(200, resp)
+	} else {
+		fmt.Printf("✅ Purge Success (Cron): deleted_solar=%d deleted_meter=%d total=%d\n",
+			deletedSolar, deletedMeter, deletedSolar+deletedMeter)
+	}
 }

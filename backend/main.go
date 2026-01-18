@@ -62,12 +62,24 @@ func main() {
 
 	// ✅ 2. เพิ่ม Cron Job หลัง DB setup และก่อนรันเซิร์ฟเวอร์
 	c := cron.New()
+
+	// ✅ ส่งอีเมลทุกเช้า 07:00
 	c.AddFunc("0 7 * * *", func() {
 		log.Println("🕖 เริ่มทำงานส่งอีเมลแจ้งเตือน Booking วันนี้...")
 		notify.SendBookingReminder(nil)
 	})
+
+	// ✅ ✅ ลบข้อมูล SolarRealtimeData + MeterRealtimeData ทุกๆ 3 เดือน (Hard Delete)
+	// รันวันที่ 1 ของทุกๆ 3 เดือน เวลา 03:00 
+	// real 0 3 1 */3 *
+	// test 50 22 18 1 *
+	c.AddFunc("0 3 1 */3 *", func() {
+		log.Println("🧹 เริ่มลบข้อมูล SolarRealtimeData + MeterRealtimeData (ทุก 3 เดือน) ...")
+		notify.PurgeSolarAndMeterRealtimeData(nil)
+	})
+
 	c.Start()
-	log.Println("✅ Scheduler started (runs every day at 07:00 AM).")
+	log.Println("✅ Scheduler started (Email 07:00 daily, Purge every 3 months).")
 
 	authorized := r.Group("")
 	authorized.Use(middlewares.Authorizes())

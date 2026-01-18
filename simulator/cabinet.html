@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test OCPP Cabinet - Manual WebSocket Tester</title>
+
+    <!-- ✅ Tailwind CDN (ใช้ class เดิมให้เหมือน React มากที่สุด) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      /* ให้ scroll log ดูนุ่มขึ้นนิดหน่อย */
+      .log-scroll {
+        scroll-behavior: smooth;
+      }
+    </style>
+  </head>
+
+  <body class="min-h-screen w-full bg-gradient-to-br from-sky-50 via-white to-sky-100 text-slate-900">
+    <!-- ✅ Header -->
+    <header class="sticky top-0 z-20 bg-blue-600 text-white shadow-sm">
+      <div class="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button
+            id="btnBack"
+            class="inline-flex items-center rounded-lg bg-white/95 px-3 py-1.5 text-xs sm:text-sm font-semibold text-blue-600 shadow-sm hover:bg-white"
+            type="button"
+          >
+            ← Back
+          </button>
+
+          <div class="flex flex-col">
+            <span class="text-[11px] uppercase tracking-wide opacity-90">
+              TEST OCPP Cabinet
+            </span>
+            <span class="text-xs sm:text-sm font-semibold">
+              Manual WebSocket Tester
+            </span>
+          </div>
+        </div>
+
+        <span class="inline-flex items-center gap-1 text-[11px] sm:text-xs text-blue-50">
+          <span id="wifiIcon" class="text-blue-200">
+            <!-- wifi icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+              <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+              <path d="M12 20h.01" />
+            </svg>
+          </span>
+          <span id="connText">Not connected</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- ✅ Main -->
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 pt-5 pb-20 space-y-5 mt-14 sm:mt-0">
+      <!-- Connection Bar -->
+      <section class="rounded-2xl bg-white shadow-sm border border-sky-100 p-4 sm:p-5">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div class="flex-1">
+            <p class="text-xs sm:text-sm text-slate-500 mb-1">WebSocket URL</p>
+            <input
+              id="wsUrl"
+              class="w-full text-xs sm:text-sm rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
+              placeholder="ws://192.168.x.x:8000/ocpp/CP_1 หรือ wss://your-domain/ocpp/CP_1"
+            />
+            <p class="mt-1 text-[11px] text-slate-400">
+              ใส่ WebSocket URL ของ OCPP Server ที่ต้องการทดสอบเองได้เลย
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button
+              id="btnConnect"
+              class="px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm"
+              type="button"
+            >
+              <span>
+                <!-- wifi icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                  <path d="M12 20h.01" />
+                </svg>
+              </span>
+              Connect
+            </button>
+
+            <button
+              id="btnDisconnect"
+              class="px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-slate-100 text-slate-400 cursor-not-allowed"
+              type="button"
+              disabled
+            >
+              Disconnect
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SoC + EV Status Panel -->
+      <section>
+        <div class="rounded-2xl bg-white shadow-sm border border-sky-100 p-5 sm:p-6 flex flex-col lg:flex-row gap-5">
+          <!-- Gauge -->
+          <div class="flex-1 flex flex-col items-center justify-center">
+            <p class="text-xs sm:text-sm text-slate-500 mb-1">
+              SoC Status <span class="text-[11px]">(สถานะแบตเตอรี่)</span>
+            </p>
+
+            <div class="relative w-40 h-40 sm:w-52 sm:h-52">
+              <svg id="socSvg" viewBox="0 0 200 200" class="w-full h-full" aria-label="State of Charge">
+                <!-- base rings -->
+                <circle cx="100" cy="100" r="76" fill="none" stroke="#E2E8F0" stroke-width="10"></circle>
+                <circle cx="100" cy="100" r="62" fill="none" stroke="#E2E8F0" stroke-width="10"></circle>
+
+                <!-- progress rings -->
+                <circle
+                  id="outerRing"
+                  cx="100" cy="100" r="76"
+                  fill="none"
+                  stroke="url(#gridGrad)"
+                  stroke-width="10"
+                  stroke-linecap="round"
+                  stroke-dasharray="477.522"
+                  stroke-dashoffset="477.522"
+                  transform="rotate(-90 100 100)"
+                  class="transition-all duration-500"
+                ></circle>
+
+                <circle
+                  id="innerRing"
+                  cx="100" cy="100" r="62"
+                  fill="none"
+                  stroke="url(#solarGrad)"
+                  stroke-width="10"
+                  stroke-linecap="round"
+                  stroke-dasharray="389.557"
+                  stroke-dashoffset="389.557"
+                  transform="rotate(-90 100 100)"
+                  class="transition-all duration-500"
+                ></circle>
+
+                <defs>
+                  <linearGradient id="gridGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#0ea5e9"></stop>
+                    <stop offset="50%" stop-color="#0284c7"></stop>
+                    <stop offset="100%" stop-color="#0369a1"></stop>
+                  </linearGradient>
+                  <linearGradient id="solarGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#fed7aa"></stop>
+                    <stop offset="50%" stop-color="#fb923c"></stop>
+                    <stop offset="100%" stop-color="#ea580c"></stop>
+                  </linearGradient>
+                </defs>
+
+                <circle cx="100" cy="100" r="48" fill="#F8FAFC"></circle>
+                <text
+                  id="socText"
+                  x="50%" y="50%"
+                  dominant-baseline="middle"
+                  text-anchor="middle"
+                  class="text-3xl sm:text-4xl font-extrabold"
+                  fill="#0f172a"
+                >
+                  00%
+                </text>
+              </svg>
+            </div>
+
+            <p class="mt-2 text-xs text-slate-500">
+              Energy delivered:
+              <span id="energyTotal" class="font-semibold text-black">0.0 kWh</span>
+            </p>
+
+            <p class="mt-1 text-[11px] text-slate-500">
+              Solar:
+              <span id="energySolar" class="font-semibold text-emerald-600">0.0 kWh</span>
+              · Grid:
+              <span id="energyGrid" class="font-semibold text-sky-700">0.0 kWh</span>
+            </p>
+          </div>
+
+          <!-- Right Status + Buttons -->
+          <div class="flex-1 flex flex-col gap-4 justify-between">
+            <div>
+              <p class="text-xs sm:text-sm text-slate-500 mb-1">EVSE Status</p>
+              <div class="flex items-center gap-3">
+                <div class="h-10 w-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center">
+                  <!-- lightning icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-sky-600" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+                  </svg>
+                </div>
+                <div>
+                  <p id="statusText" class="text-sm sm:text-base font-semibold text-slate-600">Available</p>
+                  <p id="statusThai" class="text-[11px] text-slate-500">พร้อมใช้งาน</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Plug + Lock -->
+            <div class="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div class="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="h-8 w-8 rounded-lg bg-white border border-sky-100 flex items-center justify-center">
+                    <!-- battery icon -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="2" y="7" width="18" height="10" rx="2" ry="2"></rect>
+                      <path d="M22 11v2"></path>
+                      <path d="M7 12h6"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <p id="plugTitle" class="font-semibold text-slate-800">Not plugged</p>
+                    <p id="plugThai" class="text-[11px] text-slate-500">ยังไม่เสียบปลั๊ก</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border border-emerald-50 bg-emerald-50 px-3 py-2 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="h-8 w-8 rounded-lg bg-white border border-emerald-100 flex items-center justify-center">
+                    <!-- power icon -->
+                    <svg id="lockIcon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2v10"></path>
+                      <path d="M18.36 6.64a9 9 0 1 1-12.72 0"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <p id="lockTitle" class="font-semibold text-slate-800">Unlocked</p>
+                    <p id="lockThai" class="text-[11px] text-slate-500">ปลดล็อกรถ</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Power + Duration -->
+            <div class="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div class="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
+                <div>
+                  <p class="text-[11px] text-slate-500">Output Power</p>
+                  <p id="powerText" class="font-semibold text-sky-700">0.00 kW</p>
+                </div>
+                <!-- battery icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="7" width="18" height="10" rx="2" ry="2"></rect>
+                  <path d="M22 11v2"></path>
+                </svg>
+              </div>
+
+              <div class="rounded-xl border border-sky-50 bg-sky-50 px-3 py-2 flex items-center justify-between">
+                <div>
+                  <p class="text-[11px] text-slate-500">Duration</p>
+                  <p id="durationText" class="font-semibold text-sky-700">-</p>
+                </div>
+                <!-- clock icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 6v6l4 2"></path>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Control Buttons -->
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <button
+                id="btnTogglePlug"
+                class="rounded-xl bg-sky-600 text-white text-xs sm:text-sm font-semibold py-2.5 hover:bg-sky-500 flex items-center justify-center gap-2 shadow-sm"
+                type="button"
+              >
+                Plug In EV
+              </button>
+
+              <button
+                id="btnToggleLock"
+                class="rounded-xl bg-sky-50 text-sky-800 text-xs sm:text-sm font-semibold py-2.5 hover:bg-sky-100 flex items-center justify-center gap-2 border border-sky-100"
+                type="button"
+              >
+                Unlock → Lock
+              </button>
+
+              <button
+                id="btnStart"
+                class="rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 bg-slate-100 text-slate-400 cursor-not-allowed"
+                type="button"
+                disabled
+              >
+                Request Start
+              </button>
+
+              <button
+                id="btnStop"
+                class="rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 bg-slate-100 text-slate-400 cursor-not-allowed"
+                type="button"
+                disabled
+              >
+                Request Stop
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Event Log -->
+      <section class="rounded-2xl bg-white shadow-sm border border-sky-100 p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs sm:text-sm font-semibold text-slate-700">Event Log</p>
+
+          <div class="flex items-center gap-2">
+            <button
+              id="btnLatest"
+              class="inline-flex items-center gap-1 text-[11px] text-sky-600 hover:text-sky-800"
+              type="button"
+            >
+              <!-- arrow down -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14"></path>
+                <path d="M19 12l-7 7-7-7"></path>
+              </svg>
+              Latest
+            </button>
+
+            <button id="btnClearLogs" class="text-[11px] text-slate-400 hover:text-slate-600" type="button">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div
+          id="logBox"
+          class="log-scroll h-32 sm:h-40 overflow-y-auto rounded-lg bg-sky-50 text-[11px] sm:text-xs text-slate-700 px-3 py-2 border border-sky-100"
+        >
+          <p id="logEmpty" class="text-slate-400">...waiting for events (BootNotification / Heartbeat / etc.)</p>
+          <div id="logList" class="hidden"></div>
+          <div id="logsEnd"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // =========================
+      // ✅ TYPES (อธิบายด้วยคอมเมนต์)
+      // =========================
+      // ConnectorStatus: "Available" | "Preparing" | "Charging" | "SuspendedEV" | "Finishing" | "Faulted" | "Unavailable"
+      // ConnectorState:
+      // { status, soc, isPluggedIn, isLocked, powerKw, energyKWh, startedAt, transactionId, meterWh }
+
+      // =========================
+      // ✅ CONST (เหมือน React)
+      // =========================
+      const FIXED_POWER_KW = 6.80;
+      const FIXED_VOLTAGE_V = 222.86;
+      const FIXED_CURRENT_IMPORT_A = 30.45;
+      const FIXED_CURRENT_OFFERED_A = 32.0;
+
+      const ZERO_STATE = {
+        status: "Available",
+        soc: 0,
+        isPluggedIn: false,
+        isLocked: false,
+        powerKw: 0,
+        energyKWh: 0,
+        startedAt: null,
+        transactionId: null,
+        meterWh: 0,
+      };
+
+      const thaiStatusMap = {
+        Available: "พร้อมใช้งาน",
+        Preparing: "กำลังเตรียม",
+        Charging: "กำลังชาร์จ",
+        SuspendedEV: "ระงับโดย EV",
+        Finishing: "กำลังเสร็จสิ้น",
+        Faulted: "มีข้อผิดพลาด",
+        Unavailable: "ไม่พร้อมใช้งาน",
+      };
+
+      // =========================
+      // ✅ STATE
+      // =========================
+      const state = {
+        wsUrl: "",
+        ws: null,
+        isConnected: false,
+        logs: [],
+        connector: { ...ZERO_STATE },
+        heartbeatIntervalId: null,
+        meterIntervalId: null,
+      };
+
+      // =========================
+      // ✅ DOM
+      // =========================
+      const el = {
+        btnBack: document.getElementById("btnBack"),
+        wsUrl: document.getElementById("wsUrl"),
+        btnConnect: document.getElementById("btnConnect"),
+        btnDisconnect: document.getElementById("btnDisconnect"),
+        wifiIcon: document.getElementById("wifiIcon"),
+        connText: document.getElementById("connText"),
+
+        socText: document.getElementById("socText"),
+        outerRing: document.getElementById("outerRing"),
+        innerRing: document.getElementById("innerRing"),
+
+        energyTotal: document.getElementById("energyTotal"),
+        energySolar: document.getElementById("energySolar"),
+        energyGrid: document.getElementById("energyGrid"),
+
+        statusText: document.getElementById("statusText"),
+        statusThai: document.getElementById("statusThai"),
+
+        plugTitle: document.getElementById("plugTitle"),
+        plugThai: document.getElementById("plugThai"),
+        lockTitle: document.getElementById("lockTitle"),
+        lockThai: document.getElementById("lockThai"),
+        lockIcon: document.getElementById("lockIcon"),
+
+        powerText: document.getElementById("powerText"),
+        durationText: document.getElementById("durationText"),
+
+        btnTogglePlug: document.getElementById("btnTogglePlug"),
+        btnToggleLock: document.getElementById("btnToggleLock"),
+        btnStart: document.getElementById("btnStart"),
+        btnStop: document.getElementById("btnStop"),
+
+        btnLatest: document.getElementById("btnLatest"),
+        btnClearLogs: document.getElementById("btnClearLogs"),
+        logEmpty: document.getElementById("logEmpty"),
+        logList: document.getElementById("logList"),
+        logsEnd: document.getElementById("logsEnd"),
+        logBox: document.getElementById("logBox"),
+      };
+
+      // =========================
+      // ✅ HELPERS (เหมือน React)
+      // =========================
+      function generateUUID() {
+        if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+
+      function appendLog(msg) {
+        const time = new Date().toLocaleTimeString();
+        state.logs.push(`${time} ${msg}`);
+        if (state.logs.length > 150) state.logs.shift();
+        renderLogs();
+      }
+
+      function setConnector(patchFn) {
+        const next = patchFn({ ...state.connector });
+        state.connector = next;
+        renderUI();
+      }
+
+      function sendOcppMessage(payloadArr) {
+        const json = JSON.stringify(payloadArr);
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+          state.ws.send(json);
+          appendLog(`[SENT] ${json}`);
+        } else {
+          appendLog("[ERROR] WebSocket not connected");
+        }
+      }
+
+      // =========================
+      // ✅ OCPP BASIC
+      // =========================
+      function sendBootNotification() {
+        const msg = [
+          2,
+          generateUUID(),
+          "BootNotification",
+          {
+            chargePointModel: "EV-Dashboard-01",
+            chargePointVendor: "EVStation",
+          },
+        ];
+        appendLog("[SYSTEM] Sending BootNotification");
+        sendOcppMessage(msg);
+      }
+
+      function sendHeartbeat() {
+        const msg = [2, generateUUID(), "Heartbeat", {}];
+        sendOcppMessage(msg);
+      }
+
+      function sendStatusNotification(status, errorCode = "NoError") {
+        const msg = [
+          2,
+          generateUUID(),
+          "StatusNotification",
+          {
+            connectorId: 1,
+            errorCode,
+            status,
+            timestamp: new Date().toISOString(),
+          },
+        ];
+        appendLog(`[SYSTEM] StatusNotification → ${status}`);
+        sendOcppMessage(msg);
+
+        // ✅ ปรับ powerKw ตามสถานะ (เหมือน React)
+        setConnector((prev) => ({
+          ...prev,
+          status,
+          powerKw: status === "Charging" ? FIXED_POWER_KW : status === "Finishing" ? 0 : prev.powerKw,
+        }));
+      }
+
+      // =========================
+      // ✅ METER LOOP
+      // =========================
+      function stopMeterLoop() {
+        if (state.meterIntervalId !== null) {
+          clearInterval(state.meterIntervalId);
+          state.meterIntervalId = null;
+          appendLog("[SYSTEM] MeterValues loop stopped");
+        }
+      }
+
+      function buildMeterValuesPayload({ txId, meterWh, soc }) {
+        return {
+          connectorId: 1,
+          transactionId: txId,
+          meterValue: [
+            {
+              timestamp: new Date().toISOString(),
+              sampledValue: [
+                {
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  location: "Body",
+                  measurand: "Voltage",
+                  phase: "L1-N",
+                  unit: "V",
+                  value: FIXED_VOLTAGE_V.toFixed(2),
+                },
+                {
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  location: "Body",
+                  measurand: "Current.Import",
+                  phase: "L1",
+                  unit: "A",
+                  value: FIXED_CURRENT_IMPORT_A.toFixed(2),
+                },
+                {
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  location: "Body",
+                  measurand: "Power.Active.Import",
+                  phase: "L1-N",
+                  unit: "kW",
+                  value: FIXED_POWER_KW.toFixed(2),
+                },
+                {
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  location: "Body",
+                  measurand: "Energy.Active.Import.Register",
+                  phase: "L1-N",
+                  unit: "Wh",
+                  value: String(Math.max(0, Math.floor(meterWh))),
+                },
+                {
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  location: "EV",
+                  measurand: "SoC",
+                  unit: "Percent",
+                  value: String(Math.max(0, Math.min(100, Math.floor(soc)))),
+                },
+                {
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  location: "Body",
+                  measurand: "Current.Offered",
+                  phase: "L1",
+                  unit: "A",
+                  value: FIXED_CURRENT_OFFERED_A.toFixed(2),
+                },
+              ],
+            },
+          ],
+        };
+      }
+
+      function sendMeterValues() {
+        const c = state.connector;
+
+        if (!c.transactionId) {
+          appendLog("[SYSTEM] No active transaction. Stopping MeterValues loop.");
+          stopMeterLoop();
+          return;
+        }
+
+        // ✅ จำลอง SoC / Energy / MeterWh
+        if (c.status === "Charging" && c.soc < 100) {
+          const nextSoc = Math.min(100, c.soc + 2);
+          const nextMeterWh = c.meterWh + 100;
+          const nextEnergyKWh = c.energyKWh + 0.1;
+
+          setConnector((prev) => ({
+            ...prev,
+            soc: nextSoc,
+            meterWh: nextMeterWh,
+            energyKWh: nextEnergyKWh,
+            powerKw: FIXED_POWER_KW,
+          }));
+
+          const msg = [
+            2,
+            generateUUID(),
+            "MeterValues",
+            buildMeterValuesPayload({
+              txId: c.transactionId,
+              meterWh: nextMeterWh,
+              soc: nextSoc,
+            }),
+          ];
+          sendOcppMessage(msg);
+
+          if (nextSoc >= 100) {
+            appendLog("[SYSTEM] Battery full (100%), simulating transition to SuspendedEV.");
+            sendStatusNotification("SuspendedEV");
+            return;
+          }
+          return;
+        }
+
+        if (c.soc >= 100 && c.status === "Charging") {
+          appendLog("[SYSTEM] Battery full (100%), simulating transition to SuspendedEV.");
+          sendStatusNotification("SuspendedEV");
+          return;
+        }
+
+        if (c.status !== "Charging") {
+          appendLog("[SYSTEM] Status changed from Charging. Stopping MeterValues loop.");
+          stopMeterLoop();
+          return;
+        }
+      }
+
+      function startMeterLoop() {
+        stopMeterLoop();
+        appendLog("[SYSTEM] MeterValues loop started (simulate SoC & energy every 5s)");
+        state.meterIntervalId = setInterval(sendMeterValues, 5000);
+      }
+
+      // =========================
+      // ✅ TRANSACTION (LOCAL BUTTONS)
+      // =========================
+      function sendStartTransaction() {
+        const c = state.connector;
+
+        if (c.status === "Finishing") {
+          appendLog("[ERROR] Cannot start: status is Finishing. Please Unplug EV to reset to Available.");
+          return;
+        }
+        if (c.transactionId) {
+          appendLog("[ERROR] StartTransaction: already active");
+          return;
+        }
+
+        const msg = [
+          2,
+          generateUUID(),
+          "StartTransaction",
+          {
+            connectorId: 1,
+            idTag: "EV-SIM-001",
+            meterStart: c.meterWh,
+            timestamp: new Date().toISOString(),
+          },
+        ];
+        sendOcppMessage(msg);
+        appendLog("[SYSTEM] Request StartTransaction (local)");
+      }
+
+      function sendStopTransaction() {
+        const c = state.connector;
+        if (!c.transactionId) {
+          appendLog("[ERROR] No active transaction to stop");
+          return;
+        }
+
+        stopMeterLoop();
+
+        const msg = [
+          2,
+          generateUUID(),
+          "StopTransaction",
+          {
+            transactionId: c.transactionId,
+            meterStop: c.meterWh,
+            timestamp: new Date().toISOString(),
+          },
+        ];
+        sendOcppMessage(msg);
+        appendLog("[SYSTEM] Request StopTransaction (local)");
+      }
+
+      // =========================
+      // ✅ WS CONNECT/DISCONNECT
+      // =========================
+      function clearAllIntervals() {
+        if (state.heartbeatIntervalId !== null) {
+          clearInterval(state.heartbeatIntervalId);
+          state.heartbeatIntervalId = null;
+        }
+        stopMeterLoop();
+      }
+
+      function connectWS() {
+        state.wsUrl = (el.wsUrl.value || "").trim();
+        if (!state.wsUrl) {
+          appendLog("[ERROR] WebSocket URL is empty");
+          return;
+        }
+
+        try {
+          if (state.ws) state.ws.close();
+
+          const ws = new WebSocket(state.wsUrl, "ocpp1.6");
+          state.ws = ws;
+          appendLog(`[SYSTEM] Connecting to ${state.wsUrl} ...`);
+
+          ws.onopen = () => {
+            state.isConnected = true;
+            appendLog("[SYSTEM] WebSocket connected");
+            renderUI();
+            sendBootNotification();
+          };
+
+          ws.onclose = () => {
+            state.isConnected = false;
+            appendLog("[SYSTEM] WebSocket disconnected");
+            clearAllIntervals();
+            setConnector(() => ({ ...ZERO_STATE }));
+            renderUI();
+          };
+
+          ws.onerror = () => appendLog("[ERROR] WebSocket error");
+
+          ws.onmessage = (event) => {
+            appendLog(`[RECV] ${event.data}`);
+
+            let msg;
+            try {
+              msg = JSON.parse(event.data);
+            } catch {
+              return;
+            }
+            if (!Array.isArray(msg) || msg.length < 3) return;
+
+            const messageTypeId = msg[0];
+
+            if (messageTypeId === 3) {
+              // CALLRESULT: [3, messageId, payload]
+              const payload = msg[2];
+              handleCallResult(payload);
+            } else if (messageTypeId === 2) {
+              // CALL: [2, messageId, action, payload]
+              const messageId = msg[1];
+              const action = msg[2];
+              const payload = msg[3];
+              handleCall(messageId, action, payload);
+            }
+          };
+        } catch (e) {
+          console.error(e);
+          appendLog("[ERROR] Failed to open WebSocket");
+        }
+      }
+
+      function disconnectWS() {
+        if (state.ws) {
+          state.ws.close();
+          state.ws = null;
+        }
+      }
+
+      // =========================
+      // ✅ CALLRESULT HANDLER
+      // =========================
+      function handleCallResult(payload) {
+        if (!payload || typeof payload !== "object") return;
+
+        // BootNotification.conf
+        if ("status" in payload && "interval" in payload) {
+          if (payload.status === "Accepted") {
+            const intervalSec = payload.interval || 300;
+            appendLog(`[SYSTEM] BootNotification accepted. Start Heartbeat every ${intervalSec}s`);
+
+            if (state.heartbeatIntervalId !== null) clearInterval(state.heartbeatIntervalId);
+            state.heartbeatIntervalId = setInterval(sendHeartbeat, intervalSec * 1000);
+
+            setTimeout(() => sendStatusNotification("Available"), 500);
+          } else {
+            appendLog("[SYSTEM] BootNotification rejected. Please check configuration.");
+          }
+        }
+
+        // StartTransaction.conf
+        if ("transactionId" in payload) {
+          const txId = payload.transactionId;
+          appendLog(`[SYSTEM] StartTransaction accepted. Tx ID = ${txId} (Connector 1)`);
+
+          setConnector((prev) => {
+            const baseSoc = prev.soc > 0 ? prev.soc : Math.floor(Math.random() * 10) + 20;
+            return {
+              ...prev,
+              transactionId: txId,
+              status: "Charging",
+              powerKw: FIXED_POWER_KW,
+              energyKWh: 0,
+              soc: baseSoc,
+              startedAt: Date.now(),
+            };
+          });
+
+          sendStatusNotification("Charging");
+          startMeterLoop();
+        }
+
+        // StopTransaction.conf (REQUIREMENT: ค้าง Finishing จน Unplug)
+        if ("idTagInfo" in payload) {
+          const c = state.connector;
+          if (c.status !== "Finishing") {
+            appendLog("[SYSTEM] StopTransaction.conf received but status is not Finishing → ignore");
+            return;
+          }
+
+          appendLog("[SYSTEM] StopTransaction confirmed. Keep status = Finishing until Unplug EV.");
+
+          setConnector((prev) => ({
+            ...prev,
+            status: "Finishing",
+            transactionId: null,
+            powerKw: 0,
+            // ✅ ไม่รีเซ็ต soc/energy/meterWh ตาม requirement
+          }));
+
+          stopMeterLoop();
+        }
+      }
+
+      // =========================
+      // ✅ CALL HANDLER
+      // =========================
+      function handleCall(messageId, action, payload) {
+        appendLog(`[SYSTEM] Received CALL from Server: ${action} / ได้รับ CALL จากเซิร์ฟเวอร์: ${action}`);
+
+        let responsePayload = {};
+
+        switch (action) {
+          case "RemoteStartTransaction": {
+            const connectorId = (payload && payload.connectorId) ?? 1;
+            appendLog(`[SYSTEM] RemoteStartTransaction requested for Connector ${connectorId}.`);
+
+            if (connectorId === 1) {
+              responsePayload = { status: "Accepted" };
+
+              setTimeout(() => {
+                setConnector((prev) => ({ ...prev, isPluggedIn: true }));
+                appendLog("[SYSTEM] EV plugged in (simulated by RemoteStart).");
+                sendStatusNotification("Preparing");
+
+                setTimeout(() => {
+                  sendStartTransaction();
+                }, 1000);
+              }, 500);
+            } else {
+              responsePayload = { status: "Rejected" };
+            }
+            break;
+          }
+
+          case "RemoteStopTransaction": {
+            const txId = payload && payload.transactionId;
+            appendLog(`[SYSTEM] RemoteStopTransaction requested for TxID ${txId}.`);
+
+            if (state.connector.transactionId === txId) {
+              responsePayload = { status: "Accepted" };
+
+              stopMeterLoop();
+              setTimeout(() => {
+                sendStatusNotification("Finishing");
+                setTimeout(() => sendStopTransaction(), 800);
+              }, 400);
+            } else {
+              responsePayload = { status: "Rejected" };
+            }
+            break;
+          }
+
+          case "ChangeAvailability": {
+            const type = payload && payload.type;
+            const connectorId = (payload && payload.connectorId) ?? 1;
+            appendLog(`[SYSTEM] ChangeAvailability for Connector ${connectorId} to ${type}.`);
+
+            responsePayload = { status: "Accepted" };
+            setTimeout(() => {
+              const newStatus = type === "Operative" ? "Available" : "Unavailable";
+              sendStatusNotification(newStatus);
+            }, 500);
+            break;
+          }
+
+          case "GetConfiguration": {
+            responsePayload = { configurationKey: [], unknownKey: [] };
+            break;
+          }
+
+          default: {
+            appendLog(`[SYSTEM] Unsupported Action: ${action}`);
+            responsePayload = { status: "NotImplemented" };
+          }
+        }
+
+        const responseMsg = [3, messageId, responsePayload];
+        sendOcppMessage(responseMsg);
+      }
+
+      // =========================
+      // ✅ UI BUTTON HANDLERS
+      // =========================
+      function handleTogglePlug() {
+        const c = state.connector;
+        const plugIn = !c.isPluggedIn;
+
+        if (plugIn) {
+          appendLog("[SYSTEM] EV: Plugged in / เสียบปลั๊กเชื่อมต่อแล้ว");
+          setConnector((prev) => ({ ...prev, isPluggedIn: true }));
+          if (c.status === "Available") sendStatusNotification("Preparing");
+          return;
+        }
+
+        // ✅ Unplug
+        appendLog("[SYSTEM] EV: Unplugged / ดึงปลั๊กออกแล้ว");
+
+        if (c.transactionId) {
+          appendLog("[SYSTEM] Unplug while charging, forcing StopTransaction (Finishing).");
+          stopMeterLoop();
+          sendStatusNotification("Finishing");
+          setTimeout(() => sendStopTransaction(), 500);
+        }
+
+        // ✅ REQUIREMENT: เมื่อ Unplug แล้วต้องเป็น Available เสมอ (รีเซ็ต)
+        stopMeterLoop();
+        setConnector(() => ({
+          ...ZERO_STATE,
+          status: "Available",
+          isPluggedIn: false,
+        }));
+        sendStatusNotification("Available");
+      }
+
+      function handleToggleLock() {
+        setConnector((prev) => {
+          const locked = !prev.isLocked;
+          appendLog(locked ? "[SYSTEM] EV: Locked / ล็อกรถแล้ว" : "[SYSTEM] EV: Unlocked / ปลดล็อกรถแล้ว");
+          return { ...prev, isLocked: locked };
+        });
+      }
+
+      function handleRequestStart() {
+        const c = state.connector;
+
+        if (!c.isPluggedIn) {
+          appendLog("[ERROR] Cannot start: EV not plugged in");
+          return;
+        }
+        if (c.isLocked) {
+          appendLog("[ERROR] Cannot start: EV is locked");
+          return;
+        }
+        if (c.status === "Finishing") {
+          appendLog("[ERROR] Cannot start: status is Finishing. Please Unplug EV to reset to Available.");
+          return;
+        }
+        if (c.transactionId) {
+          appendLog("[ERROR] Session already active");
+          return;
+        }
+
+        appendLog("[SYSTEM] Requesting StartTransaction from local button");
+        sendStartTransaction();
+      }
+
+      function handleRequestStop() {
+        const c = state.connector;
+        if (!c.transactionId) {
+          appendLog("[ERROR] No active transaction to stop");
+          return;
+        }
+
+        appendLog("[SYSTEM] Requesting StopTransaction (keep Finishing until Unplug EV)");
+
+        sendStatusNotification("Finishing");
+        stopMeterLoop();
+        setTimeout(() => sendStopTransaction(), 500);
+
+        setConnector((prev) => ({ ...prev, status: "Finishing", powerKw: 0 }));
+      }
+
+      // =========================
+      // ✅ RENDER
+      // =========================
+      function renderLogs() {
+        if (!state.logs.length) {
+          el.logEmpty.classList.remove("hidden");
+          el.logList.classList.add("hidden");
+          el.logList.innerHTML = "";
+          return;
+        }
+
+        el.logEmpty.classList.add("hidden");
+        el.logList.classList.remove("hidden");
+
+        // render lines
+        const html = state.logs
+          .map((line) => {
+            const isSystem = line.includes("[SYSTEM]");
+            const isRecv = line.includes("[RECV]");
+            const colorClass = isSystem ? "text-amber-600" : isRecv ? "text-sky-700" : "";
+            return `<p class="whitespace-pre-wrap ${colorClass}">${escapeHtml(line)}</p>`;
+          })
+          .join("");
+
+        el.logList.innerHTML = html;
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function statusColorClass(status) {
+        if (status === "Charging") return "text-emerald-500";
+        if (status === "Available") return "text-sky-600";
+        if (status === "SuspendedEV") return "text-orange-500";
+        if (status === "Faulted") return "text-red-500";
+        return "text-slate-600";
+      }
+
+      function renderUI() {
+        // connection header
+        el.connText.textContent = state.isConnected ? "Connected" : "Not connected";
+        el.wifiIcon.className = state.isConnected ? "text-emerald-300" : "text-blue-200";
+
+        // connect/disconnect buttons
+        if (state.isConnected) {
+          el.btnConnect.disabled = true;
+          el.btnConnect.className =
+            "px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 bg-slate-100 text-slate-400 cursor-not-allowed";
+          el.btnDisconnect.disabled = false;
+          el.btnDisconnect.className =
+            "px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-rose-500 hover:bg-rose-400 text-white shadow-sm";
+        } else {
+          el.btnConnect.disabled = false;
+          el.btnConnect.className =
+            "px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white shadow-sm";
+          el.btnDisconnect.disabled = true;
+          el.btnDisconnect.className =
+            "px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-slate-100 text-slate-400 cursor-not-allowed";
+        }
+
+        // gauge
+        const soc = Math.max(0, Math.min(100, Math.floor(state.connector.soc)));
+        el.socText.textContent = String(soc).padStart(2, "0") + "%";
+
+        const outerRadius = 76;
+        const innerRadius = 62;
+        const outerCirc = 2 * Math.PI * outerRadius;
+        const innerCirc = 2 * Math.PI * innerRadius;
+
+        const outerOffset = outerCirc - (soc / 100) * outerCirc;
+        const innerOffset = innerCirc - (soc / 100) * innerCirc;
+
+        el.outerRing.setAttribute("stroke-dasharray", outerCirc.toFixed(3));
+        el.outerRing.setAttribute("stroke-dashoffset", (isFinite(outerOffset) ? outerOffset : outerCirc).toFixed(3));
+        el.innerRing.setAttribute("stroke-dasharray", innerCirc.toFixed(3));
+        el.innerRing.setAttribute("stroke-dashoffset", (isFinite(innerOffset) ? innerOffset : innerCirc).toFixed(3));
+
+        // energy breakdown
+        const totalEnergy = Number(state.connector.energyKWh || 0);
+        const solar = totalEnergy * 0.4;
+        const grid = totalEnergy * 0.6;
+
+        el.energyTotal.textContent = `${totalEnergy.toFixed(1)} kWh`;
+        el.energySolar.textContent = `${solar.toFixed(1)} kWh`;
+        el.energyGrid.textContent = `${grid.toFixed(1)} kWh`;
+
+        // status
+        el.statusText.textContent = state.connector.status;
+        el.statusThai.textContent = thaiStatusMap[state.connector.status] || "";
+
+        // apply status color class
+        el.statusText.className = `text-sm sm:text-base font-semibold ${statusColorClass(state.connector.status)}`;
+
+        // plug/lock
+        el.plugTitle.textContent = state.connector.isPluggedIn ? "Plugged In" : "Not plugged";
+        el.plugThai.textContent = state.connector.isPluggedIn ? "เสียบปลั๊กแล้ว" : "ยังไม่เสียบปลั๊ก";
+
+        el.lockTitle.textContent = state.connector.isLocked ? "Locked" : "Unlocked";
+        el.lockThai.textContent = state.connector.isLocked ? "ล็อกรถ" : "ปลดล็อกรถ";
+        el.lockIcon.className = `h-4 w-4 ${state.connector.isLocked ? "text-rose-500" : "text-emerald-500"}`;
+
+        // power/duration
+        el.powerText.textContent = `${Number(state.connector.powerKw || 0).toFixed(2)} kW`;
+
+        const c = state.connector;
+        let durationText = "-";
+        if (c.startedAt && c.transactionId) {
+          const mins = Math.max(0, Math.floor((Date.now() - c.startedAt) / 60000));
+          durationText = mins > 0 ? `${mins} min` : "< 1 min";
+        }
+        el.durationText.textContent = durationText;
+
+        // control buttons text
+        el.btnTogglePlug.textContent = state.connector.isPluggedIn ? "Unplug EV" : "Plug In EV";
+        el.btnToggleLock.textContent = state.connector.isLocked ? "Lock → Unlock" : "Unlock → Lock";
+
+        // canStart/canStop (เหมือน React)
+        const canStart =
+          state.connector.isPluggedIn &&
+          !state.connector.isLocked &&
+          !state.connector.transactionId &&
+          (state.connector.status === "Preparing" || state.connector.status === "Available");
+
+        const canStop =
+          !!state.connector.transactionId &&
+          (state.connector.status === "Charging" ||
+            state.connector.status === "SuspendedEV" ||
+            state.connector.status === "Finishing");
+
+        // start btn
+        if (canStart) {
+          el.btnStart.disabled = false;
+          el.btnStart.className =
+            "rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm";
+        } else {
+          el.btnStart.disabled = true;
+          el.btnStart.className =
+            "rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 bg-slate-100 text-slate-400 cursor-not-allowed";
+        }
+
+        // stop btn
+        if (canStop) {
+          el.btnStop.disabled = false;
+          el.btnStop.className =
+            "rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 bg-rose-500 hover:bg-rose-400 text-white shadow-sm";
+        } else {
+          el.btnStop.disabled = true;
+          el.btnStop.className =
+            "rounded-xl text-xs sm:text-sm font-semibold py-2.5 col-span-1 bg-slate-100 text-slate-400 cursor-not-allowed";
+        }
+      }
+
+      // =========================
+      // ✅ EVENTS
+      // =========================
+      el.wsUrl.addEventListener("input", () => {
+        state.wsUrl = (el.wsUrl.value || "").trim();
+      });
+
+      el.btnConnect.addEventListener("click", connectWS);
+      el.btnDisconnect.addEventListener("click", disconnectWS);
+
+      el.btnTogglePlug.addEventListener("click", handleTogglePlug);
+      el.btnToggleLock.addEventListener("click", handleToggleLock);
+      el.btnStart.addEventListener("click", handleRequestStart);
+      el.btnStop.addEventListener("click", handleRequestStop);
+
+      el.btnLatest.addEventListener("click", () => {
+        el.logsEnd.scrollIntoView({ behavior: "smooth" });
+      });
+
+      el.btnClearLogs.addEventListener("click", () => {
+        state.logs = [];
+        renderLogs();
+      });
+
+      el.btnBack.addEventListener("click", () => {
+        // ✅ แทน navigate(-1)
+        history.back();
+      });
+
+      // cleanup
+      window.addEventListener("beforeunload", () => {
+        clearAllIntervals();
+        if (state.ws) state.ws.close();
+      });
+
+      // initial render
+      renderUI();
+      renderLogs();
+    </script>
+  </body>
+</html>

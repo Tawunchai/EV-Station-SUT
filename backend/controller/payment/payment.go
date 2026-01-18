@@ -591,7 +591,6 @@ func DeletePayment(c *gin.Context) {
 				clean := filepath.Clean(p.Picture)
 
 				// อนุญาตเฉพาะโฟลเดอร์นี้ตามที่คุณต้องการ
-				// NOTE: ใช้ strings.HasPrefix เพราะ filepath.HasPrefix ไม่มีใน std
 				if strings.HasPrefix(clean, "uploads/payment") {
 					picturePaths = append(picturePaths, clean)
 				}
@@ -605,7 +604,14 @@ func DeletePayment(c *gin.Context) {
 			return err
 		}
 
-		// ✅ 2) ลบ Payment
+		// ✅ 2) ลบ EVChargingPayment ที่ผูกกับ PaymentID เหล่านี้ ✅ (เพิ่มใหม่)
+		if err := tx.
+			Where("payment_id IN ?", ids).
+			Delete(&entity.EVChargingPayment{}).Error; err != nil {
+			return err
+		}
+
+		// ✅ 3) ลบ Payment
 		if err := tx.Delete(&entity.Payment{}, ids).Error; err != nil {
 			return err
 		}
@@ -615,7 +621,7 @@ func DeletePayment(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "ไม่สามารถลบข้อมูลได้",
+			"error":  "ไม่สามารถลบข้อมูลได้",
 			"detail": err.Error(),
 		})
 		return
@@ -632,7 +638,7 @@ func DeletePayment(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"message": "ลบ Payment สำเร็จ และลบ ChargingSession ที่ผูกกับ PaymentID แล้ว",
+		"message": "ลบ Payment สำเร็จ และลบ ChargingSession + EVChargingPayment ที่ผูกกับ PaymentID แล้ว",
 		"deleted": ids,
 	}
 
