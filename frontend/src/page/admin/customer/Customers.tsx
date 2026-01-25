@@ -273,7 +273,7 @@ const Customers: React.FC = () => {
       width: 90,
       sorter: (a, b) => a.Coin - b.Coin,
       render: (v) => (
-        <span className="font-semibold text-blue-700">{v}</span>
+        <span className="font-semibold text-blue-700">{Number(v).toFixed(2)}</span>
       ),
     },
     {
