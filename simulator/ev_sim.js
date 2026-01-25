@@ -619,7 +619,7 @@ function getHtml() {
           <div class="grid2">
             <div>
               <label>Charger ID</label>
-              <input id="chargerId" value="CP_3" placeholder="เช่น CP_1 / CP_3" />
+              <input id="chargerId" value="CP_1" placeholder="เช่น CP_1 / CP_1" />
             </div>
             <div>
               <label>idTag</label>
