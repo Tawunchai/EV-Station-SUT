@@ -1609,19 +1609,48 @@ func RemoteStopHandler(c *gin.Context) {
 		return
 	}
 
-	txID, ok := getTransactionID(req.ChargerID)
-	if !ok {
+	req.ChargerID = strings.TrimSpace(req.ChargerID)
+	if req.ChargerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerId is required"})
+		return
+	}
+
+	// ✅ เช็คว่าตู้ connected ไหม
+	chargersMu.Lock()
+	_, connected := chargers[req.ChargerID]
+	chargersMu.Unlock()
+	if !connected {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "charger not connected"})
+		return
+	}
+
+	// ✅ หา txID ให้เอง (frontend ส่งแค่ chargerId)
+	txID, ok := resolveTxIDForRemoteStop(req.ChargerID)
+	if !ok || txID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no active transaction"})
 		return
 	}
 
-	if err := SendRemoteStopTransaction(req.ChargerID, txID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// ✅ คืนเงินก่อน + แล้วค่อยสั่งหยุด
+	result, err := refundAndStopByChargerID(config.DB(), req.ChargerID, txID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"chargerId": req.ChargerID,
+			"txId":    txID,
+			"result":  result,
+		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "RemoteStopTransaction sent"})
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "RemoteStopTransaction sent (with refund)",
+		"chargerId": req.ChargerID,
+		"txId":     txID,
+		"result":   result,
+	})
 }
+
 
 // ============================================================================
 // ▶ API: Get Current Status (GET /ocpp/status/:chargerID)
@@ -2883,4 +2912,122 @@ func refreshStopPolicyCacheIfNeeded(db *gorm.DB, chargePoint string, force bool)
 
 	c, _ := getCachedStopPolicy(chargePoint)
 	return c, true
+}
+
+// ✅ Manual Stop (API) = คืนเงินก่อน แล้วค่อย RemoteStop
+// - คืนเงินใช้ logic เดียวกับ StopPolicy (RefundAndSaveRemainingOnStopPolicy)
+// - กันคืนเงินซ้ำด้วย markAutoStopped(sessionID)
+func refundAndStopByChargerID(db *gorm.DB, chargerID string, txID int) (map[string]interface{}, error) {
+	if db == nil {
+		db = config.DB()
+	}
+	if chargerID == "" {
+		return nil, fmt.Errorf("chargerID is required")
+	}
+
+	// ✅ หา session ล่าสุดที่ยัง active (status=true) ของตู้ตัวนี้
+	sess, okSess, err := findActiveSessionByChargePoint(db, chargerID)
+	if err != nil || !okSess {
+		// ถ้าไม่เจอ session ก็ยังสั่งหยุดได้ (แค่ไม่คืนเงิน)
+		if txID > 0 {
+			if errStop := SendRemoteStopTransaction(chargerID, txID); errStop != nil {
+				return nil, errStop
+			}
+		}
+		return map[string]interface{}{
+			"refunded": false,
+			"note":     "no active session found -> stopped without refund",
+		}, nil
+	}
+
+	// ✅ กันยิงซ้ำ/คืนเงินซ้ำ (ใช้ guard เดิม)
+	// ถ้าก่อนหน้านี้ auto-stop เคย mark ไปแล้ว จะไม่ refund ซ้ำ
+	if !markAutoStopped(sess.ID) {
+		// ยังส่ง RemoteStop ได้ แต่ไม่คืนเงินซ้ำ
+		if txID > 0 {
+			_ = SendRemoteStopTransaction(chargerID, txID)
+		}
+		return map[string]interface{}{
+			"refunded": false,
+			"note":     "session already handled/refunded -> stop sent without refund",
+			"sessionId": sess.ID,
+		}, nil
+	}
+
+	// ✅ ดึง energyWh ล่าสุดจาก memory (MeterValues)
+	curEnergy := 0.0
+	if m, ok := getLastMeter(chargerID); ok && m.EnergyWh > 0 {
+		curEnergy = m.EnergyWh
+	}
+
+	// ✅ คืนเงิน + เซฟ remaining (ใช้ฟังก์ชันของคุณที่มีอยู่แล้ว)
+	// NOTE: ถึงชื่อจะเป็น StopPolicy แต่ logic คือ "คืนเงินจาก remaining" ใช้ซ้ำได้เลย
+	refRes, refundErr := RefundAndSaveRemainingOnStopPolicy(db, chargerID, sess, curEnergy)
+	if refundErr != nil {
+		// ถ้าคืนเงินพัง -> ยังสั่ง stop ได้ (เพื่อไม่ให้ชาร์จค้าง)
+		if txID > 0 {
+			_ = SendRemoteStopTransaction(chargerID, txID)
+		}
+		return map[string]interface{}{
+			"refunded":   false,
+			"note":       "refund failed -> stop sent",
+			"refundErr":  refundErr.Error(),
+			"sessionId":  sess.ID,
+			"paymentId":  sess.PaymentID,
+			"energyWh":   curEnergy,
+		}, nil
+	}
+
+	// ✅ log + snapshot ให้ UI เห็นว่า refund ถูกทำแล้ว
+	broadcastLogTextToFrontendRoom(chargerID, fmt.Sprintf(
+		"[MANUAL-STOP-REFUND] paymentID=%d userID=%d sessionID=%d remainingTotal=%.2fkWh refund=%.2f coin: %.2f -> %.2f\n",
+		refRes.PaymentID, refRes.UserID, refRes.SessionID,
+		refRes.RemainingTotalKwh, refRes.RefundAmount, refRes.CoinBefore, refRes.CoinAfter,
+	))
+	buildAndBroadcastSnapshot(chargerID, "manual_stop_refund_saved_before_remote_stop")
+
+	// ✅ ส่ง RemoteStop หลังคืนเงิน
+	if txID > 0 {
+		if err := SendRemoteStopTransaction(chargerID, txID); err != nil {
+			return map[string]interface{}{
+				"refunded": true,
+				"note":     "refund ok but remote stop failed",
+				"refund":   refRes,
+			}, err
+		}
+	}
+
+	// ✅ เคลียร์ state กันค้าง (เหมือน stop-policy)
+	clearTransactionID(chargerID)
+	resetStopPolicyRuntime(chargerID)
+	clearStopPolicyCache(chargerID)
+
+	buildAndBroadcastSnapshot(chargerID, "manual_stop_after_refund_and_remote_stop")
+
+	return map[string]interface{}{
+		"refunded": true,
+		"note":     "refund ok -> remote stop sent",
+		"refund":   refRes,
+	}, nil
+}
+
+func resolveTxIDForRemoteStop(chargerID string) (int, bool) {
+	if chargerID == "" {
+		return 0, false
+	}
+	if txID, ok := getTransactionID(chargerID); ok && txID > 0 {
+		return txID, true
+	}
+	if m, ok := getLastMeter(chargerID); ok && m.TransactionID > 0 {
+		return m.TransactionID, true
+	}
+	if snap, ok := getCachedSnapshot(chargerID); ok {
+		if snap.ActiveTransactionID > 0 {
+			return snap.ActiveTransactionID, true
+		}
+		if snap.Meter.TransactionID > 0 {
+			return snap.Meter.TransactionID, true
+		}
+	}
+	return 0, false
 }
