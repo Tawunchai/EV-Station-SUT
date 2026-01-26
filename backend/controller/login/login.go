@@ -9,7 +9,7 @@ import (
 	"github.com/Tawunchai/work-project/services"
 )
 
-// ✅ LOGIN: เก็บ token ใน HttpOnly Cookie
+// ✅ LOGIN: เก็บ token ใน HttpOnly Cookie สำหรับ Render + Vercel (Cross-site)
 func AddLogin(c *gin.Context) {
 	var loginData entity.User
 	if err := c.ShouldBindJSON(&loginData); err != nil {
@@ -41,35 +41,37 @@ func AddLogin(c *gin.Context) {
 		return
 	}
 
-	// ✅ Set HttpOnly Secure Cookie
+	// ✅ ตั้งค่า cookie สำหรับ cross-site (Render ↔️ Vercel)
+	c.SetSameSite(http.SameSiteNoneMode)
 	c.SetCookie(
 		"access_token",
 		token,
-		86400, // 1 วัน
+		86400, // อายุ 1 วัน
 		"/",
-		"",     // domain เช่น "sut-ev.com" ถ้ามี
-		false,  // true ถ้าใช้ HTTPS
-		true,   // HttpOnly
+		"api.evstation-sut.it.com", // ✅ ใช้ domain ของ backend https://evstation-sut.it.com/
+		true,  // Secure (HTTPS เท่านั้น)
+		true,  // HttpOnly
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "login success"})
 }
 
+// ✅ LOGOUT: ล้าง cookie
 func Logout(c *gin.Context) {
-    c.SetCookie(
-        "access_token", // ✅ ต้องตรงกับชื่อที่ใช้ตอน login
-        "",
-        -1,    // ลบออกทันที
-        "/",
-        "",
-        false, // ❗ ต้องตรงกับตอน login (ตอนนี้ login ใช้ false)
-        true,  // httpOnly
-    )
-
-    c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetCookie(
+		"access_token",
+		"",
+		-1,
+		"/",
+		"api.evstation-sut.it.com", // ต้องตรงกับ domain ตอน login
+		true,
+		true,
+	)
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
-// ✅ GET PROFILE (เพิ่ม EmployeeID)
+// ✅ GET PROFILE (อ่านข้อมูลผู้ใช้)
 func GetProfile(c *gin.Context) {
 	token, err := c.Cookie("access_token")
 	if err != nil {
@@ -86,14 +88,12 @@ func GetProfile(c *gin.Context) {
 
 	db := config.DB()
 	var user entity.User
-	// ✅ preload Employee ด้วย
 	if err := db.Preload("UserRole").Preload("Employees").First(&user, claims.UserID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
-	// ✅ หา EmployeeID ถ้ามี
-	var employeeID *uint = nil
+	var employeeID *uint
 	if len(user.Employees) > 0 {
 		employeeID = &user.Employees[0].ID
 	}
@@ -106,6 +106,6 @@ func GetProfile(c *gin.Context) {
 		"role":        user.UserRole.RoleName,
 		"email":       user.Email,
 		"profile":     user.Profile,
-		"employee_id": employeeID, // ✅ เพิ่ม field นี้
+		"employee_id": employeeID,
 	})
 }
