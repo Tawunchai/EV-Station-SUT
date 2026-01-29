@@ -36,11 +36,6 @@ func setLogEnabled(v bool) {
 	}
 }
 
-func normChargerID(s string) string {
-	// ถ้าคุณอยาก strict เพิ่ม: strings.ToUpper(...)
-	return strings.TrimSpace(s)
-}
-
 // ============================================================================
 // ✅ NEW: VERBOSE LOG (เปิดเฉพาะตอน debug) — default ปิด
 // - สำคัญ: โหมดปกติจะ print log เฉพาะ “จำเป็น” (ตามที่คุณต้องการ)
@@ -1006,7 +1001,7 @@ func HandleOCPP(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	chargerID := normChargerID(c.Param("chargerID"))
+	chargerID := c.Param("chargerID")
 	if chargerID == "" {
 		logln("❌ missing chargerID in URL")
 		return
@@ -1019,9 +1014,6 @@ func HandleOCPP(c *gin.Context) {
 	cancelDisconnectHold(chargerID)
 
 	chargersMu.Lock()
-	if old, exists := chargers[chargerID]; exists && old != nil && old != conn {
-		_ = old.Close() // ✅ ปิด WS เก่าทิ้ง กันค้าง 2 เส้น
-	}
 	chargers[chargerID] = conn
 	chargersMu.Unlock()
 
@@ -1075,28 +1067,16 @@ func HandleOCPP(c *gin.Context) {
 	// ✅ SNAPSHOT ตอนเชื่อมต่อสำเร็จ (frontend ต่อทีหลังจะได้เห็นสถานะ/tx/meter ล่าสุด)
 	buildAndBroadcastSnapshot(chargerID, "ocpp_connected")
 
-	defer func(myConn *websocket.Conn) {
-		shouldHold := false
-
+	defer func() {
 		chargersMu.Lock()
-		// ✅ ลบเฉพาะถ้าตอนนี้ map ยังชี้มาที่ conn นี้อยู่จริง
-		if cur, ok := chargers[chargerID]; ok && cur == myConn {
-			delete(chargers, chargerID)
-			shouldHold = true
-		}
+		delete(chargers, chargerID)
 		chargersMu.Unlock()
 
 		logln("⚠️ Charger disconnected:", chargerID)
 		broadcastLogTextToFrontendRoom(chargerID, "[SYSTEM] Charger disconnected: "+chargerID+"\n")
 		addTrail(chargerID, "warn", "ocpp_disconnected", "charger websocket disconnected", nil)
-
-		// ✅ เข้า hold เฉพาะ “ตัวล่าสุดจริง ๆ” เท่านั้น
-		if shouldHold {
-			scheduleDisconnectHold(chargerID)
-		} else {
-			vlogln("[WS] stale disconnect ignored for", chargerID)
-		}
-	}(conn)
+		scheduleDisconnectHold(chargerID)
+	}()
 
 	for {
 		_, msg, err := conn.ReadMessage()
@@ -1688,8 +1668,6 @@ func RemoteStartHandler(c *gin.Context) {
 
 	logf("🟦 RemoteStartHandler request: %+v\n", req)
 
-	req.ChargerID = normChargerID(req.ChargerID) // ✅ เพิ่มตรงนี้
-
 	if req.ChargerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerId is required"})
 		return
@@ -1754,8 +1732,6 @@ func RemoteStopHandler(c *gin.Context) {
 		return
 	}
 
-	req.ChargerID = normChargerID(req.ChargerID)
-
 	txID, ok := getTransactionID(req.ChargerID)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no active transaction"})
@@ -1775,7 +1751,7 @@ func RemoteStopHandler(c *gin.Context) {
 // ============================================================================
 
 func GetChargerStatusHandler(c *gin.Context) {
-	chargerID := normChargerID(c.Param("chargerID"))
+	chargerID := c.Param("chargerID")
 
 	statusMu.Lock()
 	st, ok := chargerStatuses[chargerID]
