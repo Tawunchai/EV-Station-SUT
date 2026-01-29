@@ -323,7 +323,7 @@ func buildSnapshot(db *gorm.DB, chargerID string, reason string) ChargerSnapshot
 	st, ok := chargerStatuses[chargerID]
 	statusMu.Unlock()
 	if !ok {
-		st = ChargerStatus{}
+		st = ChargerStatus{ChargerID: chargerID}
 	}
 
 	// 2) tx (memory)
@@ -1543,10 +1543,13 @@ func RemoteStartHandler(c *gin.Context) {
 		return
 	}
 
+	logf("🟦 RemoteStartHandler request: %+v\n", req)
+
 	if req.ChargerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerId is required"})
 		return
 	}
+
 	if req.ConnectorID <= 0 {
 		req.ConnectorID = 1
 	}
@@ -1554,99 +1557,40 @@ func RemoteStartHandler(c *gin.Context) {
 		req.IdTag = "EV-SIM-001"
 	}
 
-	logf("🟦 RemoteStartHandler request: %+v (instance=%s)\n", req, BusInstance())
-
-	// ✅ เช็ค WS ใน instance นี้ก่อน
 	chargersMu.Lock()
 	_, connected := chargers[req.ChargerID]
 	chargersMu.Unlock()
-
-	// ✅ ถ้าไม่เจอ WS ใน instance นี้ -> forward ไป Command Bus (ถ้าพร้อม)
 	if !connected {
-		if IsBusReady() {
-			cmd := OcppCommand{
-				Type:        "remote_start",
-				ChargerID:   req.ChargerID,
-				ConnectorID: req.ConnectorID,
-				IdTag:       req.IdTag,
-				RequestID:   fmt.Sprintf("http-remote-start-%d", time.Now().UnixNano()),
-				Timestamp:   nowOcppTime(),
-			}
-
-			if err := BusPublish(cmd); err != nil {
-				logln("❌ RemoteStart bus publish failed:", err)
-				logln("❌ RemoteStart: charger not connected:", req.ChargerID)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error":    "charger not connected",
-					"instance": BusInstance(),
-					"busReady": false,
-					"busError": BusLastError(),
-				})
-				return
-			}
-
-			logf("🚌 RemoteStart forwarded to bus charger=%s req=%s (from instance=%s)\n",
-				req.ChargerID, cmd.RequestID, BusInstance(),
-			)
-
-			c.JSON(http.StatusAccepted, gin.H{
-				"message":    "RemoteStart forwarded to the instance holding the WebSocket",
-				"chargerId":  req.ChargerID,
-				"requestId":  cmd.RequestID,
-				"instance":   BusInstance(),
-				"busReady":   true,
-				"busChannel": ocppCmdChannel,
-			})
-			return
-		}
-
-		// bus ไม่พร้อม -> behavior เดิม
 		logln("❌ RemoteStart: charger not connected:", req.ChargerID)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    "charger not connected",
-			"instance": BusInstance(),
-			"busReady": false,
-			"busError": BusLastError(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "charger not connected"})
 		return
 	}
 
-	// ✅ instance นี้มี WS -> ทำ flow เดิม
 	statusMu.Lock()
 	st, ok := chargerStatuses[req.ChargerID]
 	statusMu.Unlock()
 	if !ok {
 		logln("❌ RemoteStart: no status for charger:", req.ChargerID)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    "no status for this charger",
-			"instance": BusInstance(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no status for this charger"})
 		return
 	}
 
 	if st.Status != "Preparing" && st.Status != "Available" {
 		logf("❌ RemoteStart: charger %s status is %s (need Preparing/Available)\n", req.ChargerID, st.Status)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    "charger must be in Preparing or Available state to start",
-			"status":   st.Status,
-			"instance": BusInstance(),
+			"error":  "charger must be in Preparing or Available state to start",
+			"status": st.Status,
 		})
 		return
 	}
 
 	if err := SendRemoteStartTransaction(req.ChargerID, req.ConnectorID, req.IdTag); err != nil {
 		logln("❌ RemoteStart error:", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    err.Error(),
-			"instance": BusInstance(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "RemoteStartTransaction sent",
-		"instance": BusInstance(),
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "RemoteStartTransaction sent"})
 }
 
 // ============================================================================
@@ -1665,84 +1609,18 @@ func RemoteStopHandler(c *gin.Context) {
 		return
 	}
 
-	if req.ChargerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "chargerId is required"})
-		return
-	}
-
 	txID, ok := getTransactionID(req.ChargerID)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no active transaction"})
 		return
 	}
 
-	logf("🟦 RemoteStopHandler request: chargerId=%s txID=%d (instance=%s)\n",
-		req.ChargerID, txID, BusInstance(),
-	)
-
-	// ✅ เช็ค WS ใน instance นี้ก่อน
-	chargersMu.Lock()
-	_, connected := chargers[req.ChargerID]
-	chargersMu.Unlock()
-
-	// ✅ ถ้าไม่เจอ WS ใน instance นี้ -> forward ไป Command Bus (ถ้าพร้อม)
-	if !connected {
-		if IsBusReady() {
-			cmd := OcppCommand{
-				Type:      "remote_stop",
-				ChargerID: req.ChargerID,
-				TxID:      txID,
-				RequestID: fmt.Sprintf("http-remote-stop-%d", time.Now().UnixNano()),
-				Timestamp: nowOcppTime(),
-			}
-			if err := BusPublish(cmd); err != nil {
-				logln("❌ RemoteStop bus publish failed:", err)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error":    "charger not connected",
-					"instance": BusInstance(),
-					"busReady": false,
-					"busError": BusLastError(),
-				})
-				return
-			}
-
-			logf("🚌 RemoteStop forwarded to bus charger=%s req=%s (from instance=%s)\n",
-				req.ChargerID, cmd.RequestID, BusInstance(),
-			)
-
-			c.JSON(http.StatusAccepted, gin.H{
-				"message":    "RemoteStop forwarded to the instance holding the WebSocket",
-				"chargerId":  req.ChargerID,
-				"requestId":  cmd.RequestID,
-				"instance":   BusInstance(),
-				"busReady":   true,
-				"busChannel": ocppCmdChannel,
-			})
-			return
-		}
-
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    "charger not connected",
-			"instance": BusInstance(),
-			"busReady": false,
-			"busError": BusLastError(),
-		})
-		return
-	}
-
-	// ✅ instance นี้มี WS -> ทำ flow เดิม
 	if err := SendRemoteStopTransaction(req.ChargerID, txID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":    err.Error(),
-			"instance": BusInstance(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "RemoteStopTransaction sent",
-		"instance": BusInstance(),
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "RemoteStopTransaction sent"})
 }
 
 // ============================================================================
@@ -2939,7 +2817,7 @@ func buildSnapshotMemoryOnly(chargerID string, reason string) ChargerSnapshot {
 	st, ok := chargerStatuses[chargerID]
 	statusMu.Unlock()
 	if !ok {
-		st = ChargerStatus{}
+		st = ChargerStatus{ChargerID: chargerID}
 	}
 
 	// 2) tx (memory)
@@ -3006,3 +2884,4 @@ func refreshStopPolicyCacheIfNeeded(db *gorm.DB, chargePoint string, force bool)
 	c, _ := getCachedStopPolicy(chargePoint)
 	return c, true
 }
+

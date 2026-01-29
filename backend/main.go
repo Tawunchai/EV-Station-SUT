@@ -60,8 +60,6 @@ func main() {
 	r.GET("/me", login.GetProfile)
 	r.POST("/logout", login.Logout)
 
-	ocpp.StartOcppCommandBusSafe()
-
 	// ✅ 2. เพิ่ม Cron Job หลัง DB setup และก่อนรันเซิร์ฟเวอร์
 	c := cron.New()
 
