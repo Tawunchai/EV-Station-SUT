@@ -59,7 +59,6 @@ func main() {
 	r.GET("/me", login.GetProfile)
 	r.POST("/logout", login.Logout)
 
-
 	// ✅ 2. เพิ่ม Cron Job หลัง DB setup และก่อนรันเซิร์ฟเวอร์
 	c := cron.New()
 
@@ -70,7 +69,7 @@ func main() {
 	})
 
 	// ✅ ✅ ลบข้อมูล SolarRealtimeData + MeterRealtimeData ทุกๆ 3 เดือน (Hard Delete)
-	// รันวันที่ 1 ของทุกๆ 3 เดือน เวลา 03:00 
+	// รันวันที่ 1 ของทุกๆ 3 เดือน เวลา 03:00
 	// real 0 3 1 */3 *
 	// test 50 22 18 1 *
 	c.AddFunc("0 3 1 */3 *", func() {
@@ -305,6 +304,7 @@ func main() {
 		public.GET("/meters/by-solar-point/:solar_point", meter.ListDataMeterBySolarPoint)
 		public.GET("/meter-realtime-data", meter.ListMeterRealtimeData)
 
+		public.GET("/ocpp/remote-start/context/:chargerID", ocpp.GetRemoteStartContextHandler)
 	}
 
 	r.GET("/", func(c *gin.Context) {
