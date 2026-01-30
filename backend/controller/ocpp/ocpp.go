@@ -3037,6 +3037,8 @@ func refreshStopPolicyCacheIfNeeded(db *gorm.DB, chargePoint string, force bool)
 // GET /ocpp/remote-start/context/:chargerID?limit=120&include_snapshot=1&include_db=0
 // - include_snapshot=1 => แนบ cached snapshot (หรือ build memory-only)
 // - include_db=1 => snapshot แนบ DB context (อ่านอย่างเดียว) [ระวังหนักขึ้น]
+// ✅ ปรับให้ response "สั้น": ส่งแค่ trail ล่าสุด + summary (กัน payload ยาว)
+// - trail_full=1 => ส่ง trail เต็ม (กรณีอยาก debug ลึก)
 // ============================================================================
 
 func GetRemoteStartContextHandler(c *gin.Context) {
@@ -3046,7 +3048,8 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 		return
 	}
 
-	limit := 120
+	// ✅ default ให้สั้นลง
+	limit := 30
 	if v := strings.TrimSpace(c.Query("limit")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
@@ -3056,6 +3059,9 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 	includeSnapshot := c.Query("include_snapshot") == "1" || strings.ToLower(c.Query("include_snapshot")) == "true"
 	includeDB := c.Query("include_db") == "1" || strings.ToLower(c.Query("include_db")) == "true"
 	refreshSnap := c.Query("refresh") == "1" || strings.ToLower(c.Query("refresh")) == "true"
+
+	// ✅ อยากดู trail เต็มไหม (default: ไม่ส่ง)
+	trailFull := c.Query("trail_full") == "1" || strings.ToLower(c.Query("trail_full")) == "true"
 
 	// connected?
 	chargersMu.Lock()
@@ -3090,7 +3096,7 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 	}
 	pendingMu.Unlock()
 
-	// snapshot
+	// snapshot (ตามเดิม)
 	var snap *ChargerSnapshot
 	if includeSnapshot {
 		if !refreshSnap {
@@ -3112,12 +3118,68 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	// =========================================================================
+	// ✅ TRAIL: ทำให้สั้นลง (เอาแค่ล่าสุด + summary)
+	// =========================================================================
+	rawTrail := getTrail(chargerID, limit)
+
+	// แปลงเป็น []map เพื่อคุมได้โดยไม่ผูกกับ struct ของ TrailEvent
+	trailArr := make([]map[string]interface{}, 0)
+	if b, err := json.Marshal(rawTrail); err == nil {
+		_ = json.Unmarshal(b, &trailArr)
+	}
+
+	var trailLast map[string]interface{} = nil
+	var lastMeterValues map[string]interface{} = nil
+
+	typeCounts := map[string]int{}
+	levelCounts := map[string]int{}
+	meterValuesCount := 0
+
+	if len(trailArr) > 0 {
+		trailLast = trailArr[len(trailArr)-1]
+
+		// หา meter_values ล่าสุดจากท้ายสุด
+		for i := len(trailArr) - 1; i >= 0; i-- {
+			t, _ := trailArr[i]["type"].(string)
+			if t == "meter_values" {
+				lastMeterValues = trailArr[i]
+				break
+			}
+		}
+
+		// summary counts
+		for _, ev := range trailArr {
+			t, _ := ev["type"].(string)
+			lv, _ := ev["level"].(string)
+
+			if t != "" {
+				typeCounts[t]++
+			} else {
+				typeCounts["(unknown)"]++
+			}
+
+			if lv != "" {
+				levelCounts[lv]++
+			} else {
+				levelCounts["(unknown)"]++
+			}
+
+			if t == "meter_values" {
+				meterValuesCount++
+			}
+		}
+	}
+
+	// =========================================================================
+	// ✅ RESPONSE (สั้น)
+	// =========================================================================
+	resp := gin.H{
 		"chargerId": chargerID,
 		"connected": connected,
 
 		"status_found": okSt,
-		"status":       st, // ถ้าไม่พบ okSt=false ก็จะเป็นค่า zero
+		"status":       st,
 
 		"last_real_status_found": hasLastReal,
 		"last_real_status":       lastReal,
@@ -3130,7 +3192,24 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 
 		"pending_remote_start": pendingList,
 
-		"trail":    getTrail(chargerID, limit),
+		// ✅ trail แบบสั้น
+		"trail_last":             trailLast,        // ล่าสุด 1 รายการ
+		"trail_last_meter_values": lastMeterValues, // meter_values ล่าสุด 1 รายการ (ถ้ามี)
+		"trail_summary": gin.H{
+			"limit":             limit,
+			"count_total":       len(trailArr),
+			"count_meter_values": meterValuesCount,
+			"count_by_type":     typeCounts,
+			"count_by_level":    levelCounts,
+		},
+
 		"snapshot": snap,
-	})
+	}
+
+	// ✅ เผื่ออยากดูเต็ม: ?trail_full=1
+	if trailFull {
+		resp["trail"] = rawTrail
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
