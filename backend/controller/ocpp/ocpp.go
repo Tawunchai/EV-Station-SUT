@@ -720,46 +720,18 @@ func nowOcppTime() string {
 // ============================================================================
 
 func broadcastToFrontendRoom(roomID string, msg []byte) {
-	// 1) copy targets under lock (กัน hold lock ตอนเขียน)
-	type target struct {
-		conn *websocket.Conn
-		room string
-	}
-
 	frontendClientsMu.Lock()
-	targets := make([]target, 0, len(frontendClients))
+	defer frontendClientsMu.Unlock()
+
 	for conn, r := range frontendClients {
-		targets = append(targets, target{conn: conn, room: r})
-	}
-	frontendClientsMu.Unlock()
-
-	// 2) write outside lock
-	// เก็บ dead conns ไว้ลบทีหลัง
-	dead := make([]*websocket.Conn, 0, 8)
-
-	for _, t := range targets {
-		if roomID != "*" && t.room != "*" && t.room != roomID {
-			continue
+		if roomID == "*" || r == "*" || r == roomID {
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				conn.Close()
+				delete(frontendClients, conn)
+			}
 		}
-		if t.conn == nil {
-			continue
-		}
-		if err := t.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			_ = t.conn.Close()
-			dead = append(dead, t.conn)
-		}
-	}
-
-	// 3) cleanup dead conns under lock
-	if len(dead) > 0 {
-		frontendClientsMu.Lock()
-		for _, c := range dead {
-			delete(frontendClients, c)
-		}
-		frontendClientsMu.Unlock()
 	}
 }
-
 
 var _ = broadcastTextToFrontendRoom
 
