@@ -1350,6 +1350,8 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 				)
 			}
 
+			clearAllRamForChargerOnFinishing(chargerID)
+
 			// tx จบจริง -> เคลียร์ + snapshot
 			clearTransactionID(chargerID)
 
@@ -1395,6 +1397,7 @@ func handleCallFromCharger(chargerID string, conn *websocket.Conn, frame []inter
 		logln("🛑 StopTransaction received — ending session for", chargerID)
 
 		clearTransactionID(chargerID)
+		
 
 		addTrail(chargerID, "info", "stop_transaction", "StopTransaction received", nil)
 
@@ -2469,6 +2472,7 @@ func closeSessionByID(db *gorm.DB, sessionID uint) error {
 	if err := db.Save(&sess).Error; err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -3221,14 +3225,14 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 		"pending_remote_start": pendingList,
 
 		// ✅ trail แบบสั้น
-		"trail_last":             trailLast,        // ล่าสุด 1 รายการ
+		"trail_last":              trailLast,       // ล่าสุด 1 รายการ
 		"trail_last_meter_values": lastMeterValues, // meter_values ล่าสุด 1 รายการ (ถ้ามี)
 		"trail_summary": gin.H{
-			"limit":             limit,
-			"count_total":       len(trailArr),
+			"limit":              limit,
+			"count_total":        len(trailArr),
 			"count_meter_values": meterValuesCount,
-			"count_by_type":     typeCounts,
-			"count_by_level":    levelCounts,
+			"count_by_type":      typeCounts,
+			"count_by_level":     levelCounts,
 		},
 
 		"snapshot": snap,
@@ -3240,4 +3244,67 @@ func GetRemoteStartContextHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+
+// ============================================================================
+// ============================================================================
+// ✅ NEW: Clear RAM (per charger) — เรียกใช้ "เฉพาะตอน Status = Finishing"
+// - ล้างทุกอย่างที่โตได้ใน RAM สำหรับ chargerID นี้ เพื่อกัน memory โตเรื่อย ๆ
+// - ไม่ไปยุ่ง WS conn (chargers map) และไม่กระทบตู้ตัวอื่น
+// ============================================================================
+
+func clearAllRamForChargerOnFinishing(chargerID string) {
+	chargerID = normChargerID(chargerID)
+	if chargerID == "" {
+		return
+	}
+
+	// 1) ยกเลิก hold timer (กัน goroutine/timer ค้าง)
+	cancelDisconnectHold(chargerID)
+
+	// 2) ล้าง tx / stop-policy runtime+cache (กัน state ค้างข้าม session)
+	clearTransactionID(chargerID)
+	resetStopPolicyRuntime(chargerID)
+	clearStopPolicyCache(chargerID)
+
+	// 3) ล้าง pendingCalls ที่ผูกกับ charger นี้ (กัน map โต)
+	pendingMu.Lock()
+	for mid, p := range pendingCalls {
+		if p.ChargerID == chargerID {
+			delete(pendingCalls, mid)
+		}
+	}
+	pendingMu.Unlock()
+
+	// 4) ล้าง trail ring buffer ของ charger นี้
+	trailMu.Lock()
+	delete(trailByID, chargerID)
+	trailMu.Unlock()
+
+	// 5) ล้าง last meter snapshot ของ charger นี้
+	lastMeterMu.Lock()
+	delete(lastMeterInfo, chargerID)
+	lastMeterMu.Unlock()
+
+	// 6) ล้าง last real status (ก่อนหลุด) ของ charger นี้
+	lastRealMu.Lock()
+	delete(lastRealStatuses, chargerID)
+	lastRealMu.Unlock()
+
+	// 7) ล้าง snapshot cache + seq ของ charger นี้
+	snapshotMu.Lock()
+	delete(lastSnapshotByCharger, chargerID)
+	delete(snapshotSeq, chargerID)
+	snapshotMu.Unlock()
+
+	// (optional) ถ้าคุณอยากให้ “สถานะล่าสุด” ยังอยู่ให้ UI เห็นหลัง finishing
+	// ไม่ต้องลบ chargerStatuses (เพราะมันไม่โตมากและเป็น state ล่าสุด)
+	// แต่ถ้าต้องการล้างด้วยจริง ๆ ให้เปิด 3 บรรทัดนี้:
+	// statusMu.Lock()
+	// delete(chargerStatuses, chargerID)
+	// statusMu.Unlock()
+
+	// log สั้น ๆ (ไม่ถี่ เพราะเรียกเฉพาะ Finishing)
+	logf("🧹 [RAM-CLEAR] chargePoint=%s cleared per-charger runtime caches (trail/pending/meter/snapshot/tx/stop-policy)\n", chargerID)
 }
